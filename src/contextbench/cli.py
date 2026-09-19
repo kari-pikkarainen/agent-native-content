@@ -22,6 +22,7 @@ app.add_typer(dataset_app, name="dataset")
 
 DEFAULT_DATASET_DIR = Path("data/raw/xl-docbench")
 DEFAULT_DOCUMENT_CACHE = Path("data/cache/xl-docbench")
+DEFAULT_INGEST_CACHE = Path("data/cache/ingest")
 DEFAULT_XL100 = Path("configs/subsets/xl100.json")
 
 
@@ -45,6 +46,44 @@ def main(
     ] = None,
 ) -> None:
     """Run reproducible context-compilation benchmark experiments."""
+
+
+@app.command("ingest")
+def ingest_document(
+    document: Annotated[Path, typer.Argument(help="Local PDF to ingest.")],
+    cache_dir: Annotated[
+        Path,
+        typer.Option(help="Content-addressed ingestion cache directory."),
+    ] = DEFAULT_INGEST_CACHE,
+    artifacts_dir: Annotated[
+        Path | None,
+        typer.Option(help="Optional directory of pre-downloaded Docling models."),
+    ] = None,
+) -> None:
+    """Convert a local PDF into a cached authoritative DoclingDocument."""
+    # Keep Docling's expensive conversion imports off help and dataset paths.
+    from contextbench.ingest import DoclingParser, IngestionCache, IngestionError
+
+    try:
+        result = IngestionCache(
+            cache_dir,
+            DoclingParser(artifacts_path=artifacts_dir),
+        ).ingest(document)
+    except IngestionError as exc:
+        _abort(str(exc))
+    value = {
+        "artifact_dir": str(result.artifact_dir),
+        "document_path": str(result.document_path),
+        "heading_count": result.metadata.heading_count,
+        "page_count": result.metadata.page_count,
+        "parser_name": result.metadata.parser_name,
+        "parser_version": result.metadata.parser_version,
+        "reused": result.reused,
+        "source_sha256": result.metadata.source_sha256,
+        "table_count": result.metadata.table_count,
+        "text_count": result.metadata.text_count,
+    }
+    typer.echo(json.dumps(value, ensure_ascii=False, sort_keys=True))
 
 
 @dataset_app.command("download")
