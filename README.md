@@ -26,3 +26,20 @@ uv run pytest
 
 The initial scaffold intentionally contains no document parsing, retrieval,
 embedding, or model integration.
+
+## XL-DocBench dataset
+
+The adapter is pinned to Microsoft's conservative
+`xldocbench_strict_1345_v1` release. Download its metadata, inspect a question,
+or list the committed development subset with:
+
+```shell
+uv run contextbench dataset download xl-docbench
+uv run contextbench dataset inspect xl-docbench <question-id>
+uv run contextbench dataset list xl-docbench --subset-file configs/subsets/xl100.json
+```
+
+Add `--sources` to the download command to cache the referenced PDFs. Source
+files are content-addressed after their release-recorded size is verified;
+subsequent use rechecks SHA-256 and refuses silent replacement. Failed URLs are
+recorded in `data/cache/xl-docbench/failures.jsonl`.

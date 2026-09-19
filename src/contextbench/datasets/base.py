@@ -1,9 +1,11 @@
 """Normalized interfaces shared by benchmark dataset adapters."""
 
+import re
 from collections.abc import Iterator
 from typing import Annotated, Any, Literal, Protocol
+from urllib.parse import urlsplit
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 PositivePage = Annotated[int, Field(ge=1)]
 AnswerValue = str | int | float | bool | None
@@ -81,6 +83,21 @@ class DocumentSource(BaseModel):
     file_size_bytes: int = Field(ge=1)
     source_host: str
     metadata: dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator("id")
+    @classmethod
+    def id_is_safe_for_cache_path(cls, value: str) -> str:
+        if not re.fullmatch(r"[A-Za-z0-9_.-]+", value):
+            raise ValueError("document ID contains unsafe path characters")
+        return value
+
+    @field_validator("url")
+    @classmethod
+    def url_is_public_http(cls, value: str) -> str:
+        parts = urlsplit(value)
+        if parts.scheme not in {"http", "https"} or not parts.netloc:
+            raise ValueError("document URL must be an absolute HTTP(S) URL")
+        return value
 
 
 class BenchmarkDataset(Protocol):
