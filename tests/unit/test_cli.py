@@ -75,3 +75,21 @@ def test_dataset_list_preserves_subset_order() -> None:
         "adubench_single_fixture_002",
         "adubench_cross_fixture_001",
     ]
+
+
+def test_dataset_error_is_reported_without_traceback(tmp_path: Path) -> None:
+    result = runner.invoke(
+        app,
+        [
+            "dataset",
+            "inspect",
+            "xl-docbench",
+            "missing",
+            "--data-dir",
+            str(tmp_path),
+        ],
+    )
+
+    assert result.exit_code == 1
+    assert "release file not found" in result.output
+    assert "Traceback" not in result.output

@@ -2,7 +2,7 @@
 
 import json
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, NoReturn
 
 import typer
 
@@ -98,11 +98,11 @@ def download_dataset(
                 typer.echo(f"{source.id}: ERROR {exc}", err=True)
         if failures:
             failure_log = cache_dir / "failures.jsonl"
-            raise typer.ClickException(
+            _abort(
                 f"{failures} source download(s) failed; see {failure_log}"
             )
     except DatasetError as exc:
-        raise typer.ClickException(str(exc)) from exc
+        _abort(str(exc))
 
 
 @dataset_app.command("inspect")
@@ -127,7 +127,7 @@ def inspect_question(
         dataset = XLDocBenchDataset(data_dir, verify_release=verify_release)
         question = dataset.get_question(question_id)
     except (DatasetError, KeyError) as exc:
-        raise typer.ClickException(str(exc)) from exc
+        _abort(str(exc))
     typer.echo(_question_json(question))
 
 
@@ -158,7 +158,7 @@ def list_questions(
         for question in dataset.iter_subset(subset):
             typer.echo(_question_json(question))
     except DatasetError as exc:
-        raise typer.ClickException(str(exc)) from exc
+        _abort(str(exc))
 
 
 def _require_xl_docbench(dataset_name: str) -> None:
@@ -166,6 +166,11 @@ def _require_xl_docbench(dataset_name: str) -> None:
         raise typer.BadParameter(
             f"unsupported dataset {dataset_name!r}; expected 'xl-docbench'"
         )
+
+
+def _abort(message: str) -> NoReturn:
+    typer.echo(f"Error: {message}", err=True)
+    raise typer.Exit(code=1)
 
 
 def _question_json(question: BenchmarkQuestion) -> str:
