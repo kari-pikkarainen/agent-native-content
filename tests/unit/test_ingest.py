@@ -152,6 +152,7 @@ def test_ingestion_serializes_structure_and_provenance(
     assert result.metadata.heading_count == 2
     assert result.metadata.text_count == 4
     assert result.metadata.table_count == 1
+    assert result.artifact_dir.name == result.metadata.parser_config_hash
 
     loaded = DoclingDocument.load_from_json(result.document_path)
     assert len(loaded.pages) == 2

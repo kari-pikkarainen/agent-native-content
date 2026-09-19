@@ -104,7 +104,7 @@ class IngestionCache:
             self.root
             / source_sha256[:2]
             / source_sha256
-            / parser_config_hash[:16]
+            / parser_config_hash
         )
         metadata_path = artifact_dir / "metadata.json"
         document_path = artifact_dir / "document.json"

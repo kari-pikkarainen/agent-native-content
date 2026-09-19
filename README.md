@@ -43,3 +43,23 @@ Add `--sources` to the download command to cache the referenced PDFs. Source
 files are content-addressed after their release-recorded size is verified;
 subsequent use rechecks SHA-256 and refuses silent replacement. Failed URLs are
 recorded in `data/cache/xl-docbench/failures.jsonl`.
+
+## Document ingestion
+
+Convert a downloaded or other local PDF into the authoritative serialized
+Docling representation with:
+
+```shell
+uv run contextbench ingest path/to/document.pdf
+```
+
+The command writes `document.json` and `metadata.json` beneath
+`data/cache/ingest`. Entries are keyed by the source SHA-256 and the full parser
+configuration fingerprint. Cache reuse verifies the serialized document hash,
+parser versions, configuration, schema version, and structural counts before
+loading it.
+
+Docling may download local model weights on first use. For controlled or
+offline runs, prefetch those weights and pass their directory with
+`--artifacts-dir`. Remote inference services are always disabled by this
+pipeline.
