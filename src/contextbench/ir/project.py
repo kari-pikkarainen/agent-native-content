@@ -75,16 +75,18 @@ def project_document(
         if parent_ref is not None:
             child_refs_by_ref[parent_ref].append(item.self_ref)
 
+    heading_paths = _heading_paths(items)
+
     nodes = tuple(
         _project_node(
             document=document,
             item=item,
             ordinal=ordinal,
             document_id=document_id,
-            item_by_ref=item_by_ref,
             node_id_by_ref=node_id_by_ref,
             parent_ref_by_ref=parent_ref_by_ref,
             child_refs_by_ref=child_refs_by_ref,
+            heading_path=heading_paths[item.self_ref],
             token_counter=token_counter,
         )
         for ordinal, item in enumerate(items)
@@ -142,10 +144,10 @@ def _project_node(
     item: NodeItem,
     ordinal: int,
     document_id: str,
-    item_by_ref: dict[str, NodeItem],
     node_id_by_ref: dict[str, str],
     parent_ref_by_ref: dict[str, str | None],
     child_refs_by_ref: dict[str, list[str]],
+    heading_path: tuple[str, ...],
     token_counter: TokenCounter,
 ) -> IRNode:
     source_ref = item.self_ref
@@ -171,11 +173,7 @@ def _project_node(
         ),
         ordinal=ordinal,
         text=text,
-        heading_path=_heading_path(
-            source_ref,
-            item_by_ref=item_by_ref,
-            parent_ref_by_ref=parent_ref_by_ref,
-        ),
+        heading_path=heading_path,
         page_start=min(pages) if pages else None,
         page_end=max(pages) if pages else None,
         bounding_boxes=boxes,
@@ -239,18 +237,22 @@ def _project_table(document: DoclingDocument, item: TableItem) -> IRTable:
         key=lambda cell: (cell.start_row_offset_idx, cell.start_col_offset_idx),
     )
     for cell in ordered_cells:
-        row = cell.start_row_offset_idx
-        column = cell.start_col_offset_idx
-        if not (0 <= row < data.num_rows and 0 <= column < data.num_cols):
+        row_start = cell.start_row_offset_idx
+        row_end = cell.end_row_offset_idx
+        column_start = cell.start_col_offset_idx
+        column_end = cell.end_col_offset_idx
+        if not (
+            0 <= row_start < row_end <= data.num_rows
+            and 0 <= column_start < column_end <= data.num_cols
+        ):
             raise IRProjectionError(
                 f"table {item.self_ref} contains an out-of-bounds cell"
             )
-        rows[row][column] = cell.text
+        for row in range(row_start, row_end):
+            for column in range(column_start, column_end):
+                rows[row][column] = cell.text
         if cell.column_header:
-            for header_column in range(
-                cell.start_col_offset_idx,
-                min(cell.end_col_offset_idx, data.num_cols),
-            ):
+            for header_column in range(column_start, column_end):
                 if cell.text not in header_parts[header_column]:
                     header_parts[header_column].append(cell.text)
     column_headers = tuple(" / ".join(parts) for parts in header_parts)
@@ -280,26 +282,32 @@ def _bounding_boxes(item: NodeItem) -> tuple[IRBoundingBox, ...]:
     )
 
 
-def _heading_path(
-    source_ref: str,
-    *,
-    item_by_ref: dict[str, NodeItem],
-    parent_ref_by_ref: dict[str, str | None],
-) -> tuple[str, ...]:
-    headings: list[str] = []
-    seen: set[str] = set()
-    current_ref: str | None = source_ref
-    while current_ref is not None:
-        if current_ref in seen:
-            raise IRProjectionError(f"cycle in source hierarchy at {current_ref}")
-        seen.add(current_ref)
-        item = item_by_ref[current_ref]
-        if _node_kind(item) in {IRNodeKind.TITLE, IRNodeKind.HEADING}:
-            text = _node_text_for_heading(item)
-            if text:
-                headings.append(text)
-        current_ref = parent_ref_by_ref[current_ref]
-    return tuple(reversed(headings))
+def _heading_paths(items: list[NodeItem]) -> dict[str, tuple[str, ...]]:
+    """Resolve section context from document order and Docling heading levels."""
+    title: str | None = None
+    headings: list[tuple[int, str]] = []
+    paths: dict[str, tuple[str, ...]] = {}
+    for item in items:
+        content_layer = getattr(item.content_layer, "value", item.content_layer)
+        if content_layer != "body":
+            paths[item.self_ref] = ()
+            continue
+
+        kind = _node_kind(item)
+        text = _node_text_for_heading(item)
+        if kind == IRNodeKind.TITLE:
+            title = text or None
+            headings.clear()
+        elif kind == IRNodeKind.HEADING and text:
+            level = getattr(item, "level", None)
+            normalized_level = level if isinstance(level, int) and level > 0 else 1
+            while headings and headings[-1][0] >= normalized_level:
+                headings.pop()
+            headings.append((normalized_level, text))
+
+        prefix = (title,) if title else ()
+        paths[item.self_ref] = prefix + tuple(text for _level, text in headings)
+    return paths
 
 
 def _node_text_for_heading(item: NodeItem) -> str:

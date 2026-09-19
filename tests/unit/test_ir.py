@@ -186,6 +186,83 @@ def test_projection_is_stable_across_repeated_builds(tmp_path: Path) -> None:
     assert [node.ordinal for node in first.nodes] == list(range(len(first.nodes)))
 
 
+def test_heading_paths_follow_flat_docling_heading_levels(tmp_path: Path) -> None:
+    document = DoclingDocument(name="flat")
+    document.add_page(1, Size(width=612, height=792))
+    document.add_heading("First", level=1)
+    document.add_heading("Nested", level=2)
+    nested_text = document.add_text(
+        label=DocItemLabel.TEXT,
+        text="Nested evidence.",
+    )
+    document.add_heading("Second", level=1)
+    second_text = document.add_text(
+        label=DocItemLabel.TEXT,
+        text="Second evidence.",
+    )
+
+    ir = project_document(
+        document,
+        ingest_metadata(tmp_path),
+        tokenizer=FixtureTokenCounter(),
+    )
+
+    nested_node = next(
+        node for node in ir.nodes if nested_text.self_ref in node.source_item_ids
+    )
+    second_node = next(
+        node for node in ir.nodes if second_text.self_ref in node.source_item_ids
+    )
+    assert nested_node.heading_path == ("First", "Nested")
+    assert second_node.heading_path == ("Second",)
+
+
+def test_table_spans_are_expanded_into_the_logical_grid(tmp_path: Path) -> None:
+    document = DoclingDocument(name="merged-table")
+    document.add_page(1, Size(width=612, height=792))
+    document.add_table(
+        data=TableData(
+            num_rows=2,
+            num_cols=2,
+            table_cells=[
+                TableCell(
+                    start_row_offset_idx=0,
+                    end_row_offset_idx=1,
+                    start_col_offset_idx=0,
+                    end_col_offset_idx=2,
+                    text="Metrics",
+                    column_header=True,
+                ),
+                TableCell(
+                    start_row_offset_idx=1,
+                    end_row_offset_idx=2,
+                    start_col_offset_idx=0,
+                    end_col_offset_idx=1,
+                    text="Revenue",
+                ),
+                TableCell(
+                    start_row_offset_idx=1,
+                    end_row_offset_idx=2,
+                    start_col_offset_idx=1,
+                    end_col_offset_idx=2,
+                    text="42",
+                ),
+            ],
+        )
+    )
+
+    ir = project_document(
+        document,
+        ingest_metadata(tmp_path),
+        tokenizer=FixtureTokenCounter(),
+    )
+    table = next(node.table for node in ir.nodes if node.kind == IRNodeKind.TABLE)
+
+    assert table is not None
+    assert table.column_headers == ("Metrics", "Metrics")
+    assert table.rows == (("Metrics", "Metrics"), ("Revenue", "42"))
+
+
 def test_json_round_trip_is_identical_and_canonical(tmp_path: Path) -> None:
     ir = build_ir(tmp_path)
     first_path = tmp_path / "first.json"
@@ -213,6 +290,14 @@ def test_json_round_trip_is_identical_and_canonical(tmp_path: Path) -> None:
         (
             lambda value: value["nodes"][2]["bounding_boxes"][0].update(
                 {"page_no": 3}
+            ),
+            "unknown page",
+        ),
+        (
+            lambda value: (
+                value["nodes"][3].update(
+                    {"page_start": 3, "page_end": 3, "bounding_boxes": []}
+                )
             ),
             "unknown page",
         ),

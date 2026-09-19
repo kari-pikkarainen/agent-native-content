@@ -24,9 +24,6 @@ uv run ruff check .
 uv run pytest
 ```
 
-The initial scaffold intentionally contains no document parsing, retrieval,
-embedding, or model integration.
-
 ## XL-DocBench dataset
 
 The adapter is pinned to Microsoft's conservative
@@ -63,3 +60,22 @@ Docling may download local model weights on first use. For controlled or
 offline runs, prefetch those weights and pass their directory with
 `--artifacts-dir`. Remote inference services are always disabled by this
 pipeline.
+
+## Minimal IR
+
+Project an ingested `DoclingDocument` into the validated, structure-preserving
+IR through the Python API:
+
+```python
+from contextbench.ir import project_document, save_ir_document
+
+ir = project_document(ingest_result.document, ingest_result.metadata)
+save_ir_document(ir, output_path)
+```
+
+The projection has deterministic IDs and ordering, preserves hierarchy,
+heading paths, tables, page provenance, and source hashes, and uses the fixed
+`o200k_base` encoding for token counts. The authoritative parsed artifact
+remains the serialized `DoclingDocument`; embeddings and other retrieval
+indexes are deliberately excluded. See [the IR specification](docs/ir-spec.md)
+for the full contract.

@@ -36,5 +36,17 @@ or pipeline-setting change therefore selects a new cache entry. Cache hits
 verify document integrity and structural counts before deserialization. Partial
 Docling conversions are rejected rather than cached.
 
-The normalized benchmark IR remains a later projection from this artifact. It
-must not replace or mutate the serialized `DoclingDocument`.
+The normalized benchmark IR is a separate deterministic projection from this
+artifact. It must not replace or mutate the serialized `DoclingDocument`.
+
+## IR boundary
+
+The IR projection normalizes Docling items into a small validated graph while
+preserving source references, hierarchy, heading context, tables, page boxes,
+and token counts. Document and node identities derive from immutable source
+identity and Docling references, making repeated builds stable. Canonical JSON
+round-trips through the same validation rules.
+
+The IR contains source truth only. Embeddings, lexical statistics, retrieval
+scores, generated annotations, and later experiment outputs are derived state
+and remain outside it. See [`ir-spec.md`](ir-spec.md) for the normative schema.

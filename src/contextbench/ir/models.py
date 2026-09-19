@@ -146,7 +146,6 @@ class IRDocument(BaseModel):
         if {node.ordinal for node in self.nodes} != set(range(len(self.nodes))):
             raise ValueError("node ordinals must be unique and contiguous from zero")
 
-        source_item_ids: set[str] = set()
         valid_pages = set(self.page_numbers)
         for node in self.nodes:
             if node.document_id != self.id:
@@ -164,10 +163,10 @@ class IRDocument(BaseModel):
                 parent = by_id[node.parent_id]
                 if node.id not in parent.children_ids:
                     raise ValueError(f"child/parent mismatch for {node.id}")
-            for source_item_id in node.source_item_ids:
-                if source_item_id in source_item_ids:
-                    raise ValueError(f"duplicate source item ID: {source_item_id}")
-                source_item_ids.add(source_item_id)
+            if node.page_start is not None and (
+                node.page_start not in valid_pages or node.page_end not in valid_pages
+            ):
+                raise ValueError(f"node {node.id} references an unknown page")
             node_pages = {box.page_no for box in node.bounding_boxes}
             if not node_pages.issubset(valid_pages):
                 raise ValueError(f"node {node.id} references an unknown page")
