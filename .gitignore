@@ -1,0 +1,21 @@
+.DS_Store
+.python-version
+.pytest_cache/
+.ruff_cache/
+.venv/
+__pycache__/
+*.py[cod]
+
+# Downloaded datasets, parser caches, indexes, and benchmark outputs are local.
+data/cache/**
+data/processed/**
+data/raw/**
+artifacts/indexes/**
+artifacts/runs/**
+
+# Keep the expected directory layout in fresh clones.
+!data/cache/.gitkeep
+!data/processed/.gitkeep
+!data/raw/.gitkeep
+!artifacts/indexes/.gitkeep
+!artifacts/runs/.gitkeep
