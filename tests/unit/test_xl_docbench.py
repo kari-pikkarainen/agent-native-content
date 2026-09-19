@@ -1,0 +1,77 @@
+"""Tests for the XL-DocBench normalized adapter."""
+
+from pathlib import Path
+
+import pytest
+
+from contextbench.datasets.base import DatasetIntegrityError
+from contextbench.datasets.subsets import load_subset
+from contextbench.datasets.xl_docbench import XLDocBenchDataset
+
+FIXTURES = Path(__file__).parents[1] / "fixtures"
+
+
+@pytest.fixture
+def dataset() -> XLDocBenchDataset:
+    return XLDocBenchDataset(FIXTURES / "xl_docbench", verify_release=False)
+
+
+def test_iteration_is_sorted_and_repeatable(dataset: XLDocBenchDataset) -> None:
+    first = [question.id for question in dataset.iter_questions()]
+    second = [question.id for question in dataset.iter_questions()]
+
+    assert first == [
+        "adubench_cross_fixture_001",
+        "adubench_single_fixture_002",
+    ]
+    assert second == first
+
+
+def test_normalizes_single_document_evidence(dataset: XLDocBenchDataset) -> None:
+    question = dataset.get_question("adubench_single_fixture_002")
+
+    assert question.document_ids == ("doc_fixture_001",)
+    assert question.gold_answer == "alpha"
+    assert question.answerable is True
+    assert question.gold_evidence_pages == {"doc_fixture_001": (3,)}
+    assert question.gold_evidence[0].items[0].mentioned_elements == ("Table 1",)
+
+
+def test_normalizes_unanswerable_cross_document_question(
+    dataset: XLDocBenchDataset,
+) -> None:
+    question = dataset.get_question("adubench_cross_fixture_001")
+
+    assert question.document_ids == ("doc_fixture_002", "doc_fixture_003")
+    assert question.answerable is False
+    assert question.gold_evidence == ()
+
+
+def test_subset_preserves_committed_order(dataset: XLDocBenchDataset) -> None:
+    subset = load_subset(FIXTURES / "xl_fixture_subset.json")
+
+    first = [question.id for question in dataset.iter_subset(subset)]
+    second = [question.id for question in dataset.iter_subset(subset)]
+
+    assert first == [
+        "adubench_single_fixture_002",
+        "adubench_cross_fixture_001",
+    ]
+    assert second == first
+
+
+def test_subset_rejects_unknown_question(dataset: XLDocBenchDataset) -> None:
+    subset = load_subset(FIXTURES / "xl_fixture_subset.json").model_copy(
+        update={"question_ids": ("missing",)}
+    )
+
+    with pytest.raises(DatasetIntegrityError, match="unknown question"):
+        list(dataset.iter_subset(subset))
+
+
+def test_committed_xl100_is_unique_and_fixed_size() -> None:
+    subset = load_subset(Path("configs/subsets/xl100.json"))
+
+    assert len(subset.question_ids) == 100
+    assert len(set(subset.question_ids)) == 100
+    assert sum(subset.strata["domains"].values()) == 100

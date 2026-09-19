@@ -1,0 +1,13 @@
+{
+  "name": "fixture",
+  "dataset": "microsoft/XL-DocBench",
+  "release_version": "xldocbench_strict_1345_v1",
+  "release_revision": "72954bd70ffffe230f08b57c57fa9274ec14d7ea",
+  "selection_seed": 1,
+  "selection_method": "Fixture order",
+  "strata": {},
+  "question_ids": [
+    "adubench_single_fixture_002",
+    "adubench_cross_fixture_001"
+  ]
+}
