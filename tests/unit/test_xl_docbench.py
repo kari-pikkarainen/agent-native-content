@@ -117,3 +117,63 @@ def test_committed_xldev24_is_balanced_and_disjoint_from_xl100() -> None:
         "text_or_no_evidence": 18,
     }
     assert xldev24.strata["source_documents"] == 11
+
+
+def test_committed_xlholdout6_is_balanced_fresh_xl100_slice() -> None:
+    xl100 = load_subset(Path("configs/subsets/xl100.json"))
+    xl10 = load_subset(Path("configs/subsets/xl10.json"))
+    xldev24 = load_subset(Path("configs/subsets/xldev24.json"))
+    holdout = load_subset(Path("configs/subsets/xlholdout6.json"))
+
+    assert len(holdout.question_ids) == 6
+    assert set(holdout.question_ids).issubset(xl100.question_ids)
+    assert set(holdout.question_ids).isdisjoint(xl10.question_ids)
+    assert set(holdout.question_ids).isdisjoint(xldev24.question_ids)
+    assert holdout.strata["purpose"] == "directional_holdout_not_final_claims"
+    assert holdout.strata["domains"] == {
+        "finance_business": 1,
+        "legal_regulation": 1,
+        "medical_clinical": 1,
+        "narrative_literature": 1,
+        "scientific_academic": 1,
+        "technical_engineering": 1,
+    }
+    assert holdout.strata["task_type"] == {
+        "single_doc": 6,
+        "cross_doc": 0,
+    }
+    assert holdout.strata["answerability"] == {
+        "answerable": 6,
+        "unanswerable": 0,
+    }
+    assert set(holdout.strata["source_document_ids"]) == {
+        "doc_000015",
+        "doc_000100",
+        "doc_000133",
+        "doc_000157",
+        "doc_000220",
+        "doc_000244",
+    }
+    previously_used_documents = {
+        "doc_000001",
+        "doc_000003",
+        "doc_000008",
+        "doc_000056",
+        "doc_000061",
+        "doc_000072",
+        "doc_000097",
+        "doc_000102",
+        "doc_000134",
+        "doc_000143",
+        "doc_000166",
+        "doc_000216",
+        "doc_000253",
+        "doc_000309",
+        "doc_000321",
+        "doc_000362",
+    }
+    assert set(holdout.strata["source_document_ids"]).isdisjoint(
+        previously_used_documents
+    )
+    assert holdout.strata["source_documents"] == 6
+    assert holdout.strata["source_pages"] == 646

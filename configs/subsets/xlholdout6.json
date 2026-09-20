@@ -1,0 +1,50 @@
+{
+  "name": "xlholdout6",
+  "dataset": "microsoft/XL-DocBench",
+  "release_version": "xldocbench_strict_1345_v1",
+  "release_revision": "72954bd70ffffe230f08b57c57fa9274ec14d7ea",
+  "selection_seed": 20260920,
+  "selection_method": "Metadata- and source-availability-only directional holdout selection from committed XL100. Exclude every source document used by XL10 or XLDev24. Within each domain choose the lowest-page-count answerable single-document question whose pinned source passes PDF availability and integrity preflight; minimize pages, then bytes, with SHA-256(seed:question_id) tie-breaking. IDs are explicit and no retrieval results were produced or inspected.",
+  "strata": {
+    "purpose": "directional_holdout_not_final_claims",
+    "domains": {
+      "finance_business": 1,
+      "legal_regulation": 1,
+      "medical_clinical": 1,
+      "narrative_literature": 1,
+      "scientific_academic": 1,
+      "technical_engineering": 1
+    },
+    "task_type": {
+      "single_doc": 6,
+      "cross_doc": 0
+    },
+    "answerability": {
+      "answerable": 6,
+      "unanswerable": 0
+    },
+    "evidence_modality": {
+      "table_chart_or_image": 4,
+      "text_or_no_evidence": 2
+    },
+    "source_documents": 6,
+    "source_document_ids": [
+      "doc_000100",
+      "doc_000220",
+      "doc_000244",
+      "doc_000133",
+      "doc_000015",
+      "doc_000157"
+    ],
+    "source_pages": 646,
+    "source_bytes": 41604089
+  },
+  "question_ids": [
+    "adubench_single_000191",
+    "adubench_single_001103",
+    "adubench_single_000480",
+    "adubench_single_000265",
+    "adubench_single_000718",
+    "adubench_single_000311"
+  ]
+}
