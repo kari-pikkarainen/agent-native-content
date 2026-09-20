@@ -25,9 +25,16 @@ from contextbench.compiler.joins import (
     _row_keys,
     keyed_table_join_candidates,
 )
+from contextbench.compiler.models import CompilerCandidate
+from contextbench.compiler.pack import pack_candidates
 from contextbench.ir import project_document
 from contextbench.ir.models import IRNodeKind
-from contextbench.retrieval import RetrievalConfig, RetrievalScores
+from contextbench.retrieval import (
+    RetrievalArm,
+    RetrievalChunk,
+    RetrievalConfig,
+    RetrievalScores,
+)
 from contextbench.retrieval.index import HybridIndex
 from contextbench.retrieval.rerank import LexicalOverlapReranker
 
@@ -914,6 +921,23 @@ def test_keyed_table_join_is_prioritized_when_enabled(tmp_path: Path) -> None:
     assert "Joined table key: beta-2" in packet.items[0].content
     assert "Main References: [blank]" in packet.items[0].content
     assert packet.token_count <= packet.token_budget
+    assert "keyed_join" in packet.metadata["active_operators"]
+
+
+def test_simple_query_does_not_activate_specialized_operators(
+    compiler_fixture,
+) -> None:
+    _source, _ir, scope, counter = compiler_fixture
+
+    packet = compile_context(
+        "revenue",
+        scope,
+        40,
+        compiler_config(page_neighbor_radius=0),
+        tokenizer=counter,
+    )
+
+    assert packet.metadata["active_operators"] == ""
 
 
 @pytest.mark.parametrize("budget", range(0, 21))
@@ -975,3 +999,54 @@ def test_repeated_compilation_is_identical(compiler_fixture) -> None:
     )
 
     assert first == second
+
+
+def test_coverage_packing_prefers_uncovered_query_facets() -> None:
+    counter = FixtureTokenCounter()
+
+    def candidate(rank: int, text: str, page: int) -> CompilerCandidate:
+        chunk = RetrievalChunk(
+            id=f"chunk-{rank}",
+            arm=RetrievalArm.COMPILER,
+            document_id="document-1",
+            text=text,
+            token_count=counter.count(text),
+            page_start=page,
+            page_end=page,
+            source_node_ids=(f"node-{rank}",),
+            source_item_ids=(f"item-{rank}",),
+        )
+        return CompilerCandidate(
+            chunk=chunk,
+            scores=RetrievalScores(fused=1 / rank, reranked=1 / rank),
+            origin_rank=rank,
+            expansion_order=rank,
+        )
+
+    candidates = (
+        candidate(1, "alpha measure details", 1),
+        candidate(2, "alpha measure repeated", 1),
+        candidate(3, "beta result details", 2),
+    )
+    metadata = {"arm": "compiler"}
+
+    ranked = pack_candidates(
+        "alpha measure and beta result",
+        candidates,
+        token_budget=6,
+        tokenizer=counter,
+        strategy="ranked",
+        metadata=metadata,
+    )
+    coverage = pack_candidates(
+        "alpha measure and beta result",
+        candidates,
+        token_budget=6,
+        tokenizer=counter,
+        strategy="coverage",
+        metadata=metadata,
+    )
+
+    assert [item.page_start for item in ranked.items] == [1, 1]
+    assert [item.page_start for item in coverage.items] == [1, 2]
+    assert coverage.token_count == coverage.token_budget

@@ -23,8 +23,8 @@ Mean local `o200k_base` tokens across the two questions were:
 | IR | 49,940.5 |
 | ENRICHED, naïvely including all features | 119,732.0 |
 | ENRICHED, excluding calculation rows inline | 73,675.5 |
-| ENRICHED, excluding rows and capped at 128 inline features | 64,092.0 |
-| INDEXED, 32 selected features within a 2K feature budget | 53,493.5 |
+| ENRICHED, excluding rows and capped at 128 inline features | 64,012.0 |
+| INDEXED, 32 selected features within a 2K feature budget | 53,453.5 |
 
 Calculation-ready table rows remain in the reusable JSON-LD bundle, where an
 agent or tool can address them, but are not duplicated into the default answer

@@ -34,9 +34,12 @@ generator versions, and complete enrichment configuration.
   signals;
 - `definition`: source sentences containing deterministic definition signals;
 - `entity`: conservative names with an explicitly written parenthetical alias;
-- `relationship`: typed `alias_of` and `has_columns` relationships;
+- `relationship`: typed `alias_of`, `has_columns`, conservative `defined_as`,
+  and explicit source-reference links;
 - `table_schema`: source caption, column labels, and row count;
-- `table_row`: calculation-ready label/value mappings for source rows.
+- `table_row`: calculation-ready label/value mappings for source rows;
+- `quantity`: normalized value, unit/currency, and optional scale extracted from
+  source facts.
 
 Every feature has a stable content-derived ID, bounded importance and
 confidence signals, a heading path, page range, supporting IR node IDs,

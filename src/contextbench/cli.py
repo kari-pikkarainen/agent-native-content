@@ -235,6 +235,10 @@ def evaluate_retrieval(
             help="Maximum candidates reranked for each supplemental query facet.",
         ),
     ] = 250,
+    compiler_packing_strategy: Annotated[
+        str,
+        typer.Option(help="Compiler packing strategy: ranked or coverage."),
+    ] = "ranked",
     run_id: Annotated[
         str | None,
         typer.Option(help="Optional immutable run identifier."),
@@ -265,6 +269,7 @@ def evaluate_retrieval(
             query_facet_rerank_candidate_limit=(
                 compiler_query_facet_rerank_candidate_limit
             ),
+            packing_strategy=compiler_packing_strategy,
         ),
     )
     try:

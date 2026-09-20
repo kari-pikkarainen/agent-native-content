@@ -16,7 +16,7 @@ from contextbench.retrieval.models import (
     RetrievalScores,
 )
 
-COMPILER_VERSION = "0.6.0"
+COMPILER_VERSION = "0.7.0"
 
 
 class CompilerConfig(BaseModel):
@@ -52,6 +52,7 @@ class CompilerConfig(BaseModel):
     keyed_table_join_enabled: bool = True
     keyed_table_join_candidate_limit: int = Field(default=16, ge=1)
     keyed_table_join_empty_marker: str = Field(default="[blank]", min_length=1)
+    packing_strategy: Literal["ranked", "coverage"] = "ranked"
     max_expanded_candidates: int = Field(default=500, ge=1)
 
     @model_validator(mode="after")
@@ -95,6 +96,14 @@ class CompilerCandidate(BaseModel):
     expansion_order: int = Field(ge=0)
     priority_tier: int = Field(default=0, ge=0)
     allow_shared_source: bool = False
+    operator: Literal[
+        "retrieval",
+        "sibling",
+        "list_neighbor",
+        "table_fragment",
+        "keyed_join",
+        "page_neighbor",
+    ] = "retrieval"
 
 
 @dataclass(frozen=True)

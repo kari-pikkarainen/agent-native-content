@@ -1,6 +1,6 @@
 # Context Compiler v0 Specification
 
-Status: implemented compiler version `0.6.0`.
+Status: implemented compiler version `0.7.0`.
 
 The context compiler is benchmark Arm D. It consumes canonical IR documents
 and produces a deterministic, citation-ready `ContextPacket` for one query. It
@@ -144,6 +144,12 @@ are recomputed from the final rendered content, including heading and table
 prefixes. An item is skipped if adding it would exceed the requested budget;
 later smaller items remain eligible.
 
+An explicit `coverage` ablation greedily rewards marginal query-term, query-
+facet, named-table, page, and heading coverage while retaining reranker rank as
+a relevance prior. It never exceeds the token budget and records the selected
+strategy in packet metadata. Ranked packing remains the default until the
+coverage candidate passes the complete balanced development gate.
+
 `ContextPacket.token_count` is the sum of the returned evidence-content token
 counts and is validated to be no greater than `token_budget`. Prompt-template
 or answer-model system-message overhead is outside this evidence budget and
@@ -163,6 +169,12 @@ Every `ContextItem` contains:
 
 The packet metadata records the compiler version, full configuration hash,
 embedding model, reranker model, and tokenizer.
+
+It also records the packing strategy and the specialized operators actually
+present in the packet. Query faceting requires a splittable complex query;
+keyed joining requires at least two explicit table references and a valid exact
+join; page-neighbor backfill requires the configured large budget and unused
+core capacity.
 
 ## Determinism and exclusions
 

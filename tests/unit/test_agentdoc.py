@@ -122,6 +122,64 @@ def test_explicit_aliases_create_entities_and_typed_relationships(
     }
 
 
+def test_quantities_definitions_dates_and_references_are_machine_usable(
+    tmp_path: Path,
+) -> None:
+    source = source_document()
+    source.add_text(
+        label=DocItemLabel.TEXT,
+        text=(
+            "API means application programming interface. "
+            "Operating margin was 42% in 2025 and remained 42%. See Table A.1."
+        ),
+        prov=provenance(2, "API means application programming interface", 620),
+    )
+    document = project_document(
+        source,
+        ingest_metadata(tmp_path),
+        tokenizer=FixtureTokenCounter(),
+    )
+
+    enrichment = enrich_document(document)
+    quantity = next(
+        feature
+        for feature in enrichment.features
+        if feature.kind == AgentFeatureKind.QUANTITY
+    )
+    definition = next(
+        feature
+        for feature in enrichment.features
+        if feature.kind == AgentFeatureKind.RELATIONSHIP
+        and feature.attributes.get("predicate") == "defined_as"
+    )
+    reference = next(
+        feature
+        for feature in enrichment.features
+        if feature.kind == AgentFeatureKind.RELATIONSHIP
+        and feature.attributes.get("predicate") == "references"
+    )
+    dated_fact = next(
+        feature
+        for feature in enrichment.features
+        if feature.kind == AgentFeatureKind.KEY_FACT
+        and feature.attributes.get("dates") == ["2025"]
+    )
+
+    assert quantity.attributes == {"value": "42", "unit": "%", "scale": None}
+    assert sum(
+        feature.kind == AgentFeatureKind.QUANTITY
+        and feature.attributes["value"] == "42"
+        for feature in enrichment.features
+    ) == 1
+    assert definition.attributes == {
+        "subject": "API",
+        "predicate": "defined_as",
+        "object": "application programming interface",
+    }
+    assert reference.attributes["object"] == "Table A.1"
+    assert dated_fact.attributes["contains_date"] is True
+
+
 def test_duplicate_table_rows_have_distinct_stable_feature_ids(
     tmp_path: Path,
 ) -> None:

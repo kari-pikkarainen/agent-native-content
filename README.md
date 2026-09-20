@@ -126,6 +126,10 @@ expansion, adjacent-list grouping, table preservation, provenance-aware
 deduplication, and exact-token packing without an LLM call. See
 [docs/compiler-spec.md](docs/compiler-spec.md) for the full contract.
 
+Use `--compiler-packing-strategy coverage` to run the measured coverage-aware
+packing ablation. The selected default remains `ranked` until the candidate is
+confirmed on the complete balanced development set.
+
 ## Evidence-only retrieval benchmark
 
 Run the registered XL100 comparison for fixed RAG, structural RAG, source-order

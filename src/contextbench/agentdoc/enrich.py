@@ -36,6 +36,26 @@ _NORMATIVE = re.compile(
     r"increase(?:d|s)?|decrease(?:d|s)?|deadline|effective)\b",
     re.IGNORECASE,
 )
+_QUANTITY = re.compile(
+    r"(?P<currency>[$£€¥])?\s*(?P<value>\d[\d,]*(?:\.\d+)?)\s*"
+    r"(?:(?P<scale>thousand|million|billion|trillion)\s*)?"
+    r"(?P<unit>%|percent|USD|EUR|GBP|JPY|kg|g|km|m|cm|mm|ms|s|hours?|days?)?"
+    r"(?=\s|[.,;:!?)]|$)",
+    re.IGNORECASE,
+)
+_EXPLICIT_REFERENCE = re.compile(
+    r"\b(?P<type>Table|Figure|Section|Appendix)\s+"
+    r"(?P<label>[A-Z0-9]+(?:[.\-][A-Z0-9]+)*)\b",
+    re.IGNORECASE,
+)
+_DEFINITION_PARTS = re.compile(
+    r"^(?P<subject>.{1,80}?)\s+"
+    r"(?:means|refers to|is defined as)\s+"
+    r"(?P<object>.{1,240}?)[.]?$",
+    re.IGNORECASE,
+)
+_CURRENCY_UNITS = {"$": "USD", "£": "GBP", "€": "EUR", "¥": "JPY"}
+_UNIT_ALIASES = {"percent": "%", "hour": "hours", "day": "days"}
 _SUMMARY_KINDS = {
     IRNodeKind.PARAGRAPH,
     IRNodeKind.LIST_ITEM,
@@ -93,8 +113,8 @@ def enrich_document(
                     attributes={"extractive": True},
                 )
             )
-
     seen_facts: set[str] = set()
+    seen_quantities: set[tuple[str, str, str, str | None]] = set()
     fact_count = 0
     for node in nodes:
         if node.kind not in _SUMMARY_KINDS:
@@ -131,17 +151,91 @@ def enrich_document(
                         "extractive": True,
                         "contains_number": numeric,
                         "contains_date": date,
+                        "dates": list(_dates(sentence)),
+                        "explicit_references": [
+                            target for _kind, target in _references(sentence)
+                        ],
                         "exception": exception,
                         "normative": normative,
                     },
                 )
             )
+            if resolved.include_quantities:
+                for quantity in _quantities(sentence):
+                    identity = (
+                        node.id,
+                        quantity["value"] or "",
+                        quantity["unit"] or "",
+                        quantity["scale"],
+                    )
+                    if identity in seen_quantities:
+                        continue
+                    seen_quantities.add(identity)
+                    features.append(
+                        _feature(
+                            AgentFeatureKind.QUANTITY,
+                            quantity["text"],
+                            document=document,
+                            nodes=(node,),
+                            importance=0.82,
+                            confidence=0.99,
+                            attributes={
+                                key: value
+                                for key, value in quantity.items()
+                                if key != "text"
+                            },
+                        )
+                    )
+            if definition and resolved.include_relationships:
+                parts = _definition_parts(sentence)
+                if parts is not None:
+                    subject, object_value = parts
+                    features.append(
+                        _feature(
+                            AgentFeatureKind.RELATIONSHIP,
+                            f"{subject} defined as {object_value}.",
+                            document=document,
+                            nodes=(node,),
+                            importance=0.88,
+                            confidence=0.96,
+                            attributes={
+                                "subject": subject,
+                                "predicate": "defined_as",
+                                "object": object_value,
+                            },
+                        )
+                    )
             seen_facts.add(normalized)
             fact_count += 1
             if fact_count >= resolved.max_key_facts:
                 break
         if fact_count >= resolved.max_key_facts:
             break
+
+    if resolved.include_explicit_references and resolved.include_relationships:
+        seen_references: set[tuple[str, str]] = set()
+        for node in nodes:
+            for reference_type, target in _references(node.text):
+                identity = (node.id, target.casefold())
+                if identity in seen_references:
+                    continue
+                seen_references.add(identity)
+                features.append(
+                    _feature(
+                        AgentFeatureKind.RELATIONSHIP,
+                        f"Source passage references {target}.",
+                        document=document,
+                        nodes=(node,),
+                        importance=0.76,
+                        confidence=1.0,
+                        attributes={
+                            "subject": node.id,
+                            "predicate": "references",
+                            "object": target,
+                            "reference_type": reference_type,
+                        },
+                    )
+                )
 
     if resolved.include_explicit_aliases:
         seen_entities: set[tuple[str, str]] = set()
@@ -317,6 +411,52 @@ def _sentences(text: str) -> tuple[str, ...]:
             if sentence.strip()
         )
     return tuple(values)
+
+
+def _quantities(text: str) -> tuple[dict[str, str | None], ...]:
+    quantities = []
+    for match in _QUANTITY.finditer(text):
+        currency = match.group("currency")
+        raw_unit = match.group("unit")
+        if currency is None and raw_unit is None:
+            continue
+        unit = _CURRENCY_UNITS.get(currency or "", raw_unit or "")
+        unit = _UNIT_ALIASES.get(
+            unit.casefold(),
+            unit.upper() if len(unit) == 3 else unit,
+        )
+        quantities.append(
+            {
+                "text": " ".join(match.group(0).split()),
+                "value": match.group("value").replace(",", ""),
+                "unit": unit,
+                "scale": match.group("scale").casefold()
+                if match.group("scale")
+                else None,
+            }
+        )
+    return tuple(quantities)
+
+
+def _definition_parts(text: str) -> tuple[str, str] | None:
+    match = _DEFINITION_PARTS.match(text.strip())
+    if match is None:
+        return None
+    return match.group("subject").strip(), match.group("object").strip()
+
+
+def _dates(text: str) -> tuple[str, ...]:
+    return tuple(dict.fromkeys(match.group(0) for match in _DATE.finditer(text)))
+
+
+def _references(text: str) -> tuple[tuple[str, str], ...]:
+    return tuple(
+        (
+            match.group("type").casefold(),
+            f"{match.group('type').title()} {match.group('label')}",
+        )
+        for match in _EXPLICIT_REFERENCE.finditer(text)
+    )
 
 
 def _table_schema_text(

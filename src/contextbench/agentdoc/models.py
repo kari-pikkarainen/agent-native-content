@@ -20,6 +20,7 @@ class AgentFeatureKind(StrEnum):
     RELATIONSHIP = "relationship"
     TABLE_SCHEMA = "table_schema"
     TABLE_ROW = "table_row"
+    QUANTITY = "quantity"
 
 
 class AgentEnrichmentConfig(BaseModel):
@@ -36,6 +37,8 @@ class AgentEnrichmentConfig(BaseModel):
     include_table_schemas: bool = True
     include_table_rows: bool = True
     include_relationships: bool = True
+    include_quantities: bool = True
+    include_explicit_references: bool = True
     max_table_rows: int = Field(default=2000, ge=1)
 
 

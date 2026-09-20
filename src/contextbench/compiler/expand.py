@@ -124,6 +124,7 @@ def expand_candidates(
                         origin_rank=evidence.rank,
                         expansion_order=expansion_order,
                         allow_shared_source=True,
+                        operator="table_fragment",
                     )
                 )
                 expansion_order += 1
@@ -143,6 +144,7 @@ def expand_candidates(
                         evidence=evidence,
                         penalty=config.sibling_score_penalty**distance,
                         relation="sibling",
+                        operator="sibling",
                         config=config,
                         tokenizer=tokenizer,
                         expansion_order=expansion_order,
@@ -162,6 +164,7 @@ def expand_candidates(
                         evidence=evidence,
                         penalty=config.list_score_penalty**distance,
                         relation="list-neighbor",
+                        operator="list_neighbor",
                         config=config,
                         tokenizer=tokenizer,
                         expansion_order=expansion_order,
@@ -364,6 +367,7 @@ def _page_neighbor_candidates(
                 origin_rank=evidence.rank,
                 expansion_order=offset,
                 priority_tier=1,
+                operator="page_neighbor",
             )
         )
     expanded.sort(
@@ -442,6 +446,7 @@ def _candidate_for_related_node(
     evidence: RankedEvidence,
     penalty: float,
     relation: str,
+    operator: str,
     config: CompilerConfig,
     tokenizer: TokenCounter,
     expansion_order: int,
@@ -468,6 +473,7 @@ def _candidate_for_related_node(
         scores=_penalize(evidence.scores, penalty),
         origin_rank=evidence.rank,
         expansion_order=expansion_order,
+        operator=operator,
     )
 
 

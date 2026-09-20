@@ -34,6 +34,7 @@ class RepresentationExperimentConfig(AnswerModelConfig):
         AgentFeatureKind.ENTITY,
         AgentFeatureKind.RELATIONSHIP,
         AgentFeatureKind.TABLE_SCHEMA,
+        AgentFeatureKind.QUANTITY,
     )
     max_inline_features: int = Field(default=128, ge=1)
     indexed_max_features: int = Field(default=32, ge=1)

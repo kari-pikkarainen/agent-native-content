@@ -8,7 +8,7 @@ from contextbench.compiler.candidates import node_chunks
 from contextbench.compiler.corpus import CompilerCorpusIndex
 from contextbench.compiler.dedupe import deduplicate_candidates
 from contextbench.compiler.expand import expand_candidates
-from contextbench.compiler.facets import retrieve_faceted
+from contextbench.compiler.facets import query_facets, retrieve_faceted
 from contextbench.compiler.models import (
     COMPILER_VERSION,
     CompilerConfig,
@@ -163,11 +163,19 @@ def compile_context_with_trace(
     unique = deduplicate_candidates(expanded, scope.documents)[
         : my_config.max_expanded_candidates
     ]
+    active_operators = []
+    if my_config.query_faceting_enabled and query_facets(
+        query,
+        limit=my_config.query_facet_limit,
+        min_terms=my_config.query_facet_min_terms,
+    ):
+        active_operators.append("query_faceting")
     packet = pack_candidates(
         query,
         unique,
         token_budget=token_budget,
         tokenizer=counter,
+        strategy=my_config.packing_strategy,
         metadata={
             "arm": "compiler",
             "compiler_version": COMPILER_VERSION,
@@ -175,6 +183,8 @@ def compile_context_with_trace(
             "embedding_model": index.embedder.name,
             "reranker_model": index.reranker.name,
             "tokenizer": counter.name,
+            "packing_strategy": my_config.packing_strategy,
+            "active_operators": ",".join(active_operators),
         },
     )
     return packet, CompilerTrace(

@@ -159,6 +159,7 @@ def keyed_table_join_candidates(
             origin_rank=rank,
             expansion_order=rank - 1,
             allow_shared_source=True,
+            operator="keyed_join",
         )
         for rank, (
             (chunk, lexical_score, _group_key),
