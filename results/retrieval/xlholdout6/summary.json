@@ -1,0 +1,149 @@
+{
+  "rows": [
+    {
+      "full_evidence_coverage_rate": 0.0,
+      "mean_context_tokens": 2046.3333333333333,
+      "mean_evidence_page_recall": 0.2298756798756799,
+      "mean_redundancy": 0.11999121543054575,
+      "mean_retrieval_latency_ms": 4251.464263666667,
+      "median_context_tokens": 2047.5,
+      "median_tokens_to_full_evidence": null,
+      "question_count": 6,
+      "system": "compiler",
+      "token_budget": 2048
+    },
+    {
+      "full_evidence_coverage_rate": 0.0,
+      "mean_context_tokens": 4092.8333333333335,
+      "mean_evidence_page_recall": 0.39522144522144526,
+      "mean_redundancy": 0.17034995662357852,
+      "mean_retrieval_latency_ms": 4014.8225763333335,
+      "median_context_tokens": 4093.0,
+      "median_tokens_to_full_evidence": null,
+      "question_count": 6,
+      "system": "compiler",
+      "token_budget": 4096
+    },
+    {
+      "full_evidence_coverage_rate": 0.0,
+      "mean_context_tokens": 8190.666666666667,
+      "mean_evidence_page_recall": 0.4875291375291375,
+      "mean_redundancy": 0.19390769990058743,
+      "mean_retrieval_latency_ms": 4014.3799305,
+      "median_context_tokens": 8190.5,
+      "median_tokens_to_full_evidence": null,
+      "question_count": 6,
+      "system": "compiler",
+      "token_budget": 8192
+    },
+    {
+      "full_evidence_coverage_rate": 0.16666666666666666,
+      "mean_context_tokens": 16379.666666666666,
+      "mean_evidence_page_recall": 0.6966200466200466,
+      "mean_redundancy": 0.22775032723780972,
+      "mean_retrieval_latency_ms": 4015.4633816666665,
+      "median_context_tokens": 16380.5,
+      "median_tokens_to_full_evidence": 10818.0,
+      "question_count": 6,
+      "system": "compiler",
+      "token_budget": 16384
+    },
+    {
+      "full_evidence_coverage_rate": 0.0,
+      "mean_context_tokens": 2022.8333333333333,
+      "mean_evidence_page_recall": 0.2642191142191142,
+      "mean_redundancy": 0.10381931516403049,
+      "mean_retrieval_latency_ms": 1148.2646596666666,
+      "median_context_tokens": 2026.5,
+      "median_tokens_to_full_evidence": null,
+      "question_count": 6,
+      "system": "fixed",
+      "token_budget": 2048
+    },
+    {
+      "full_evidence_coverage_rate": 0.0,
+      "mean_context_tokens": 4048.0,
+      "mean_evidence_page_recall": 0.38986013986013984,
+      "mean_redundancy": 0.146371107324028,
+      "mean_retrieval_latency_ms": 1147.2931806666668,
+      "median_context_tokens": 4056.5,
+      "median_tokens_to_full_evidence": null,
+      "question_count": 6,
+      "system": "fixed",
+      "token_budget": 4096
+    },
+    {
+      "full_evidence_coverage_rate": 0.0,
+      "mean_context_tokens": 8104.666666666667,
+      "mean_evidence_page_recall": 0.5216783216783217,
+      "mean_redundancy": 0.21177612544119626,
+      "mean_retrieval_latency_ms": 1147.4002013333334,
+      "median_context_tokens": 8122.5,
+      "median_tokens_to_full_evidence": null,
+      "question_count": 6,
+      "system": "fixed",
+      "token_budget": 8192
+    },
+    {
+      "full_evidence_coverage_rate": 0.16666666666666666,
+      "mean_context_tokens": 16196.166666666666,
+      "mean_evidence_page_recall": 0.7353146853146854,
+      "mean_redundancy": 0.23863856262669422,
+      "mean_retrieval_latency_ms": 1147.3518956666667,
+      "median_context_tokens": 16229.0,
+      "median_tokens_to_full_evidence": 13448.0,
+      "question_count": 6,
+      "system": "fixed",
+      "token_budget": 16384
+    },
+    {
+      "full_evidence_coverage_rate": 0.0,
+      "mean_context_tokens": 2028.5,
+      "mean_evidence_page_recall": 0.2505827505827506,
+      "mean_redundancy": 0.09615217619437338,
+      "mean_retrieval_latency_ms": 1474.9670415,
+      "median_context_tokens": 2024.5,
+      "median_tokens_to_full_evidence": null,
+      "question_count": 6,
+      "system": "structural",
+      "token_budget": 2048
+    },
+    {
+      "full_evidence_coverage_rate": 0.0,
+      "mean_context_tokens": 4087.6666666666665,
+      "mean_evidence_page_recall": 0.33240093240093244,
+      "mean_redundancy": 0.11015747682365812,
+      "mean_retrieval_latency_ms": 1474.2554373333332,
+      "median_context_tokens": 4091.0,
+      "median_tokens_to_full_evidence": null,
+      "question_count": 6,
+      "system": "structural",
+      "token_budget": 4096
+    },
+    {
+      "full_evidence_coverage_rate": 0.0,
+      "mean_context_tokens": 8184.666666666667,
+      "mean_evidence_page_recall": 0.5778554778554779,
+      "mean_redundancy": 0.16412466028533806,
+      "mean_retrieval_latency_ms": 1474.3095346666667,
+      "median_context_tokens": 8184.0,
+      "median_tokens_to_full_evidence": null,
+      "question_count": 6,
+      "system": "structural",
+      "token_budget": 8192
+    },
+    {
+      "full_evidence_coverage_rate": 0.3333333333333333,
+      "mean_context_tokens": 16327.0,
+      "mean_evidence_page_recall": 0.7669386169386169,
+      "mean_redundancy": 0.18562952765399732,
+      "mean_retrieval_latency_ms": 1474.3810206666667,
+      "median_context_tokens": 16335.0,
+      "median_tokens_to_full_evidence": 14680.5,
+      "question_count": 6,
+      "system": "structural",
+      "token_budget": 16384
+    }
+  ],
+  "run_id": "xlholdout6-faceted-fcca4d0"
+}

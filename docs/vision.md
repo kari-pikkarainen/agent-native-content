@@ -1,9 +1,9 @@
-# Open Content IR Vision
+# Agent-Native Content Vision
 
 ## The idea
 
 AI systems repeatedly decode the same source content into temporary chunks,
-embeddings, summaries, and prompt fragments. Open Content IR explores a
+embeddings, summaries, and prompt fragments. Agent-Native Content explores a
 different boundary: decode a source once into a durable, structure-preserving,
 provenance-aware representation, then derive task-specific views from it.
 

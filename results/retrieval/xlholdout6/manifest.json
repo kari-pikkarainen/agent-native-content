@@ -1,0 +1,155 @@
+{
+  "config": {
+    "budgets": [
+      2048,
+      4096,
+      8192,
+      16384
+    ],
+    "compiler": {
+      "group_adjacent_list_items": true,
+      "include_heading_context": true,
+      "include_next_sibling": false,
+      "include_previous_sibling": false,
+      "list_neighbor_limit": 1,
+      "list_score_penalty": 0.9,
+      "max_expanded_candidates": 500,
+      "page_neighbor_candidate_limit": 64,
+      "page_neighbor_min_budget": 16384,
+      "page_neighbor_origin_limit": 20,
+      "page_neighbor_radius": 3,
+      "page_neighbor_score_penalty": 0.8,
+      "preserve_tables": true,
+      "query_facet_full_weight": 2.0,
+      "query_facet_limit": 3,
+      "query_facet_min_terms": 3,
+      "query_faceting_enabled": true,
+      "retrieval": {
+        "candidate_limit": 40,
+        "candidate_token_multiplier": 3.0,
+        "embedding_dimensions": 256,
+        "embedding_model": "BAAI/bge-small-en-v1.5",
+        "fixed_chunk_tokens": 512,
+        "fixed_overlap_tokens": 64,
+        "max_candidate_limit": 500,
+        "max_rerank_limit": 250,
+        "rerank_limit": 20,
+        "rerank_token_multiplier": 2.0,
+        "reranker_model": "cross-encoder/ms-marco-MiniLM-L-6-v2",
+        "rrf_k": 60,
+        "sparse_b": 0.75,
+        "sparse_k1": 1.5,
+        "structural_chunk_tokens": 512,
+        "tokenizer_name": "o200k_base"
+      },
+      "sibling_neighbor_limit": 1,
+      "sibling_score_penalty": 0.85,
+      "table_chunk_tokens": 512
+    },
+    "retrieval": {
+      "candidate_limit": 40,
+      "candidate_token_multiplier": 3.0,
+      "embedding_dimensions": 256,
+      "embedding_model": "BAAI/bge-small-en-v1.5",
+      "fixed_chunk_tokens": 512,
+      "fixed_overlap_tokens": 64,
+      "max_candidate_limit": 500,
+      "max_rerank_limit": 250,
+      "rerank_limit": 20,
+      "rerank_token_multiplier": 2.0,
+      "reranker_model": "cross-encoder/ms-marco-MiniLM-L-6-v2",
+      "rrf_k": 60,
+      "sparse_b": 0.75,
+      "sparse_k1": 1.5,
+      "structural_chunk_tokens": 512,
+      "tokenizer_name": "o200k_base"
+    },
+    "seed": 20260919,
+    "systems": [
+      "fixed",
+      "structural",
+      "compiler"
+    ]
+  },
+  "config_sha256": "3b5f29dbbc10bc66ecddae1de588fcdc7c5b4e10125a00087483c66d3691f166",
+  "created_at": "2026-09-20T13:52:58.958228+00:00",
+  "dataset": "microsoft/XL-DocBench",
+  "dataset_revision": "72954bd70ffffe230f08b57c57fa9274ec14d7ea",
+  "dataset_version": "xldocbench_strict_1345_v1",
+  "documents": {
+    "doc_000015": {
+      "ir_document_id": "doc_e35566598f6a01942bf854d67d96b8ab41104ae2535455c01ec0ab41771bd7ea",
+      "parser_core_version": "2.97.1",
+      "parser_name": "docling",
+      "parser_version": "2.129.0",
+      "source_sha256": "e35566598f6a01942bf854d67d96b8ab41104ae2535455c01ec0ab41771bd7ea"
+    },
+    "doc_000100": {
+      "ir_document_id": "doc_fd8007382eaee7919aef0af5706b9e030308363f968c0b14d0adab999622fa03",
+      "parser_core_version": "2.97.1",
+      "parser_name": "docling",
+      "parser_version": "2.129.0",
+      "source_sha256": "fd8007382eaee7919aef0af5706b9e030308363f968c0b14d0adab999622fa03"
+    },
+    "doc_000133": {
+      "ir_document_id": "doc_63fa9023b5b27103bf997067084a180cfd7416b6350e641da8cfbfc614ad2eef",
+      "parser_core_version": "2.97.1",
+      "parser_name": "docling",
+      "parser_version": "2.129.0",
+      "source_sha256": "63fa9023b5b27103bf997067084a180cfd7416b6350e641da8cfbfc614ad2eef"
+    },
+    "doc_000157": {
+      "ir_document_id": "doc_d457000e8a76686cb3d6118f959b06fddfa0593d3248685730cedf39f52306fd",
+      "parser_core_version": "2.97.1",
+      "parser_name": "docling",
+      "parser_version": "2.129.0",
+      "source_sha256": "d457000e8a76686cb3d6118f959b06fddfa0593d3248685730cedf39f52306fd"
+    },
+    "doc_000220": {
+      "ir_document_id": "doc_4c7caef766c5efdc96a9c82942ac9190c9833d6ff3ae90d6b9b10dbb7eb8cd84",
+      "parser_core_version": "2.97.1",
+      "parser_name": "docling",
+      "parser_version": "2.129.0",
+      "source_sha256": "4c7caef766c5efdc96a9c82942ac9190c9833d6ff3ae90d6b9b10dbb7eb8cd84"
+    },
+    "doc_000244": {
+      "ir_document_id": "doc_cea3346afed43400a91e371fc13871a6948d5ddaca68d17f48e6d9144aba2fad",
+      "parser_core_version": "2.97.1",
+      "parser_name": "docling",
+      "parser_version": "2.129.0",
+      "source_sha256": "cea3346afed43400a91e371fc13871a6948d5ddaca68d17f48e6d9144aba2fad"
+    }
+  },
+  "embedding_model": "BAAI/bge-small-en-v1.5",
+  "embedding_version": "5.7.0",
+  "git_commit": "fcca4d093c0dcd5e264d1379bf17355cdcb4db8d",
+  "platform": "macOS-26.6.2-arm64-arm-64bit-Mach-O",
+  "python_version": "3.14.7",
+  "question_ids": [
+    "adubench_single_000191",
+    "adubench_single_001103",
+    "adubench_single_000480",
+    "adubench_single_000265",
+    "adubench_single_000718",
+    "adubench_single_000311"
+  ],
+  "reranker_model": "cross-encoder/ms-marco-MiniLM-L-6-v2",
+  "reranker_version": "5.7.0",
+  "run_id": "xlholdout6-faceted-fcca4d0",
+  "seed": 20260919,
+  "subset_name": "xlholdout6",
+  "subset_sha256": "11ed4602fca5516fba0079d7d83e667b2f8376b890b81f483c815c88e120bb48",
+  "systems": [
+    "fixed",
+    "structural",
+    "compiler"
+  ],
+  "token_budgets": [
+    2048,
+    4096,
+    8192,
+    16384
+  ],
+  "tokenizer": "o200k_base",
+  "tokenizer_version": "0.14.0"
+}

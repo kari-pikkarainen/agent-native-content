@@ -1,6 +1,6 @@
-# Contributing to Open Content IR
+# Contributing to Agent-Native Content
 
-Open Content IR is a falsification-oriented research project. Contributions
+Agent-Native Content is a falsification-oriented research project. Contributions
 should make the central hypothesis easier to test, extend the content model in
 a source-grounded way, or improve reproducibility without weakening controls.
 

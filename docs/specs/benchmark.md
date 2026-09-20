@@ -1,4 +1,4 @@
-# Open Content IR Benchmark
+# Agent-Native Content Benchmark
 
 ## Prototype and Benchmark Build Specification
 
@@ -269,7 +269,7 @@ The implemented repository separates reusable code, benchmark definitions,
 canonical public results, and generated local artifacts:
 
 ```text
-open-content-ir/
+agent-native-content/
 ├── benchmarks/xl-docbench/subsets/
 ├── docs/
 │   ├── vision.md

@@ -1,11 +1,11 @@
 cff-version: 1.2.0
 message: "If you use this software or its benchmark design, please cite it as below."
-title: "Open Content IR"
+title: "Agent-Native Content"
 type: software
 version: 0.1.0
 date-released: 2026-09-20
 authors:
-  - name: "Open Content IR contributors"
+  - name: "Agent-Native Content contributors"
 abstract: >-
   A structure-preserving intermediate representation, context compilation
   reference implementation, and benchmark for agent-ready content.

@@ -1,17 +1,24 @@
-# Open Content IR
+# Agent-Native Content
 
-Open Content IR is an open research project built around a simple question:
+> Persistent, structured, provenance-preserving content for AI agents.
+
+This repository explores whether source material can be prepared once into a
+reusable intermediate representation, then assembled into task-specific,
+token-budgeted context with better grounding and information efficiency than
+conventional RAG.
+
+The current reference implementation tests a narrower question:
 
 > Can a persistent, structure-preserving document representation plus
 > deterministic query-time compilation select better evidence—or use fewer
 > context tokens—than strong RAG baselines?
 
-The current reference implementation parses PDFs once, preserves their
-structure and provenance, and compiles a query-specific evidence packet under
-a hard token budget. The broader goal is a reusable content layer that can
-eventually support documents, web pages, spreadsheets, presentations,
-transcripts, and multimodal sources. It also explores packaging content with
-source-grounded, agent-usable features prepared once and reused by many queries.
+It parses PDFs once, preserves their structure and provenance, and compiles a
+query-specific evidence packet under a hard token budget. The broader goal is a
+reusable content layer that can eventually support documents, web pages,
+spreadsheets, presentations, transcripts, and multimodal sources. It also
+explores packaging content with source-grounded, agent-usable features prepared
+once and reused by many queries.
 
 This is a **falsification-oriented research prototype**, not a production RAG
 platform. The current evidence is promising at low token budgets, but it does
@@ -46,8 +53,11 @@ the advantage at 2K and 4K tokens, but fixed RAG wins at 8K and 16K:
 Values are mean gold-evidence page recall at the stated context budget. The
 development set has 24 questions over 11 documents; the directional holdout
 has six questions over six previously unused documents. No answer model was
-used for these results. See the canonical
+used for these results. An earlier six-question holdout mostly rejected the
+preceding compiler configuration and remains published as negative evidence.
+See the canonical
 [development report](results/retrieval/xldev24-coverage/report.md),
+[first holdout report](results/retrieval/xlholdout6/report.md),
 [holdout report](results/retrieval/xlholdout6b/report.md), and
 [results index](results/README.md) for the full evidence and caveats.
 
@@ -337,16 +347,31 @@ gold pages or quotes, are defined in the
 
 ## Known limitations
 
+- The current comparison supports the complete compiler pipeline, not the IR
+  as an isolated cause. Query faceting, structural expansion, keyed joins, and
+  coverage packing are also unique to the compiler treatment.
+- Page recall can over-credit partial chunks from multi-page nodes, and the
+  selected packer explicitly rewards new-page coverage. Exact quote evidence
+  is substantially less favorable and should be treated as co-primary.
 - The independent holdout is small and directional; the full XL100 has not
   been run with the selected compiler.
+- Development and holdout questions are single-document tasks with the relevant
+  document scope supplied. Cross-document routing and another dataset remain
+  untested.
+- Six development questions have no annotated gold pages and therefore receive
+  the protocol's identical vacuous-success score in every arm. Answerable-only
+  metrics are not yet reported alongside the aggregate.
 - Evidence retrieval has been measured more thoroughly than end-to-end answer
-  quality. The next decisive step is the guarded answer-generation experiment.
+  quality. No answer-generation or economic result exists yet.
 - Compiler retrieval is currently slower: about 4.7–5.4 seconds per holdout
   query versus 1.4 seconds for fixed RAG and 2.2 seconds for structural RAG on
   the same development machine.
 - The holdout rejects high-budget dominance: fixed RAG wins at 8K and 16K.
 - Agent enrichment is deterministic and mostly extractive. It is not a
   semantic knowledge graph or an abstractive document rewrite.
+- On the two-question representation diagnostic, IR used about 49% more tokens
+  than raw text and bounded enrichment about 91% more. Those costs require a
+  meaningful answer or citation improvement to be justified.
 - Charts, diagrams, and image-only evidence are not yet represented beyond
   what the parser exposes as text and structure.
 - Current experiments use English PDFs, local retrieval models, and a single
@@ -354,11 +379,15 @@ gold pages or quotes, are defined in the
 
 ## Next decision gate
 
-Run answer generation on already-saved small-subset contexts and on the
-raw/IR/enriched/indexed gold-evidence representations. Measure accuracy,
-citation validity, abstention behavior, latency, and cost with the same answer
-model and prompt. Expand to more documents only if the low-budget retrieval
-gain or agent features produce a meaningful answer-quality or cost benefit.
+First isolate the causal contribution of representation from retrieval policy:
+compare fixed chunks, structural chunks, and IR nodes under both single-query
+ranked packing and faceted coverage-aware packing. At the same time, add
+answerable-only reporting, stricter content/span coverage, quote metrics as
+co-primary outcomes, and paired document-clustered uncertainty intervals.
+
+Only after that audit should the project spend on guarded answer generation at
+2K and 4K or expand to an untouched cross-document set, another benchmark, and
+realistic 64K/128K long context. See the [research roadmap](docs/roadmap.md).
 
 ## Repository map
 
@@ -380,7 +409,8 @@ artifacts/         ignored local indexes and complete experiment outputs
 tests/             offline unit tests and fixtures
 ```
 
-Start with the [project vision](docs/vision.md), then read the
+Start with the [project vision](docs/vision.md) and
+[research roadmap](docs/roadmap.md), then read the
 [benchmark specification](docs/specs/benchmark.md) for the research questions
 and kill conditions. The
 [architecture](docs/architecture.md), [IR specification](docs/specs/content-ir.md),
