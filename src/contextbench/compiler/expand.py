@@ -1,11 +1,16 @@
 """Deterministic structural expansion for compiler candidates."""
 
 import hashlib
+import json
 from collections.abc import Mapping, Sequence
 
 from docling_core.types.doc import DoclingDocument
 
-from contextbench.compiler.models import CompilerCandidate, CompilerConfig
+from contextbench.compiler.models import (
+    CompilerCandidate,
+    CompilerConfig,
+    CompilerQueryCache,
+)
 from contextbench.ir.models import IRDocument, IRNode, IRNodeKind
 from contextbench.ir.tokenizer import TokenCounter
 from contextbench.retrieval.chunking import fixed_chunks, structural_chunks
@@ -28,6 +33,7 @@ def expand_candidates(
     config: CompilerConfig,
     tokenizer: TokenCounter,
     reranker: Reranker,
+    query_cache: CompilerQueryCache | None = None,
 ) -> tuple[CompilerCandidate, ...]:
     """Add heading context, siblings, list neighbors, and table fallbacks."""
     documents_by_id = {document.id: document for document in documents}
@@ -142,18 +148,35 @@ def expand_candidates(
                 )
                 expansion_order += 1
 
-    if _unique_candidate_capacity(expanded, token_budget) < token_budget:
-        page_neighbors = _page_neighbor_candidates(
-            query,
-            ranked,
-            documents,
-            token_budget=token_budget,
-            config=config,
-            tokenizer=tokenizer,
-            reranker=reranker,
-            expansion_order=expansion_order,
+    if (
+        config.page_neighbor_radius > 0
+        and token_budget >= config.page_neighbor_min_budget
+        and _unique_candidate_capacity(expanded, token_budget) < token_budget
+    ):
+        def factory() -> tuple[CompilerCandidate, ...]:
+            return _page_neighbor_candidates(
+                query,
+                ranked,
+                documents,
+                config=config,
+                tokenizer=tokenizer,
+                reranker=reranker,
+            )
+
+        page_neighbors = (
+            query_cache.page_neighbors(
+                _page_neighbor_cache_key(query, ranked, documents, config),
+                factory,
+            )
+            if query_cache is not None
+            else factory()
         )
-        expanded.extend(page_neighbors)
+        expanded.extend(
+            candidate.model_copy(
+                update={"expansion_order": expansion_order + offset}
+            )
+            for offset, candidate in enumerate(page_neighbors)
+        )
 
     expanded.sort(
         key=lambda candidate: (
@@ -192,19 +215,11 @@ def _page_neighbor_candidates(
     ranked: Sequence[RankedEvidence],
     documents: Sequence[IRDocument],
     *,
-    token_budget: int,
     config: CompilerConfig,
     tokenizer: TokenCounter,
     reranker: Reranker,
-    expansion_order: int,
 ) -> tuple[CompilerCandidate, ...]:
     """Rerank bounded fixed windows near the strongest node-level hits."""
-    if (
-        config.page_neighbor_radius == 0
-        or token_budget < config.page_neighbor_min_budget
-    ):
-        return ()
-
     documents_by_id = {document.id: document for document in documents}
     chunks_by_document: dict[str, tuple[RetrievalChunk, ...]] = {}
     nearby: dict[str, tuple[RetrievalChunk, RankedEvidence, int]] = {}
@@ -266,7 +281,7 @@ def _page_neighbor_candidates(
                     }
                 ),
                 origin_rank=evidence.rank,
-                expansion_order=expansion_order + offset,
+                expansion_order=offset,
                 priority_tier=1,
             )
         )
@@ -279,6 +294,25 @@ def _page_neighbor_candidates(
         )
     )
     return tuple(expanded[: config.page_neighbor_candidate_limit])
+
+
+def _page_neighbor_cache_key(
+    query: str,
+    ranked: Sequence[RankedEvidence],
+    documents: Sequence[IRDocument],
+    config: CompilerConfig,
+) -> str:
+    payload = {
+        "query": query,
+        "documents": [(document.id, document.source_sha256) for document in documents],
+        "ranked": [
+            (evidence.rank, evidence.chunk.id, evidence.scores.model_dump(mode="json"))
+            for evidence in ranked
+        ],
+        "config": config.model_dump(mode="json"),
+    }
+    serialized = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(serialized.encode()).hexdigest()
 
 
 def _page_range_distance(

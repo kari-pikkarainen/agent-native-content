@@ -1,6 +1,7 @@
 """Configuration and internal models for deterministic context compilation."""
 
-from collections.abc import Mapping, Sequence
+import time
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 
 from docling_core.types.doc import DoclingDocument
@@ -13,7 +14,7 @@ from contextbench.retrieval.models import (
     RetrievalScores,
 )
 
-COMPILER_VERSION = "0.3.0"
+COMPILER_VERSION = "0.3.1"
 
 
 class CompilerConfig(BaseModel):
@@ -68,3 +69,39 @@ class CompilerCandidate(BaseModel):
     expansion_order: int = Field(ge=0)
     priority_tier: int = Field(default=0, ge=0)
     allow_shared_source: bool = False
+
+
+@dataclass
+class CompilerQueryCache:
+    """Query-scoped derived expansion state shared across token budgets."""
+
+    _page_neighbor_key: str | None = None
+    _page_neighbors: tuple[CompilerCandidate, ...] = ()
+    page_neighbor_prepare_ms: float = 0.0
+    page_neighbors_used: bool = False
+    page_neighbor_cache_hit: bool = False
+
+    def begin_compilation(self) -> None:
+        """Reset per-compilation observations without clearing cached state."""
+        self.page_neighbors_used = False
+        self.page_neighbor_cache_hit = False
+
+    def page_neighbors(
+        self,
+        key: str,
+        factory: Callable[[], tuple[CompilerCandidate, ...]],
+    ) -> tuple[CompilerCandidate, ...]:
+        """Return one validated page-neighbor ranking for this query."""
+        self.page_neighbors_used = True
+        if self._page_neighbor_key is None:
+            started = time.perf_counter_ns()
+            self._page_neighbors = factory()
+            self.page_neighbor_prepare_ms = (
+                time.perf_counter_ns() - started
+            ) / 1_000_000
+            self._page_neighbor_key = key
+            return self._page_neighbors
+        if self._page_neighbor_key != key:
+            raise ValueError("CompilerQueryCache cannot be reused for another query")
+        self.page_neighbor_cache_hit = True
+        return self._page_neighbors

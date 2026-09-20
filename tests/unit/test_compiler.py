@@ -9,7 +9,13 @@ from docling_core.types.doc.document import TableCell, TableData
 from docling_core.types.doc.labels import DocItemLabel
 from test_ir import FixtureTokenCounter, ingest_metadata, provenance
 
-from contextbench.compiler import CompilerConfig, DocumentScope, compile_context
+import contextbench.compiler.expand as compiler_expand
+from contextbench.compiler import (
+    CompilerConfig,
+    CompilerQueryCache,
+    DocumentScope,
+    compile_context,
+)
 from contextbench.compiler.candidates import node_chunks
 from contextbench.compiler.expand import _penalize
 from contextbench.ir import project_document
@@ -445,6 +451,126 @@ def test_page_neighbor_expansion_adds_bounded_multiscale_context(
     assert any(item.page_end == 2 for item in expanded.items)
     assert any("Measurements were audited" in item.content for item in expanded.items)
     assert expanded.token_count <= expanded.token_budget
+
+
+def test_query_cache_reuses_page_neighbor_ranking_across_budgets(
+    compiler_fixture,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _source, ir, scope, counter = compiler_fixture
+    config = compiler_config(
+        retrieval=RetrievalConfig(
+            fixed_chunk_tokens=12,
+            fixed_overlap_tokens=3,
+            candidate_limit=10,
+            rerank_limit=1,
+            max_candidate_limit=10,
+            max_rerank_limit=1,
+        ),
+        page_neighbor_radius=1,
+        page_neighbor_min_budget=50,
+        page_neighbor_origin_limit=1,
+        page_neighbor_candidate_limit=10,
+    )
+    index = HybridIndex(
+        node_chunks([ir], tokenizer=counter),
+        config=config.retrieval,
+        tokenizer=counter,
+    )
+    ranked = index.retrieve("target revenue increased", token_budget=120)
+    calls = 0
+    original = compiler_expand._page_neighbor_candidates
+
+    def counted(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(compiler_expand, "_page_neighbor_candidates", counted)
+    cache = CompilerQueryCache()
+    compile_context(
+        "target revenue increased",
+        scope,
+        100,
+        config,
+        tokenizer=counter,
+        hybrid_index=index,
+        ranked_evidence=ranked,
+        query_cache=cache,
+    )
+    cached = compile_context(
+        "target revenue increased",
+        scope,
+        120,
+        config,
+        tokenizer=counter,
+        hybrid_index=index,
+        ranked_evidence=ranked,
+        query_cache=cache,
+    )
+    uncached = compile_context(
+        "target revenue increased",
+        scope,
+        120,
+        config,
+        tokenizer=counter,
+        hybrid_index=index,
+        ranked_evidence=ranked,
+    )
+
+    assert calls == 2
+    assert cached == uncached
+    assert cache.page_neighbors_used
+    assert cache.page_neighbor_cache_hit
+    assert cache.page_neighbor_prepare_ms >= 0
+
+
+def test_query_cache_rejects_page_ranking_for_another_query(
+    compiler_fixture,
+) -> None:
+    _source, ir, scope, counter = compiler_fixture
+    config = compiler_config(
+        retrieval=RetrievalConfig(
+            fixed_chunk_tokens=12,
+            fixed_overlap_tokens=3,
+            candidate_limit=10,
+            rerank_limit=1,
+            max_candidate_limit=10,
+            max_rerank_limit=1,
+        ),
+        page_neighbor_radius=1,
+        page_neighbor_min_budget=50,
+        page_neighbor_origin_limit=1,
+    )
+    index = HybridIndex(
+        node_chunks([ir], tokenizer=counter),
+        config=config.retrieval,
+        tokenizer=counter,
+    )
+    ranked = index.retrieve("target revenue increased", token_budget=120)
+    cache = CompilerQueryCache()
+    compile_context(
+        "target revenue increased",
+        scope,
+        120,
+        config,
+        tokenizer=counter,
+        hybrid_index=index,
+        ranked_evidence=ranked,
+        query_cache=cache,
+    )
+
+    with pytest.raises(ValueError, match="another query"):
+        compile_context(
+            "different question",
+            scope,
+            120,
+            config,
+            tokenizer=counter,
+            hybrid_index=index,
+            ranked_evidence=ranked,
+            query_cache=cache,
+        )
 
 
 def test_duplicate_source_text_is_emitted_once(compiler_fixture) -> None:

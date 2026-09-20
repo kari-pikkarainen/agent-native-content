@@ -81,6 +81,13 @@ windows are ranked after core evidence so they backfill unused capacity instead
 of displacing direct hits. The emitted windows retain every source node and
 source item used to derive them.
 
+When several budgets are compiled for the same query, a query-scoped cache may
+reuse the deterministic page-window ranking. Cache identity binds the query,
+source documents, ranked node evidence, and complete compiler configuration;
+attempted reuse for different inputs fails explicitly. Only the page-window
+ranking is cached. Budget-dependent table handling, deduplication, and packing
+still execute independently for every requested budget.
+
 ### 4. Tables
 
 A table is kept whole whenever its rendered content fits the total request

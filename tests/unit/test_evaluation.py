@@ -8,6 +8,7 @@ import pytest
 from test_compiler import compiler_source
 from test_ir import FixtureTokenCounter, ingest_metadata
 
+import contextbench.compiler.expand as compiler_expand
 from contextbench.compiler import CompilerConfig
 from contextbench.datasets.base import BenchmarkQuestion, GoldEvidence
 from contextbench.evaluation import (
@@ -73,10 +74,15 @@ def _config() -> RetrievalBenchmarkConfig:
     )
 
 
-def _run(tmp_path: Path, *, run_id: str):
+def _run(
+    tmp_path: Path,
+    *,
+    run_id: str,
+    config: RetrievalBenchmarkConfig | None = None,
+):
     return run_retrieval_benchmark(
         _corpus(tmp_path),
-        config=_config(),
+        config=config or _config(),
         artifacts_root=tmp_path / "artifacts",
         dataset="fixture",
         dataset_version="v1",
@@ -168,3 +174,44 @@ def test_runner_retrieves_once_per_question_and_system(
     _run(tmp_path, run_id="single-retrieval")
 
     assert calls == len(BenchmarkSystem)
+
+
+def test_runner_reuses_compiler_page_ranking_across_budgets(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls = 0
+    original = compiler_expand._page_neighbor_candidates
+
+    def counted(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(compiler_expand, "_page_neighbor_candidates", counted)
+    retrieval = RetrievalConfig(
+        fixed_chunk_tokens=12,
+        fixed_overlap_tokens=3,
+        structural_chunk_tokens=24,
+        candidate_limit=10,
+        rerank_limit=1,
+        max_candidate_limit=10,
+        max_rerank_limit=1,
+    )
+    config = RetrievalBenchmarkConfig(
+        budgets=(50, 100),
+        systems=(BenchmarkSystem.COMPILER,),
+        retrieval=retrieval,
+        compiler=CompilerConfig(
+            retrieval=retrieval,
+            page_neighbor_radius=1,
+            page_neighbor_min_budget=50,
+            page_neighbor_origin_limit=1,
+            page_neighbor_candidate_limit=10,
+        ),
+    )
+
+    result = _run(tmp_path, run_id="cached-page-ranking", config=config)
+
+    assert calls == 1
+    assert len(result.records) == 2

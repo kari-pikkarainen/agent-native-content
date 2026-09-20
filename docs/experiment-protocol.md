@@ -89,6 +89,10 @@ dataset loading, PDF parsing, IR projection, model loading, and index building.
 The runner computes one ranking per question and system at the largest declared
 budget, then reuses it for every packing budget. Each cell's latency includes
 the full shared retrieval cost plus that cell's packing or compilation cost.
+Query-dependent page-window reranking is likewise cached across eligible
+compiler budgets. Cache-hit cells add the measured preparation cost back to
+their recorded latency, so reported cells remain comparable to independent
+compilations even though the benchmark avoids repeated wall-clock work.
 
 ## Outputs and immutability
 

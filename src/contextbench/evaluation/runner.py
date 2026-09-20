@@ -14,7 +14,7 @@ from pathlib import Path
 
 from docling_core.types.doc import DoclingDocument
 
-from contextbench.compiler import DocumentScope, compile_context
+from contextbench.compiler import CompilerQueryCache, DocumentScope, compile_context
 from contextbench.compiler.candidates import node_chunks
 from contextbench.datasets.base import BenchmarkQuestion
 from contextbench.evaluation.evidence import evaluate_context
@@ -254,6 +254,9 @@ def _evaluate_cells(
             },
         )
         for system in config.systems:
+            compiler_cache = (
+                CompilerQueryCache() if system == BenchmarkSystem.COMPILER else None
+            )
             retrieval_started = time.perf_counter_ns()
             ranked = indexes[system].retrieve(
                 question.question,
@@ -276,10 +279,17 @@ def _evaluate_cells(
                     embedder=embedder,
                     reranker=reranker,
                     ranked_evidence=ranked,
+                    compiler_cache=compiler_cache,
                 )
                 elapsed_ms = retrieval_elapsed_ms + (
                     time.perf_counter_ns() - started
                 ) / 1_000_000
+                if (
+                    compiler_cache is not None
+                    and compiler_cache.page_neighbors_used
+                    and compiler_cache.page_neighbor_cache_hit
+                ):
+                    elapsed_ms += compiler_cache.page_neighbor_prepare_ms
                 metrics = evaluate_context(question, packet, corpus.documents)
                 records.append(
                     RetrievalEvaluationRecord(
@@ -317,6 +327,7 @@ def _context_for_system(
     embedder: EmbeddingModel,
     reranker: Reranker,
     ranked_evidence: Sequence[RankedEvidence],
+    compiler_cache: CompilerQueryCache | None,
 ) -> ContextPacket:
     if system == BenchmarkSystem.COMPILER:
         return compile_context(
@@ -329,6 +340,7 @@ def _context_for_system(
             reranker=reranker,
             hybrid_index=index,
             ranked_evidence=ranked_evidence,
+            query_cache=compiler_cache,
         )
     return index.pack_ranked(
         query,

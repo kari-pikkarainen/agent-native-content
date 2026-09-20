@@ -10,6 +10,7 @@ from contextbench.compiler.expand import expand_candidates
 from contextbench.compiler.models import (
     COMPILER_VERSION,
     CompilerConfig,
+    CompilerQueryCache,
     DocumentScope,
 )
 from contextbench.compiler.pack import pack_candidates
@@ -33,6 +34,7 @@ def compile_context(
     hybrid_index: HybridIndex | None = None,
     retrieval_token_budget: int | None = None,
     ranked_evidence: Sequence[RankedEvidence] | None = None,
+    query_cache: CompilerQueryCache | None = None,
 ) -> ContextPacket:
     """Compile query-specific evidence without an LLM or budget overflow."""
     if not query.strip():
@@ -82,6 +84,8 @@ def compile_context(
                 "ranked_evidence contains documents outside document_scope: "
                 f"{sorted(unexpected_documents)}"
             )
+    if query_cache is not None:
+        query_cache.begin_compilation()
     expanded = expand_candidates(
         query,
         ranked,
@@ -91,6 +95,7 @@ def compile_context(
         config=my_config,
         tokenizer=counter,
         reranker=index.reranker,
+        query_cache=query_cache,
     )
     unique = deduplicate_candidates(expanded, scope.documents)[
         : my_config.max_expanded_candidates
