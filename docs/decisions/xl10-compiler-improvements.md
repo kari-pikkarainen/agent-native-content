@@ -4,6 +4,8 @@ Selected retrieval run: `xl10-stable-22f00c3`
 
 Current IR-correctness validation: `xl10-source-fallback-24ac563`
 
+Current result-equivalent optimized run: `xl10-ranked-once-5424b34`
+
 This decision follows the initial XL10 smoke run and uses the same 10 questions,
 six documents, models, and evidence-only metrics. XL10 is a development smoke
 set, not a representative research benchmark; XL100 is still required before
@@ -84,3 +86,12 @@ the affected table question, compiler recall increased from 0.500 to 0.833 and
 page 24 became retrievable. Structural results were unchanged. Compiler 2K
 recall moved from 0.592 to 0.581, so the next larger evaluation must continue to
 report the full budget curve rather than only the high-budget gain.
+
+## Follow-up: one ranking per budget curve
+
+The evaluator now retrieves and reranks once per question/system at the largest
+declared budget, then reuses that ranking for budget-dependent compilation and
+packing. All 120 non-latency evaluation records and all context packets matched
+the preceding run exactly. Observed XL10 wall time fell from about 4.5 minutes
+to 2.5 minutes in the same local environment; this timing is operational, not a
+benchmark-quality performance claim.
