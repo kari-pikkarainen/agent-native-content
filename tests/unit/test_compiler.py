@@ -21,7 +21,13 @@ from contextbench.compiler.candidates import node_chunks
 from contextbench.compiler.expand import _penalize
 from contextbench.ir import project_document
 from contextbench.ir.models import IRNodeKind
-from contextbench.retrieval import RetrievalConfig, RetrievalScores
+from contextbench.retrieval import (
+    RankedEvidence,
+    RetrievalArm,
+    RetrievalChunk,
+    RetrievalConfig,
+    RetrievalScores,
+)
 from contextbench.retrieval.index import HybridIndex
 
 
@@ -242,6 +248,76 @@ def test_compiler_trace_preserves_output_and_candidate_boundaries(
     assert trace.ranked_evidence
     assert len(trace.expanded_candidates) >= len(trace.ranked_evidence)
     assert len(trace.deduplicated_candidates) <= len(trace.expanded_candidates)
+
+
+def test_structural_anchor_maps_ranked_region_to_ir_node_inputs(
+    compiler_fixture,
+) -> None:
+    _source, ir, scope, counter = compiler_fixture
+    target = next(node for node in ir.nodes if node.text == "Target revenue increased.")
+    methods = next(
+        node for node in ir.nodes if node.text == "Measurements were audited."
+    )
+    structural = RankedEvidence(
+        rank=1,
+        chunk=RetrievalChunk(
+            id="structural-region",
+            arm=RetrievalArm.STRUCTURAL,
+            document_id=ir.id,
+            text="A structural region containing several nodes.",
+            token_count=6,
+            page_start=1,
+            page_end=2,
+            source_node_ids=(target.id, methods.id, target.id),
+            source_item_ids=(*target.source_item_ids, *methods.source_item_ids),
+        ),
+        scores=RetrievalScores(reranked=1),
+    )
+    config = compiler_config(structural_anchor_enabled=True)
+    index = HybridIndex(
+        node_chunks([ir], tokenizer=counter),
+        config=config.retrieval,
+        tokenizer=counter,
+    )
+
+    packet, trace = compile_context_with_trace(
+        "target revenue increased",
+        scope,
+        50,
+        config,
+        tokenizer=counter,
+        hybrid_index=index,
+        structural_anchor_evidence=(structural,),
+    )
+
+    assert [item.chunk.source_node_ids for item in trace.ranked_evidence] == [
+        (target.id,),
+        (methods.id,),
+    ]
+    assert all(item.content != structural.chunk.text for item in packet.items)
+    assert any("Target revenue increased" in item.content for item in packet.items)
+
+
+def test_structural_anchor_input_requires_enabled_mode(compiler_fixture) -> None:
+    _source, ir, scope, counter = compiler_fixture
+    config = compiler_config()
+    index = HybridIndex(
+        node_chunks([ir], tokenizer=counter),
+        config=config.retrieval,
+        tokenizer=counter,
+    )
+    ranked = index.retrieve("target revenue increased", token_budget=50)
+
+    with pytest.raises(ValueError, match="requires structural_anchor_enabled"):
+        compile_context(
+            "target revenue increased",
+            scope,
+            50,
+            config,
+            tokenizer=counter,
+            hybrid_index=index,
+            structural_anchor_evidence=ranked,
+        )
 
 
 def test_pre_ranked_evidence_rejects_documents_outside_scope(

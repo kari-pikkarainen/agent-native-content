@@ -232,7 +232,11 @@ def _build_indexes(
             reranker=reranker,
             artifacts_root=artifacts_root,
         )
-    if BenchmarkSystem.STRUCTURAL in systems or config.compiler_stage_audit:
+    if (
+        BenchmarkSystem.STRUCTURAL in systems
+        or config.compiler_stage_audit
+        or config.compiler.structural_anchor_enabled
+    ):
         indexes[BenchmarkSystem.STRUCTURAL] = HybridIndex.build(
             documents,
             arm=RetrievalArm.STRUCTURAL,
@@ -292,7 +296,10 @@ def _evaluate_cells(
         )
         retrieval_systems = list(config.systems)
         if (
-            config.compiler_stage_audit
+            (
+                config.compiler_stage_audit
+                or config.compiler.structural_anchor_enabled
+            )
             and BenchmarkSystem.STRUCTURAL not in retrieval_systems
         ):
             retrieval_systems.append(BenchmarkSystem.STRUCTURAL)
@@ -327,7 +334,20 @@ def _evaluate_cells(
                 CompilerQueryCache() if system == BenchmarkSystem.COMPILER else None
             )
             ranked = rankings[system]
-            retrieval_elapsed_ms = retrieval_latencies[system]
+            structural_anchor_evidence = (
+                raw_rankings[BenchmarkSystem.STRUCTURAL]
+                if (
+                    system == BenchmarkSystem.COMPILER
+                    and config.compiler.structural_anchor_enabled
+                )
+                else None
+            )
+            retrieval_elapsed_ms = (
+                retrieval_latencies[BenchmarkSystem.STRUCTURAL]
+                if structural_anchor_evidence is not None
+                else retrieval_latencies[system]
+            )
+            compiler_ranked = None if structural_anchor_evidence is not None else ranked
             for budget in config.budgets:
                 started = time.perf_counter_ns()
                 trace = None
@@ -341,7 +361,8 @@ def _evaluate_cells(
                         embedder=embedder,
                         reranker=reranker,
                         hybrid_index=indexes[system],
-                        ranked_evidence=ranked,
+                        ranked_evidence=compiler_ranked,
+                        structural_anchor_evidence=structural_anchor_evidence,
                         query_cache=compiler_cache,
                     )
                 else:
@@ -355,7 +376,8 @@ def _evaluate_cells(
                         tokenizer=tokenizer,
                         embedder=embedder,
                         reranker=reranker,
-                        ranked_evidence=ranked,
+                        ranked_evidence=compiler_ranked,
+                        structural_anchor_evidence=structural_anchor_evidence,
                         compiler_cache=compiler_cache,
                     )
                 elapsed_ms = retrieval_elapsed_ms + (
@@ -418,6 +440,14 @@ def _evaluate_cells(
                                 [*faceted_chunks, *structural_chunks],
                                 corpus.documents,
                             ),
+                            compiler_input=evaluate_candidate_stage(
+                                question,
+                                [
+                                    evidence.chunk
+                                    for evidence in trace.ranked_evidence
+                                ],
+                                corpus.documents,
+                            ),
                             structural_expansion=evaluate_compiler_candidates(
                                 question,
                                 trace.expanded_candidates,
@@ -447,7 +477,8 @@ def _context_for_system(
     tokenizer: TokenCounter,
     embedder: EmbeddingModel,
     reranker: Reranker,
-    ranked_evidence: Sequence[RankedEvidence],
+    ranked_evidence: Sequence[RankedEvidence] | None,
+    structural_anchor_evidence: Sequence[RankedEvidence] | None,
     compiler_cache: CompilerQueryCache | None,
 ) -> ContextPacket:
     if system == BenchmarkSystem.COMPILER:
@@ -461,6 +492,7 @@ def _context_for_system(
             reranker=reranker,
             hybrid_index=index,
             ranked_evidence=ranked_evidence,
+            structural_anchor_evidence=structural_anchor_evidence,
             query_cache=compiler_cache,
         )
     return index.pack_ranked(

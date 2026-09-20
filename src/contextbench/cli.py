@@ -146,6 +146,13 @@ def evaluate_retrieval(
             ),
         ),
     ] = False,
+    compiler_structural_anchor: Annotated[
+        bool,
+        typer.Option(
+            "--compiler-structural-anchor",
+            help="Use structural retrieval to select the compiler's IR-node inputs.",
+        ),
+    ] = False,
     run_id: Annotated[
         str | None,
         typer.Option(help="Optional immutable run identifier."),
@@ -168,7 +175,10 @@ def evaluate_retrieval(
         seed=seed,
         compiler_stage_audit=compiler_stage_audit,
         retrieval=retrieval,
-        compiler=CompilerConfig(retrieval=retrieval),
+        compiler=CompilerConfig(
+            retrieval=retrieval,
+            structural_anchor_enabled=compiler_structural_anchor,
+        ),
     )
     try:
         result = run_xl_retrieval(
