@@ -19,15 +19,23 @@ def node_chunks(
     chunks: list[RetrievalChunk] = []
     for document in documents:
         for node in document.nodes:
-            if not node.text.strip() or node.kind in _NON_EVIDENCE_GROUPS:
+            if (
+                not node.text.strip()
+                or node.content_layer == "furniture"
+                or node.kind in _NON_EVIDENCE_GROUPS
+            ):
                 continue
-            payload = f"compiler-node-v1\0{document.id}\0{node.id}".encode()
+            search_text = _contextual_search_text(node.text, node.heading_path)
+            payload = (
+                f"compiler-node-v2\0{document.id}\0{node.id}\0{search_text}"
+            ).encode()
             chunks.append(
                 RetrievalChunk(
                     id=f"chunk_{hashlib.sha256(payload).hexdigest()}",
                     arm=RetrievalArm.COMPILER,
                     document_id=document.id,
                     text=node.text,
+                    search_text=search_text,
                     token_count=tokenizer.count(node.text),
                     heading_path=node.heading_path,
                     page_start=node.page_start,
@@ -37,3 +45,10 @@ def node_chunks(
                 )
             )
     return tuple(chunks)
+
+
+def _contextual_search_text(text: str, heading_path: tuple[str, ...]) -> str:
+    headings = heading_path
+    if headings and headings[-1].strip().casefold() == text.strip().casefold():
+        headings = headings[:-1]
+    return "\n".join((*headings, text))

@@ -30,7 +30,8 @@ class LexicalOverlapReranker:
     def score(self, query: str, chunks: Sequence[RetrievalChunk]) -> list[float]:
         query_terms = set(_terms(query))
         return [
-            len(query_terms.intersection(_terms(chunk.text))) / max(len(query_terms), 1)
+            len(query_terms.intersection(_terms(chunk.retrieval_text)))
+            / max(len(query_terms), 1)
             for chunk in chunks
         ]
 
@@ -57,7 +58,9 @@ class SentenceTransformerCrossEncoderReranker:
         return version("sentence-transformers")
 
     def score(self, query: str, chunks: Sequence[RetrievalChunk]) -> list[float]:
-        values = self._model.predict([(query, chunk.text) for chunk in chunks])
+        values = self._model.predict(
+            [(query, chunk.retrieval_text) for chunk in chunks]
+        )
         return [float(value) for value in values]
 
 

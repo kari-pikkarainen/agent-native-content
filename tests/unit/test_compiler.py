@@ -196,6 +196,28 @@ def test_prebuilt_global_index_matches_per_scope_index(compiler_fixture) -> None
     assert reused == direct
 
 
+def test_node_candidates_exclude_furniture_and_search_with_headings(
+    compiler_fixture,
+) -> None:
+    _source, ir, _scope, counter = compiler_fixture
+    target = next(node for node in ir.nodes if node.text == "Target revenue increased.")
+    repeated = next(
+        node for node in ir.nodes if node.text == "Repeated duplicate phrase."
+    )
+    furniture = repeated.model_copy(update={"content_layer": "furniture"})
+    nodes = tuple(furniture if node.id == repeated.id else node for node in ir.nodes)
+    document = ir.model_copy(update={"nodes": nodes})
+
+    chunks = node_chunks([document], tokenizer=counter)
+
+    target_chunk = next(chunk for chunk in chunks if target.id in chunk.source_node_ids)
+    assert target_chunk.text == "Target revenue increased."
+    assert target_chunk.search_text == (
+        "Annual Report\nResults\nTarget revenue increased."
+    )
+    assert all(furniture.id not in chunk.source_node_ids for chunk in chunks)
+
+
 def test_prebuilt_index_must_share_compiler_retrieval_config(
     compiler_fixture,
 ) -> None:

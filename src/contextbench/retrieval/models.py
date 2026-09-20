@@ -47,6 +47,7 @@ class RetrievalChunk(BaseModel):
     arm: RetrievalArm
     document_id: str
     text: str
+    search_text: str | None = None
     token_count: int = Field(ge=0)
     heading_path: tuple[str, ...] = ()
     page_start: int | None = Field(default=None, ge=1)
@@ -58,6 +59,8 @@ class RetrievalChunk(BaseModel):
     def has_traceable_content(self) -> "RetrievalChunk":
         if not self.text.strip():
             raise ValueError("retrieval chunks must contain text")
+        if self.search_text is not None and not self.search_text.strip():
+            raise ValueError("search_text must be non-empty when provided")
         if not self.source_node_ids:
             raise ValueError("retrieval chunks require source nodes")
         if not self.source_item_ids:
@@ -67,6 +70,11 @@ class RetrievalChunk(BaseModel):
         if self.page_start is not None and self.page_start > self.page_end:
             raise ValueError("page_start must not exceed page_end")
         return self
+
+    @property
+    def retrieval_text(self) -> str:
+        """Return contextual text used for search without changing emitted text."""
+        return self.search_text or self.text
 
 
 class RetrievalScores(BaseModel):

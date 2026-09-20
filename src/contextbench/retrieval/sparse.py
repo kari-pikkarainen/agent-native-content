@@ -17,7 +17,7 @@ class BM25Index:
         self.chunks = tuple(chunks)
         self.k1 = k1
         self.b = b
-        self._terms = [_tokens(chunk.text) for chunk in self.chunks]
+        self._terms = [_tokens(chunk.retrieval_text) for chunk in self.chunks]
         self._lengths = [len(terms) for terms in self._terms]
         self._average_length = sum(self._lengths) / max(len(self._lengths), 1)
         document_frequency: Counter[str] = Counter()

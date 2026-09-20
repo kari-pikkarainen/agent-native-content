@@ -55,7 +55,9 @@ class HybridIndex:
             k1=config.sparse_k1,
             b=config.sparse_b,
         )
-        self._vectors = self.embedder.embed([chunk.text for chunk in self.chunks])
+        self._vectors = self.embedder.embed(
+            [chunk.retrieval_text for chunk in self.chunks]
+        )
 
     @classmethod
     def build(

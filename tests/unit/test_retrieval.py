@@ -10,6 +10,7 @@ from contextbench.retrieval import (
     HashEmbeddingModel,
     HybridIndex,
     RetrievalArm,
+    RetrievalChunk,
     RetrievalConfig,
 )
 
@@ -111,6 +112,38 @@ def test_fixed_chunks_overlap_and_packing_deduplicates_source_material(
     packet = index.pack("term20", token_budget=30)
     assert packet.token_count <= 30
     assert len(packet.items) == len({item.source_item_ids for item in packet.items})
+
+
+def test_search_text_drives_retrieval_but_emitted_text_stays_exact() -> None:
+    config = RetrievalConfig(candidate_limit=2, rerank_limit=1)
+    chunks = (
+        RetrievalChunk(
+            id="chunk-wrong",
+            arm=RetrievalArm.COMPILER,
+            document_id="doc",
+            text="Visible distractor",
+            search_text="Visible distractor",
+            token_count=2,
+            source_node_ids=("node-wrong",),
+            source_item_ids=("item-wrong",),
+        ),
+        RetrievalChunk(
+            id="chunk-right",
+            arm=RetrievalArm.COMPILER,
+            document_id="doc",
+            text="Precise emitted evidence",
+            search_text="Hidden heading keyword Precise emitted evidence",
+            token_count=3,
+            source_node_ids=("node-right",),
+            source_item_ids=("item-right",),
+        ),
+    )
+    index = HybridIndex(chunks, config=config, tokenizer=FixtureTokenCounter())
+
+    packet = index.pack("hidden keyword", token_budget=10)
+
+    assert len(packet.items) == 1
+    assert packet.items[0].content == "Precise emitted evidence"
 
 
 def test_repeated_builds_have_identical_rankings_and_artifact_keys(
