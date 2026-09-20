@@ -13,15 +13,22 @@ Milestone 1 pins the conservative XL-DocBench release as follows:
 - revision: `72954bd70ffffe230f08b57c57fa9274ec14d7ea`
 - evidence pages: one-based PDF/release indices
 
-The development subset is the explicit ordered list in
-`configs/subsets/xl100.json`. It contains 100 questions balanced across all six
-domains, including 80 single-document and 20 cross-document questions. The
-selection includes zero-, one-, and multi-page evidence cases and both textual
-and table/visual evidence. Benchmark commands load this list and never
-regenerate it implicitly.
+The tuning subset is the explicit ordered list in
+`configs/subsets/xldev24.json`. It contains 24 questions selected only from
+release metadata: four per domain, including 18 single-document, six
+cross-document, four unanswerable, and six table/chart/image questions. It is
+disjoint from XL100. The selection minimizes added source documents and bytes
+after satisfying its quotas so development runs remain practical.
+
+`configs/subsets/xl100.json` remains the held-out final retrieval evaluation:
+100 questions balanced across all six domains, including 80 single-document
+and 20 cross-document questions. The earlier XL10 smoke subset has already
+informed implementation decisions and is therefore only a regression set, not
+a final evaluation set. Benchmark commands load every committed list exactly
+as stored and never regenerate one implicitly.
 
 The command downloads only the pinned metadata release and the source PDFs
-referenced by XL100. Each PDF is size-checked against the release record,
+referenced by the selected subset. Each PDF is size-checked against the release record,
 content-addressed, parsed through the local Docling pipeline, and projected to
 the deterministic IR. A manifest records the subset hash and each source and
 parser identity.

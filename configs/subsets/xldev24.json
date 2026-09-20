@@ -1,0 +1,65 @@
+{
+  "name": "xldev24",
+  "dataset": "microsoft/XL-DocBench",
+  "release_version": "xldocbench_strict_1345_v1",
+  "release_revision": "72954bd70ffffe230f08b57c57fa9274ec14d7ea",
+  "selection_seed": 20260920,
+  "selection_method": "Metadata-only deterministic development selection from questions outside committed XL100. For each domain, select one answerable non-visual cross-document question with minimum document count, then one answerable visual/table single-document question and remaining single-document quotas while minimizing added document count and source bytes; SHA-256(seed:question_id) breaks ties. Four alphabetically first domains include one unanswerable single-document item. IDs are stored explicitly and never regenerated implicitly. No retrieval results were inspected.",
+  "strata": {
+    "purpose": "development_tuning_not_final_claims",
+    "domains": {
+      "finance_business": 4,
+      "legal_regulation": 4,
+      "medical_clinical": 4,
+      "narrative_literature": 4,
+      "scientific_academic": 4,
+      "technical_engineering": 4
+    },
+    "task_type": {
+      "single_doc": 18,
+      "cross_doc": 6
+    },
+    "answerability": {
+      "answerable": 20,
+      "unanswerable": 4
+    },
+    "evidence_page_count": {
+      "zero": 4,
+      "one": 0,
+      "multiple": 20
+    },
+    "evidence_modality": {
+      "table_chart_or_image": 6,
+      "text_or_no_evidence": 18
+    },
+    "source_documents": 28,
+    "source_pages": 6986,
+    "source_bytes": 189353065
+  },
+  "question_ids": [
+    "adubench_cross_000043",
+    "adubench_cross_000053",
+    "adubench_cross_000073",
+    "adubench_cross_000079",
+    "adubench_cross_000105",
+    "adubench_cross_000115",
+    "adubench_single_000011",
+    "adubench_single_000085",
+    "adubench_single_000193",
+    "adubench_single_000195",
+    "adubench_single_000215",
+    "adubench_single_000257",
+    "adubench_single_000279",
+    "adubench_single_000588",
+    "adubench_single_000594",
+    "adubench_single_000604",
+    "adubench_single_000654",
+    "adubench_single_000679",
+    "adubench_single_000703",
+    "adubench_single_000820",
+    "adubench_single_000936",
+    "adubench_single_000971",
+    "adubench_single_001081",
+    "adubench_single_001246"
+  ]
+}

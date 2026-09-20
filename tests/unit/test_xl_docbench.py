@@ -87,3 +87,33 @@ def test_committed_xl10_is_an_explicit_xl100_smoke_subset() -> None:
     assert sum(xl10.strata["domains"].values()) == 10
     assert xl10.strata["source_documents"] == 6
     assert xl10.strata["source_pages"] == 718
+
+
+def test_committed_xldev24_is_balanced_and_disjoint_from_xl100() -> None:
+    xl100 = load_subset(Path("configs/subsets/xl100.json"))
+    xldev24 = load_subset(Path("configs/subsets/xldev24.json"))
+
+    assert len(xldev24.question_ids) == 24
+    assert len(set(xldev24.question_ids)) == 24
+    assert set(xldev24.question_ids).isdisjoint(xl100.question_ids)
+    assert xldev24.strata["domains"] == {
+        "finance_business": 4,
+        "legal_regulation": 4,
+        "medical_clinical": 4,
+        "narrative_literature": 4,
+        "scientific_academic": 4,
+        "technical_engineering": 4,
+    }
+    assert xldev24.strata["task_type"] == {
+        "single_doc": 18,
+        "cross_doc": 6,
+    }
+    assert xldev24.strata["answerability"] == {
+        "answerable": 20,
+        "unanswerable": 4,
+    }
+    assert xldev24.strata["evidence_modality"] == {
+        "table_chart_or_image": 6,
+        "text_or_no_evidence": 18,
+    }
+    assert xldev24.strata["source_documents"] == 28
