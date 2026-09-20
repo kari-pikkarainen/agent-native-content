@@ -52,6 +52,11 @@ limits, and reranker. The compiler's structural expansion and packing policy is
 the treatment under test. Indexes are built once before query timing and are
 filtered to the exact source-document scope of each question.
 
+The selected compiler also applies deterministic lexical query faceting. Every
+facet uses the same shared retrieval models and is fused back to the original
+candidate capacity; no LLM query generation is used. Facet retrieval time is
+included in compiler latency.
+
 The preregistered budgets are 2,048, 4,096, 8,192, and 16,384 tokens. The CLI
 defaults to `BAAI/bge-small-en-v1.5` and
 `cross-encoder/ms-marco-MiniLM-L-6-v2`; both model IDs are configurable and the

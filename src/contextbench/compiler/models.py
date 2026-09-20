@@ -31,7 +31,7 @@ class CompilerConfig(BaseModel):
     group_adjacent_list_items: bool = True
     list_neighbor_limit: int = Field(default=1, ge=0)
     list_score_penalty: float = Field(default=0.9, gt=0, le=1)
-    query_faceting_enabled: bool = False
+    query_faceting_enabled: bool = True
     query_facet_limit: int = Field(default=3, ge=1)
     query_facet_min_terms: int = Field(default=3, ge=1)
     query_facet_full_weight: float = Field(default=2.0, gt=0)

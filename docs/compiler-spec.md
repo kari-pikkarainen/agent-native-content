@@ -46,12 +46,14 @@ and reranker implementations as baseline Arms A and B. Candidate limits, model
 names, tokenizer, BM25 parameters, and RRF constant come from the nested
 `RetrievalConfig`.
 
-Optional deterministic query faceting splits complex questions at bounded
+Deterministic query faceting, enabled by default, splits complex questions at bounded
 punctuation and conjunction boundaries after removing common question
 scaffolding. Each facet uses the same sparse, dense, fusion, and cross-encoder
 stack as the full query. Weighted reciprocal-rank fusion combines the full and
 facet rankings back to the original ranking capacity; the full query receives
-the configurable `query_facet_full_weight`. No LLM or generated query is used.
+the configurable `query_facet_full_weight`. Setting
+`query_faceting_enabled=false` restores full-query-only retrieval. No LLM or
+generated query is used.
 
 ### 3. Structural expansion
 
