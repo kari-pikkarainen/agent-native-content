@@ -17,10 +17,12 @@ The tuning subset is the explicit ordered list in
 `configs/subsets/xldev24.json`. It contains 24 questions selected only from
 release metadata and source-availability checks: four single-document questions
 per domain, including six unanswerable and six table/chart/image questions. It
-is disjoint from XL100. The selection minimizes added source bytes after
-satisfying its quotas so development runs remain practical. Cross-document
-questions remain in the held-out XL100 evaluation rather than expanding the
-development corpus with dozens of additional and frequently stale mirrors.
+is disjoint from XL100. The selection minimizes added source pages and bytes,
+excludes documents over 300 pages, and requires every pinned source to pass PDF
+availability and integrity preflight so development runs remain practical.
+Cross-document questions remain in the held-out XL100 evaluation rather than
+expanding the development corpus with dozens of additional and frequently
+stale mirrors.
 
 `configs/subsets/xl100.json` remains the held-out final retrieval evaluation:
 100 questions balanced across all six domains, including 80 single-document

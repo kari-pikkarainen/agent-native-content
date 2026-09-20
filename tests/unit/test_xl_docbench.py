@@ -116,4 +116,4 @@ def test_committed_xldev24_is_balanced_and_disjoint_from_xl100() -> None:
         "table_chart_or_image": 6,
         "text_or_no_evidence": 18,
     }
-    assert xldev24.strata["source_documents"] == 13
+    assert xldev24.strata["source_documents"] == 11
