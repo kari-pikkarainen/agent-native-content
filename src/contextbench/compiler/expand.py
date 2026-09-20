@@ -114,12 +114,12 @@ def expand_candidates(
             expanded.append(direct)
 
         if node.kind == IRNodeKind.PARAGRAPH:
-            for sibling in _paragraph_siblings(node, document, config):
+            for sibling, distance in _paragraph_siblings(node, document, config):
                 expanded.append(
                     _candidate_for_related_node(
                         sibling,
                         evidence=evidence,
-                        penalty=config.sibling_score_penalty,
+                        penalty=config.sibling_score_penalty**distance,
                         relation="sibling",
                         config=config,
                         tokenizer=tokenizer,
@@ -212,17 +212,22 @@ def _paragraph_siblings(
     node: IRNode,
     document: IRDocument,
     config: CompilerConfig,
-) -> tuple[IRNode, ...]:
+) -> tuple[tuple[IRNode, int], ...]:
     siblings = _siblings(node, document)
     index = siblings.index(node)
-    selected: list[IRNode] = []
-    if config.include_previous_sibling and index > 0:
-        selected.append(siblings[index - 1])
-    if config.include_next_sibling and index + 1 < len(siblings):
-        selected.append(siblings[index + 1])
+    selected: list[tuple[IRNode, int]] = []
+    for distance in range(1, config.sibling_neighbor_limit + 1):
+        positions = []
+        if config.include_previous_sibling:
+            positions.append(index - distance)
+        if config.include_next_sibling:
+            positions.append(index + distance)
+        for position in positions:
+            if 0 <= position < len(siblings):
+                selected.append((siblings[position], distance))
     return tuple(
-        sibling
-        for sibling in selected
+        (sibling, distance)
+        for sibling, distance in selected
         if sibling.kind == IRNodeKind.PARAGRAPH
         and sibling.heading_path == node.heading_path
     )

@@ -270,6 +270,7 @@ def test_configurable_paragraph_siblings_receive_score_penalty(
         ),
         include_previous_sibling=True,
         include_next_sibling=True,
+        sibling_neighbor_limit=1,
         sibling_score_penalty=0.5,
     )
 
@@ -286,6 +287,44 @@ def test_configurable_paragraph_siblings_receive_score_penalty(
     assert "Context after target." in packet.items[2].content
     assert packet.items[1].scores.fused < packet.items[0].scores.fused
     assert packet.items[2].scores.fused < packet.items[0].scores.fused
+
+
+def test_paragraph_neighbor_penalty_increases_with_distance(
+    compiler_fixture,
+) -> None:
+    _source, _ir, scope, counter = compiler_fixture
+    config = compiler_config(
+        retrieval=RetrievalConfig(
+            candidate_limit=10,
+            rerank_limit=1,
+            max_candidate_limit=10,
+            max_rerank_limit=1,
+        ),
+        include_previous_sibling=True,
+        include_next_sibling=False,
+        sibling_neighbor_limit=2,
+        sibling_score_penalty=0.5,
+    )
+
+    packet = compile_context(
+        "context after target",
+        scope,
+        50,
+        config,
+        tokenizer=counter,
+    )
+
+    target = next(
+        item for item in packet.items if "Context after target" in item.content
+    )
+    immediate = next(
+        item for item in packet.items if "Target revenue increased" in item.content
+    )
+    distant = next(
+        item for item in packet.items if "Context before target" in item.content
+    )
+    assert immediate.scores.reranked == pytest.approx(target.scores.reranked * 0.5)
+    assert distant.scores.reranked == pytest.approx(target.scores.reranked * 0.25)
 
 
 def test_adjacent_list_items_stay_together(compiler_fixture) -> None:
