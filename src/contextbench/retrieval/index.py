@@ -61,6 +61,8 @@ class HybridIndex:
             dtype=np.float64,
         )
         self._document_indices = _document_indices(self.chunks)
+        self._retrieval_cache: dict[tuple[object, ...], tuple[RankedEvidence, ...]] = {}
+        self._rerank_cache: dict[tuple[object, ...], tuple[RankedEvidence, ...]] = {}
 
     @classmethod
     def build(
@@ -216,6 +218,8 @@ class HybridIndex:
         )
         index._vectors = np.asarray(vectors, dtype=np.float64)
         index._document_indices = _document_indices(loaded_chunks)
+        index._retrieval_cache = {}
+        index._rerank_cache = {}
         return index
 
     def retrieve(
@@ -228,6 +232,16 @@ class HybridIndex:
         maximum_rerank_limit: int | None = None,
     ) -> tuple[RankedEvidence, ...]:
         """Run sparse, dense, RRF, and reranking stages."""
+        cache_key = _query_cache_key(
+            query,
+            limit=limit,
+            token_budget=token_budget,
+            document_ids=document_ids,
+            maximum_rerank_limit=maximum_rerank_limit,
+        )
+        cached = self._retrieval_cache.get(cache_key)
+        if cached is not None:
+            return cached
         candidates = self.retrieve_candidates(
             query,
             limit=limit,
@@ -235,7 +249,9 @@ class HybridIndex:
             document_ids=document_ids,
             maximum_rerank_limit=maximum_rerank_limit,
         )
-        return self.rerank(query, candidates)
+        ranked = self.rerank(query, candidates)
+        self._retrieval_cache[cache_key] = ranked
+        return ranked
 
     def retrieve_candidates(
         self,
@@ -345,6 +361,10 @@ class HybridIndex:
         candidates: Sequence[RankedEvidence],
     ) -> tuple[RankedEvidence, ...]:
         """Apply the configured reranker once to an existing candidate pool."""
+        cache_key = _rerank_cache_key(query, candidates)
+        cached = self._rerank_cache.get(cache_key)
+        if cached is not None:
+            return cached
         scores = self.reranker.score(
             query,
             [candidate.chunk for candidate in candidates],
@@ -357,7 +377,7 @@ class HybridIndex:
                 pair[0].chunk.id,
             ),
         )
-        return tuple(
+        result = tuple(
             candidate.model_copy(
                 update={
                     "rank": rank,
@@ -368,6 +388,8 @@ class HybridIndex:
             )
             for rank, (candidate, score) in enumerate(ranked, 1)
         )
+        self._rerank_cache[cache_key] = result
+        return result
 
     def rerank_many(
         self,
@@ -631,6 +653,41 @@ def _document_indices(
     for index, chunk in enumerate(chunks):
         mutable.setdefault(chunk.document_id, []).append(index)
     return {document_id: tuple(indices) for document_id, indices in mutable.items()}
+
+
+def _query_cache_key(
+    query: str,
+    *,
+    limit: int | None,
+    token_budget: int | None,
+    document_ids: set[str] | None,
+    maximum_rerank_limit: int | None,
+) -> tuple[object, ...]:
+    return (
+        query,
+        limit,
+        token_budget,
+        tuple(sorted(document_ids)) if document_ids is not None else None,
+        maximum_rerank_limit,
+    )
+
+
+def _rerank_cache_key(
+    query: str,
+    candidates: Sequence[RankedEvidence],
+) -> tuple[object, ...]:
+    return (
+        query,
+        tuple(
+            (
+                candidate.chunk.id,
+                candidate.scores.dense,
+                candidate.scores.sparse,
+                candidate.scores.fused,
+            )
+            for candidate in candidates
+        ),
+    )
 
 
 def embedding_model_from_config(config: RetrievalConfig) -> EmbeddingModel:

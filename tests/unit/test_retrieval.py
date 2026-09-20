@@ -310,6 +310,44 @@ def test_rerank_many_batches_query_candidate_pairs() -> None:
     assert len(second) == 1
 
 
+def test_repeated_retrieval_reuses_query_reranking() -> None:
+    class CountingReranker:
+        name = "counting"
+        version = "1"
+
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def score(self, _query, chunks):
+            self.calls += 1
+            return [1.0] * len(chunks)
+
+    chunks = (
+        RetrievalChunk(
+            id="chunk",
+            arm=RetrievalArm.COMPILER,
+            document_id="doc",
+            text="cached evidence",
+            token_count=2,
+            source_node_ids=("node",),
+            source_item_ids=("item",),
+        ),
+    )
+    reranker = CountingReranker()
+    index = HybridIndex(
+        chunks,
+        config=RetrievalConfig(candidate_limit=1, rerank_limit=1),
+        tokenizer=FixtureTokenCounter(),
+        reranker=reranker,
+    )
+
+    first = index.retrieve("cached evidence", document_ids={"doc"})
+    second = index.retrieve("cached evidence", document_ids={"doc"})
+
+    assert second is first
+    assert reranker.calls == 1
+
+
 def test_duplicate_search_text_does_not_consume_rerank_capacity() -> None:
     chunks = tuple(
         RetrievalChunk(
