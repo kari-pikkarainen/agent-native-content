@@ -79,7 +79,8 @@ def run_xl_retrieval(
         )
         source_documents[document_id] = ingested.document
 
-    report("running fixed, structural, and compiler evidence retrieval")
+    system_names = ", ".join(system.value for system in config.systems)
+    report(f"running {system_names} evidence retrieval")
     return run_retrieval_benchmark(
         EvaluationCorpus(
             questions=questions,

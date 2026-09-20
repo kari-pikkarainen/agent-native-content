@@ -8,7 +8,7 @@ from docling_core.types.doc import DoclingDocument
 from contextbench.compiler.models import CompilerCandidate, CompilerConfig
 from contextbench.ir.models import IRDocument, IRNode, IRNodeKind
 from contextbench.ir.tokenizer import TokenCounter
-from contextbench.retrieval.chunking import structural_chunks
+from contextbench.retrieval.chunking import fixed_chunks, structural_chunks
 from contextbench.retrieval.models import (
     RankedEvidence,
     RetrievalArm,
@@ -142,6 +142,18 @@ def expand_candidates(
                 )
                 expansion_order += 1
 
+    page_neighbors = _page_neighbor_candidates(
+        query,
+        ranked,
+        documents,
+        token_budget=token_budget,
+        config=config,
+        tokenizer=tokenizer,
+        reranker=reranker,
+        expansion_order=expansion_order,
+    )
+    expanded.extend(page_neighbors)
+
     expanded.sort(
         key=lambda candidate: (
             -candidate.scores.reranked,
@@ -152,6 +164,112 @@ def expand_candidates(
         )
     )
     return tuple(expanded[: config.max_expanded_candidates])
+
+
+def _page_neighbor_candidates(
+    query: str,
+    ranked: Sequence[RankedEvidence],
+    documents: Sequence[IRDocument],
+    *,
+    token_budget: int,
+    config: CompilerConfig,
+    tokenizer: TokenCounter,
+    reranker: Reranker,
+    expansion_order: int,
+) -> tuple[CompilerCandidate, ...]:
+    """Rerank bounded fixed windows near the strongest node-level hits."""
+    if (
+        config.page_neighbor_radius == 0
+        or token_budget < config.page_neighbor_min_budget
+    ):
+        return ()
+
+    documents_by_id = {document.id: document for document in documents}
+    chunks_by_document: dict[str, tuple[RetrievalChunk, ...]] = {}
+    nearby: dict[str, tuple[RetrievalChunk, RankedEvidence, int]] = {}
+    for evidence in ranked[: config.page_neighbor_origin_limit]:
+        anchor = evidence.chunk
+        if anchor.page_start is None or anchor.page_end is None:
+            continue
+        document = documents_by_id[anchor.document_id]
+        page_chunks = chunks_by_document.get(document.id)
+        if page_chunks is None:
+            page_chunks = fixed_chunks(
+                document,
+                config=config.retrieval,
+                tokenizer=tokenizer,
+            )
+            chunks_by_document[document.id] = page_chunks
+        for chunk in page_chunks:
+            if chunk.page_start is None or chunk.page_end is None:
+                continue
+            distance = _page_range_distance(
+                anchor.page_start,
+                anchor.page_end,
+                chunk.page_start,
+                chunk.page_end,
+            )
+            if distance > config.page_neighbor_radius:
+                continue
+            previous = nearby.get(chunk.id)
+            if previous is None or (distance, evidence.rank) < (
+                previous[2],
+                previous[1].rank,
+            ):
+                nearby[chunk.id] = (chunk, evidence, distance)
+
+    candidates = tuple(nearby.values())
+    if not candidates:
+        return ()
+    scores = reranker.score(
+        query,
+        [chunk for chunk, _evidence, _distance in candidates],
+    )
+    expanded = []
+    for offset, ((chunk, evidence, distance), score) in enumerate(
+        zip(candidates, scores, strict=True)
+    ):
+        penalty = config.page_neighbor_score_penalty ** max(distance, 1)
+        expanded.append(
+            CompilerCandidate(
+                chunk=chunk.model_copy(
+                    update={
+                        "id": _expanded_id(chunk.id, "page-neighbor", str(distance)),
+                        "arm": RetrievalArm.COMPILER,
+                    }
+                ),
+                scores=evidence.scores.model_copy(
+                    update={
+                        "fused": evidence.scores.fused * penalty,
+                        "reranked": _penalized_reranker_score(score, penalty),
+                    }
+                ),
+                origin_rank=evidence.rank,
+                expansion_order=expansion_order + offset,
+            )
+        )
+    expanded.sort(
+        key=lambda candidate: (
+            -candidate.scores.reranked,
+            -candidate.scores.fused,
+            candidate.origin_rank,
+            candidate.chunk.id,
+        )
+    )
+    return tuple(expanded[: config.page_neighbor_candidate_limit])
+
+
+def _page_range_distance(
+    first_start: int,
+    first_end: int,
+    second_start: int,
+    second_end: int,
+) -> int:
+    if first_end < second_start:
+        return second_start - first_end
+    if second_end < first_start:
+        return first_start - second_end
+    return 0
 
 
 def _candidate_for_node(

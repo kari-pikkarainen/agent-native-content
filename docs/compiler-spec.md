@@ -71,6 +71,13 @@ Because cross-encoder logits may be negative, penalties scale positive scores
 toward zero and negative scores away from zero so expansion can never outrank
 the direct hit merely because its score has a negative sign.
 
+At larger budgets, optional multi-scale page-neighbor expansion can treat the
+highest-ranked node hits as anchors and rerank bounded fixed-token windows whose
+page spans fall within `page_neighbor_radius`. The expansion is disabled by
+default, activates only at `page_neighbor_min_budget`, and is bounded by both
+origin and candidate limits. The emitted windows retain every source node and
+source item used to derive them.
+
 ### 4. Tables
 
 A table is kept whole whenever its rendered content fits the total request

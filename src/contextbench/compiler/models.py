@@ -13,7 +13,7 @@ from contextbench.retrieval.models import (
     RetrievalScores,
 )
 
-COMPILER_VERSION = "0.2.1"
+COMPILER_VERSION = "0.3.0"
 
 
 class CompilerConfig(BaseModel):
@@ -30,6 +30,11 @@ class CompilerConfig(BaseModel):
     group_adjacent_list_items: bool = True
     list_neighbor_limit: int = Field(default=1, ge=0)
     list_score_penalty: float = Field(default=0.9, gt=0, le=1)
+    page_neighbor_radius: int = Field(default=0, ge=0)
+    page_neighbor_min_budget: int = Field(default=8192, ge=1)
+    page_neighbor_origin_limit: int = Field(default=20, ge=1)
+    page_neighbor_candidate_limit: int = Field(default=64, ge=1)
+    page_neighbor_score_penalty: float = Field(default=0.8, gt=0, le=1)
     preserve_tables: bool = True
     table_chunk_tokens: int = Field(default=512, ge=1)
     max_expanded_candidates: int = Field(default=500, ge=1)

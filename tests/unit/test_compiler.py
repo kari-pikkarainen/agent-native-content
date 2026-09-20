@@ -406,6 +406,46 @@ def test_adjacent_list_items_stay_together(compiler_fixture) -> None:
     assert any("Gamma market held." in content for content in contents)
 
 
+def test_page_neighbor_expansion_adds_bounded_multiscale_context(
+    compiler_fixture,
+) -> None:
+    _source, _ir, scope, counter = compiler_fixture
+    config = compiler_config(
+        retrieval=RetrievalConfig(
+            fixed_chunk_tokens=12,
+            fixed_overlap_tokens=3,
+            candidate_limit=10,
+            rerank_limit=1,
+            max_candidate_limit=10,
+            max_rerank_limit=1,
+        ),
+        page_neighbor_radius=1,
+        page_neighbor_min_budget=50,
+        page_neighbor_origin_limit=1,
+        page_neighbor_candidate_limit=10,
+    )
+
+    small = compile_context(
+        "target revenue increased",
+        scope,
+        49,
+        config,
+        tokenizer=counter,
+    )
+    expanded = compile_context(
+        "target revenue increased",
+        scope,
+        100,
+        config,
+        tokenizer=counter,
+    )
+
+    assert all(item.page_start != 2 for item in small.items)
+    assert any(item.page_end == 2 for item in expanded.items)
+    assert any("Measurements were audited" in item.content for item in expanded.items)
+    assert expanded.token_count <= expanded.token_budget
+
+
 def test_duplicate_source_text_is_emitted_once(compiler_fixture) -> None:
     _source, _ir, scope, counter = compiler_fixture
 
