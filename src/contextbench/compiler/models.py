@@ -75,6 +75,15 @@ class CompilerCandidate(BaseModel):
     allow_shared_source: bool = False
 
 
+@dataclass(frozen=True)
+class CompilerTrace:
+    """Candidate snapshots at the compiler's loss-bearing boundaries."""
+
+    ranked_evidence: tuple[RankedEvidence, ...]
+    expanded_candidates: tuple[CompilerCandidate, ...]
+    deduplicated_candidates: tuple[CompilerCandidate, ...]
+
+
 @dataclass
 class CompilerQueryCache:
     """Query-scoped derived expansion state shared across token budgets."""

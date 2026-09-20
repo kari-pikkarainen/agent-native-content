@@ -12,6 +12,7 @@ from contextbench.compiler.models import (
     COMPILER_VERSION,
     CompilerConfig,
     CompilerQueryCache,
+    CompilerTrace,
     DocumentScope,
 )
 from contextbench.compiler.pack import pack_candidates
@@ -38,6 +39,37 @@ def compile_context(
     query_cache: CompilerQueryCache | None = None,
 ) -> ContextPacket:
     """Compile query-specific evidence without an LLM or budget overflow."""
+    packet, _trace = compile_context_with_trace(
+        query,
+        document_scope,
+        token_budget,
+        config,
+        tokenizer=tokenizer,
+        embedder=embedder,
+        reranker=reranker,
+        hybrid_index=hybrid_index,
+        retrieval_token_budget=retrieval_token_budget,
+        ranked_evidence=ranked_evidence,
+        query_cache=query_cache,
+    )
+    return packet
+
+
+def compile_context_with_trace(
+    query: str,
+    document_scope: DocumentScope | Sequence[IRDocument],
+    token_budget: int,
+    config: CompilerConfig | None = None,
+    *,
+    tokenizer: TokenCounter | None = None,
+    embedder: EmbeddingModel | None = None,
+    reranker: Reranker | None = None,
+    hybrid_index: HybridIndex | None = None,
+    retrieval_token_budget: int | None = None,
+    ranked_evidence: Sequence[RankedEvidence] | None = None,
+    query_cache: CompilerQueryCache | None = None,
+) -> tuple[ContextPacket, CompilerTrace]:
+    """Compile context and expose immutable candidate stages for diagnostics."""
     if not query.strip():
         raise ValueError("query must not be empty")
     if token_budget < 0:
@@ -113,7 +145,7 @@ def compile_context(
     unique = deduplicate_candidates(expanded, scope.documents)[
         : my_config.max_expanded_candidates
     ]
-    return pack_candidates(
+    packet = pack_candidates(
         query,
         unique,
         token_budget=token_budget,
@@ -126,6 +158,11 @@ def compile_context(
             "reranker_model": index.reranker.name,
             "tokenizer": counter.name,
         },
+    )
+    return packet, CompilerTrace(
+        ranked_evidence=tuple(ranked),
+        expanded_candidates=tuple(expanded),
+        deduplicated_candidates=tuple(unique),
     )
 
 

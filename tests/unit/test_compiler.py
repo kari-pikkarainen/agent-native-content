@@ -15,6 +15,7 @@ from contextbench.compiler import (
     CompilerQueryCache,
     DocumentScope,
     compile_context,
+    compile_context_with_trace,
 )
 from contextbench.compiler.candidates import node_chunks
 from contextbench.compiler.expand import _penalize
@@ -212,6 +213,35 @@ def test_prebuilt_global_index_matches_per_scope_index(compiler_fixture) -> None
 
     assert reused == direct
     assert pre_ranked == direct
+
+
+def test_compiler_trace_preserves_output_and_candidate_boundaries(
+    compiler_fixture,
+) -> None:
+    _source, _ir, scope, counter = compiler_fixture
+    config = compiler_config(
+        include_previous_sibling=True,
+        include_next_sibling=True,
+    )
+
+    packet, trace = compile_context_with_trace(
+        "target revenue increased",
+        scope,
+        40,
+        config,
+        tokenizer=counter,
+    )
+
+    assert packet == compile_context(
+        "target revenue increased",
+        scope,
+        40,
+        config,
+        tokenizer=counter,
+    )
+    assert trace.ranked_evidence
+    assert len(trace.expanded_candidates) >= len(trace.ranked_evidence)
+    assert len(trace.deduplicated_candidates) <= len(trace.expanded_candidates)
 
 
 def test_pre_ranked_evidence_rejects_documents_outside_scope(
