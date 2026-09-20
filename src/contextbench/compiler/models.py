@@ -42,8 +42,9 @@ class CompilerConfig(BaseModel):
     page_neighbor_score_penalty: float = Field(default=0.8, gt=0, le=1)
     preserve_tables: bool = True
     table_chunk_tokens: int = Field(default=512, ge=1)
+    table_neighbor_min_budget: int = Field(default=16384, ge=1)
     table_neighbor_limit: int = Field(default=10, ge=0)
-    table_neighbor_score_penalty: float = Field(default=0.9, gt=0, le=1)
+    table_neighbor_score_penalty: float = Field(default=0.8, gt=0, le=1)
     max_expanded_candidates: int = Field(default=500, ge=1)
 
 

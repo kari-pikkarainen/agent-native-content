@@ -156,6 +156,7 @@ def expand_candidates(
                 expansion_order += 1
         if (
             node.kind == IRNodeKind.TABLE
+            and token_budget >= config.table_neighbor_min_budget
             and table_references
             and _matches_table_reference(node, table_references)
         ):

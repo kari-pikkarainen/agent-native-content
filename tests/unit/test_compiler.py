@@ -732,6 +732,7 @@ def test_explicit_table_reference_adds_matching_continuation_pages(
             max_rerank_limit=1,
         ),
         include_heading_context=False,
+        table_neighbor_min_budget=1,
         table_neighbor_limit=10,
     )
 
