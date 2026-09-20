@@ -73,3 +73,11 @@ Commit `c7576ca` adds exact normalized quote coverage alongside page coverage.
 This addresses the known weakness of broad page-level gold labels for compact
 rows and joins. New runs report both metrics; historical artifacts remain
 immutable.
+
+Run `xldev2-heading-depth1-f375552` also tested rendering only the trailing
+heading level. On the two table questions it changed no page metric, packed
+token count, or redundancy value, so unbounded heading context remains the
+default and the depth control is retained only for wider ablation. The new
+quote metric exposed a sharper distinction than page recall: compiler quote
+recall was 0.5 at every budget, while fixed RAG was 0.0 and structural RAG
+reached 0.5 only at 8K and 16K.
