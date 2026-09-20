@@ -133,3 +133,9 @@ accuracy, token F1, ANLS, citation-ID validity, abstention correctness, tokens,
 latency, and dollars per query/correct answer. Completed artifacts are
 atomically published under `artifacts/generation-runs/<run-id>/` and bind the
 results to hashes of the source retrieval manifest and contexts.
+
+The separate gold-evidence representation runner bypasses retrieval entirely.
+It precomputes agent enrichment once per document, fixes the authorized source
+nodes from released evidence pages, and renders RAW, IR, and ENRICHED prompts
+over those identical nodes. Its immutable contexts and results live under
+`artifacts/representation-runs/<run-id>/`.

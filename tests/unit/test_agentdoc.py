@@ -5,7 +5,16 @@ import json
 from pathlib import Path
 
 import pytest
-from test_ir import FixtureTokenCounter, ingest_metadata, source_document
+from docling_core.types.doc import DoclingDocument
+from docling_core.types.doc.base import Size
+from docling_core.types.doc.document import TableCell, TableData
+from docling_core.types.doc.labels import DocItemLabel
+from test_ir import (
+    FixtureTokenCounter,
+    ingest_metadata,
+    provenance,
+    source_document,
+)
 
 from contextbench.agentdoc import (
     AgentBundleError,
@@ -39,11 +48,14 @@ def test_enrichment_is_deterministic_source_grounded_and_query_independent(
         AgentFeatureKind.OUTLINE,
         AgentFeatureKind.SECTION_SUMMARY,
         AgentFeatureKind.KEY_FACT,
+        AgentFeatureKind.RELATIONSHIP,
         AgentFeatureKind.TABLE_SCHEMA,
+        AgentFeatureKind.TABLE_ROW,
     }
     node_ids = set(document.node_by_id)
     assert all(set(feature.source_node_ids) <= node_ids for feature in first.features)
     assert all(feature.source_item_ids for feature in first.features)
+    assert all(0 <= feature.confidence <= 1 for feature in first.features)
     assert any(
         feature.text == "Revenue increased strongly."
         and feature.attributes.get("normative") is True
@@ -59,6 +71,94 @@ def test_enrichment_is_deterministic_source_grounded_and_query_independent(
         "columns": ["Region", "Revenue"],
         "row_count": 2,
     }
+    row = next(
+        feature
+        for feature in first.features
+        if feature.kind == AgentFeatureKind.TABLE_ROW
+    )
+    assert row.attributes["values"] == {"Region": "North", "Revenue": "42"}
+
+
+def test_explicit_aliases_create_entities_and_typed_relationships(
+    tmp_path: Path,
+) -> None:
+    source = source_document()
+    source.add_text(
+        label=DocItemLabel.TEXT,
+        text=(
+            "National Aeronautics and Space Administration (NASA) "
+            "published the requirement."
+        ),
+        prov=provenance(2, "National Aeronautics and Space Administration", 650),
+    )
+    document = project_document(
+        source,
+        ingest_metadata(tmp_path),
+        tokenizer=FixtureTokenCounter(),
+    )
+
+    enrichment = enrich_document(document)
+
+    entity = next(
+        feature
+        for feature in enrichment.features
+        if feature.kind == AgentFeatureKind.ENTITY
+    )
+    relationship = next(
+        feature
+        for feature in enrichment.features
+        if feature.kind == AgentFeatureKind.RELATIONSHIP
+        and feature.attributes.get("predicate") == "alias_of"
+    )
+    assert entity.attributes["canonical_name"] == (
+        "National Aeronautics and Space Administration"
+    )
+    assert entity.attributes["aliases"] == ["NASA"]
+    assert relationship.attributes == {
+        "subject": "NASA",
+        "predicate": "alias_of",
+        "object": "National Aeronautics and Space Administration",
+    }
+
+
+def test_duplicate_table_rows_have_distinct_stable_feature_ids(
+    tmp_path: Path,
+) -> None:
+    source = DoclingDocument(name="duplicate-rows")
+    source.add_page(1, Size(width=612, height=792))
+    rows = (("Metric", "Value"), ("Revenue", "42"), ("Revenue", "42"))
+    cells = [
+        TableCell(
+            start_row_offset_idx=row,
+            end_row_offset_idx=row + 1,
+            start_col_offset_idx=column,
+            end_col_offset_idx=column + 1,
+            text=text,
+            column_header=row == 0,
+        )
+        for row, values in enumerate(rows)
+        for column, text in enumerate(values)
+    ]
+    source.add_table(
+        data=TableData(table_cells=cells, num_rows=3, num_cols=2),
+        prov=provenance(1, "Metric Value Revenue 42 Revenue 42", 700),
+    )
+    document = project_document(
+        source,
+        ingest_metadata(tmp_path),
+        tokenizer=FixtureTokenCounter(),
+    )
+
+    enrichment = enrich_document(document)
+    table_rows = [
+        feature
+        for feature in enrichment.features
+        if feature.kind == AgentFeatureKind.TABLE_ROW
+    ]
+
+    assert [feature.attributes["row_index"] for feature in table_rows] == [1, 2]
+    assert len({feature.id for feature in table_rows}) == 2
+    assert enrichment == enrich_document(document)
 
 
 def test_features_can_be_restricted_to_authorized_gold_nodes(tmp_path: Path) -> None:

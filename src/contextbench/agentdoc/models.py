@@ -16,7 +16,10 @@ class AgentFeatureKind(StrEnum):
     SECTION_SUMMARY = "section_summary"
     KEY_FACT = "key_fact"
     DEFINITION = "definition"
+    ENTITY = "entity"
+    RELATIONSHIP = "relationship"
     TABLE_SCHEMA = "table_schema"
+    TABLE_ROW = "table_row"
 
 
 class AgentEnrichmentConfig(BaseModel):
@@ -29,7 +32,11 @@ class AgentEnrichmentConfig(BaseModel):
     include_numeric_facts: bool = True
     include_normative_facts: bool = True
     include_definitions: bool = True
+    include_explicit_aliases: bool = True
     include_table_schemas: bool = True
+    include_table_rows: bool = True
+    include_relationships: bool = True
+    max_table_rows: int = Field(default=2000, ge=1)
 
 
 class AgentFeature(BaseModel):
@@ -42,6 +49,7 @@ class AgentFeature(BaseModel):
     document_id: str
     text: str
     importance: float = Field(ge=0, le=1)
+    confidence: float = Field(ge=0, le=1)
     heading_path: tuple[str, ...] = ()
     page_start: int | None = Field(default=None, ge=1)
     page_end: int | None = Field(default=None, ge=1)

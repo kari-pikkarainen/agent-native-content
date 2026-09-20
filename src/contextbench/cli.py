@@ -429,6 +429,144 @@ def evaluate_generation(
     )
 
 
+@app.command("eval-representation")
+def evaluate_representation(
+    model: Annotated[
+        str,
+        typer.Option(help="Explicit answer model ID."),
+    ],
+    input_usd_per_million: Annotated[
+        float,
+        typer.Option(min=0, help="Configured uncached input-token price."),
+    ],
+    cached_input_usd_per_million: Annotated[
+        float,
+        typer.Option(min=0, help="Configured cached input-token price."),
+    ],
+    output_usd_per_million: Annotated[
+        float,
+        typer.Option(min=0, help="Configured output-token price."),
+    ],
+    max_calls: Annotated[
+        int,
+        typer.Option(min=1, help="Hard authorization ceiling for provider calls."),
+    ],
+    data_dir: Annotated[
+        Path,
+        typer.Option(help="Directory for pinned XL-DocBench release metadata."),
+    ] = DEFAULT_DATASET_DIR,
+    subset_file: Annotated[
+        Path,
+        typer.Option(help="Committed subset manifest."),
+    ] = DEFAULT_XL100,
+    source_cache_dir: Annotated[
+        Path,
+        typer.Option(help="Content-addressed source PDF cache."),
+    ] = DEFAULT_DOCUMENT_CACHE,
+    ingest_cache_dir: Annotated[
+        Path,
+        typer.Option(help="Content-addressed Docling ingestion cache."),
+    ] = DEFAULT_INGEST_CACHE,
+    artifacts_root: Annotated[
+        Path,
+        typer.Option(help="Root for immutable representation runs."),
+    ] = DEFAULT_ARTIFACTS_ROOT,
+    docling_artifacts_dir: Annotated[
+        Path | None,
+        typer.Option(help="Optional directory of pre-downloaded Docling models."),
+    ] = None,
+    condition: Annotated[
+        list[str] | None,
+        typer.Option(
+            "--condition",
+            help="Repeatable raw, ir, or enriched condition; defaults to all.",
+        ),
+    ] = None,
+    max_output_tokens: Annotated[
+        int,
+        typer.Option(min=1, help="Maximum answer tokens per provider call."),
+    ] = 256,
+    reasoning_effort: Annotated[
+        str | None,
+        typer.Option(help="Optional provider reasoning-effort setting."),
+    ] = None,
+    run_id: Annotated[
+        str | None,
+        typer.Option(help="Optional immutable representation run identifier."),
+    ] = None,
+) -> None:
+    """Compare RAW, IR, and enriched encodings of identical gold pages."""
+    from contextbench.generation import OpenAIAnswerProvider, PricingMetadata
+    from contextbench.representation import (
+        RepresentationCondition,
+        RepresentationError,
+        RepresentationExperimentConfig,
+        run_xl_gold_representation,
+    )
+
+    try:
+        download_release(data_dir)
+        dataset = XLDocBenchDataset(data_dir)
+        subset = load_subset(subset_file)
+        questions = tuple(dataset.iter_subset(subset))
+        conditions = tuple(
+            RepresentationCondition(value)
+            for value in (condition or tuple(RepresentationCondition))
+        )
+        eligible_count = sum(
+            any(evidence.pages for evidence in question.gold_evidence)
+            for question in questions
+        )
+        expected_calls = eligible_count * len(conditions)
+        if expected_calls > max_calls:
+            raise RepresentationError(
+                f"run requires {expected_calls} calls, above --max-calls {max_calls}"
+            )
+        config = RepresentationExperimentConfig(
+            model=model,
+            max_output_tokens=max_output_tokens,
+            reasoning_effort=reasoning_effort,
+            conditions=conditions,
+            pricing=PricingMetadata(
+                input_usd_per_million=input_usd_per_million,
+                cached_input_usd_per_million=cached_input_usd_per_million,
+                output_usd_per_million=output_usd_per_million,
+            ),
+        )
+        result = run_xl_gold_representation(
+            data_dir=data_dir,
+            subset_file=subset_file,
+            source_cache_dir=source_cache_dir,
+            ingest_cache_dir=ingest_cache_dir,
+            artifacts_root=artifacts_root,
+            config=config,
+            provider=OpenAIAnswerProvider(),
+            docling_artifacts_dir=docling_artifacts_dir,
+            run_id=run_id,
+            progress=lambda message: typer.echo(message, err=True),
+        )
+    except (
+        DatasetError,
+        RepresentationError,
+        OSError,
+        RuntimeError,
+        ValueError,
+    ) as exc:
+        _abort(str(exc))
+    typer.echo(
+        json.dumps(
+            {
+                "report": str(result.path / "report.md"),
+                "run_dir": str(result.path),
+                "run_id": result.summary.run_id,
+                "summary": str(result.path / "summary.json"),
+            },
+            ensure_ascii=False,
+            sort_keys=True,
+        )
+    )
+
+
 @dataset_app.command("download")
 def download_dataset(
     dataset_name: Annotated[str, typer.Argument(help="Dataset name.")],

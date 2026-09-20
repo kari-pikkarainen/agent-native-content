@@ -1,0 +1,161 @@
+"""Gold-page representation experiment acceptance tests."""
+
+import json
+from datetime import UTC, datetime
+from pathlib import Path
+
+import pytest
+from test_evaluation import _corpus
+from test_ir import FixtureTokenCounter
+
+from contextbench.evaluation import EvaluationCorpus
+from contextbench.generation import AnswerRequest, PricingMetadata, ProviderAnswer
+from contextbench.representation import (
+    RepresentationCondition,
+    RepresentationError,
+    RepresentationExperimentConfig,
+    run_gold_representation_benchmark,
+)
+
+
+class RepresentationProvider:
+    name = "fixture"
+    version = "1"
+
+    def __init__(self) -> None:
+        self.requests: list[AnswerRequest] = []
+
+    def generate(self, request, *, config):
+        self.requests.append(request)
+        return ProviderAnswer(
+            text=json.dumps(
+                {
+                    "answer": "revenue",
+                    "citations": [request.evidence_ids[0]],
+                }
+            ),
+            model_id=config.model,
+            response_id=f"response-{len(self.requests)}",
+            input_tokens=100,
+            cached_input_tokens=20,
+            output_tokens=10,
+            provider_usage={"total_tokens": 110},
+        )
+
+
+def _config() -> RepresentationExperimentConfig:
+    return RepresentationExperimentConfig(
+        model="fixture-model",
+        pricing=PricingMetadata(
+            input_usd_per_million=1,
+            cached_input_usd_per_million=0.5,
+            output_usd_per_million=2,
+        ),
+        tokenizer_name="fixture-words",
+    )
+
+
+def test_gold_representation_runner_varies_encoding_not_source_nodes(
+    tmp_path: Path,
+) -> None:
+    base = _corpus(tmp_path)
+    skipped = base.questions[0].model_copy(
+        update={"id": "question-without-gold", "gold_evidence": ()}
+    )
+    corpus = EvaluationCorpus(
+        questions=(*base.questions, skipped),
+        documents=base.documents,
+        source_documents=base.source_documents,
+    )
+    provider = RepresentationProvider()
+
+    result = run_gold_representation_benchmark(
+        corpus,
+        config=_config(),
+        provider=provider,
+        artifacts_root=tmp_path / "artifacts",
+        dataset="fixture",
+        dataset_version="v1",
+        dataset_revision="revision-1",
+        subset_name="fixture-two",
+        subset_sha256="1" * 64,
+        run_id="representation-fixture",
+        tokenizer=FixtureTokenCounter(),
+        git_commit="c" * 40,
+        clock=lambda: datetime(2026, 9, 20, tzinfo=UTC),
+    )
+
+    assert len(result.records) == len(RepresentationCondition)
+    assert len(provider.requests) == len(RepresentationCondition)
+    assert result.summary.evaluated_question_ids == ("question-1",)
+    assert result.summary.skipped_question_ids == ("question-without-gold",)
+    assert result.summary.enrichment_prepare_ms >= 0
+    assert result.summary.amortized_enrichment_ms_per_question >= 0
+    assert {record.condition for record in result.records} == set(
+        RepresentationCondition
+    )
+    assert len({record.source_node_count for record in result.records}) == 1
+    assert all(record.accuracy == 1 for record in result.records)
+    assert all(record.citation_support == 1 for record in result.records)
+    by_condition = {record.condition: record for record in result.records}
+    assert by_condition[RepresentationCondition.RAW].feature_count == 0
+    assert by_condition[RepresentationCondition.IR].feature_count == 0
+    assert by_condition[RepresentationCondition.ENRICHED].feature_count > 0
+    assert by_condition[RepresentationCondition.RAW].representation_tokens < (
+        by_condition[RepresentationCondition.IR].representation_tokens
+    )
+    assert by_condition[RepresentationCondition.IR].representation_tokens < (
+        by_condition[RepresentationCondition.ENRICHED].representation_tokens
+    )
+
+    contexts = [
+        json.loads(line)
+        for line in (result.path / "contexts.jsonl").read_text().splitlines()
+    ]
+    assert len({tuple(row["evidence_ids"]) for row in contexts}) == 1
+    rendered = {row["condition"]: row["representation"] for row in contexts}
+    assert 'kind="paragraph"' not in rendered["raw"]
+    assert 'kind="paragraph"' in rendered["ir"]
+    assert "<agent_features>" in rendered["enriched"]
+    assert rendered["enriched"].index('type="table_schema"') < rendered[
+        "enriched"
+    ].index('type="key_fact"')
+    assert {path.name for path in result.path.iterdir()} == {
+        "contexts.jsonl",
+        "manifest.json",
+        "report.md",
+        "representation.jsonl",
+        "summary.json",
+    }
+    manifest = json.loads((result.path / "manifest.json").read_text())
+    assert manifest["provider"] == "fixture"
+    assert manifest["git_commit"] == "c" * 40
+    assert manifest["config"]["enrichment"]["summary_sentences"] == 2
+    assert manifest["enrichment_prepare_ms"] >= 0
+
+
+def test_representation_runner_requires_at_least_one_gold_page(
+    tmp_path: Path,
+) -> None:
+    base = _corpus(tmp_path)
+    question = base.questions[0].model_copy(update={"gold_evidence": ()})
+    corpus = EvaluationCorpus(
+        questions=(question,),
+        documents=base.documents,
+        source_documents=base.source_documents,
+    )
+
+    with pytest.raises(RepresentationError, match="requires gold evidence pages"):
+        run_gold_representation_benchmark(
+            corpus,
+            config=_config(),
+            provider=RepresentationProvider(),
+            artifacts_root=tmp_path / "artifacts",
+            dataset="fixture",
+            dataset_version="v1",
+            dataset_revision="revision-1",
+            subset_name="fixture-no-gold",
+            subset_sha256="1" * 64,
+            run_id="no-gold",
+            tokenizer=FixtureTokenCounter(),
+        )

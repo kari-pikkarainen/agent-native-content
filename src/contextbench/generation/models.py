@@ -17,18 +17,23 @@ class PricingMetadata(BaseModel):
     output_usd_per_million: float = Field(ge=0)
 
 
-class GenerationConfig(BaseModel):
-    """Model and experiment settings shared by every comparison arm."""
+class AnswerModelConfig(BaseModel):
+    """Provider, prompt, and price settings shared across answer experiments."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     model: str = Field(min_length=1)
     max_output_tokens: int = Field(default=256, ge=1)
     reasoning_effort: str | None = None
-    systems: tuple[BenchmarkSystem, ...] = tuple(BenchmarkSystem)
-    budgets: tuple[int, ...] = DEFAULT_TOKEN_BUDGETS
     pricing: PricingMetadata
     prompt_version: Literal["answer-json-v1"] = "answer-json-v1"
+
+
+class GenerationConfig(AnswerModelConfig):
+    """Model and retrieval-cell settings shared by every comparison arm."""
+
+    systems: tuple[BenchmarkSystem, ...] = tuple(BenchmarkSystem)
+    budgets: tuple[int, ...] = DEFAULT_TOKEN_BUDGETS
 
     @model_validator(mode="after")
     def selections_are_canonical(self) -> "GenerationConfig":
@@ -47,8 +52,8 @@ class AnswerRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     question_id: str
-    system: BenchmarkSystem
-    token_budget: int = Field(ge=1)
+    system: str
+    token_budget: int | None = Field(default=None, ge=1)
     prompt: str
     evidence_ids: tuple[str, ...]
 

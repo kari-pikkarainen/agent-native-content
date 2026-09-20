@@ -92,8 +92,9 @@ uv run contextbench agentize path/to/document.pdf artifacts/agent-documents/exam
 
 The initial enrichment is deterministic and question-independent. It exposes
 the outline, extractive section previews, numeric/normative key facts,
-definitions, and table schemas with node/item/page provenance. It does not call
-an LLM or modify source truth. See
+dates/exceptions, explicit aliases and typed relationships, table schemas, and
+calculation-ready rows with confidence and node/item/page provenance. It does
+not call an LLM or modify source truth. See
 [the agent-document specification](docs/agent-document-spec.md).
 
 The retrieval baselines are documented in
@@ -204,3 +205,29 @@ cell count exceeds that authorization ceiling. Provider usage, resolved model
 ID, latency, benchmark accuracy, token F1, ANLS, citation validity, and cost are
 written to a separate immutable generation run. No default command performs a
 paid model call.
+
+## Gold-evidence representation experiment
+
+To test whether the encoding itself helps an answer model independently of
+retrieval, compare the same annotated source pages in three conditions:
+
+- `raw`: minimal source text with citation IDs;
+- `ir`: the same nodes with document, page, kind, heading, and source identity;
+- `enriched`: IR plus query-independent agent features grounded wholly in the
+  same nodes.
+
+```shell
+uv run --extra generation contextbench eval-representation \
+  --subset-file configs/subsets/xldev2-tables.json \
+  --model <model-id> \
+  --input-usd-per-million <price> \
+  --cached-input-usd-per-million <price> \
+  --output-usd-per-million <price> \
+  --max-calls 6
+```
+
+The command requires explicit current pricing and a hard provider-call ceiling.
+It records representation and provider tokens, answer metrics, citations,
+latency, cost, the exact rendered contexts, and the one-time enrichment
+configuration. Questions without released gold pages are skipped and disclosed.
+No retrieval algorithm participates.

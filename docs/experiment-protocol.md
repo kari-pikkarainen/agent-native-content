@@ -192,6 +192,40 @@ provider. Runs are atomically published under
 `artifacts/generation-runs/<run-id>/` and bind to hashes of the retrieval
 manifest and contexts.
 
+## Gold-evidence representation experiment
+
+The representation experiment removes retrieval from the comparison. It
+selects the same released gold-page IR nodes for `raw`, `ir`, and `enriched`.
+Stable citation IDs and source content are held fixed; only the rendering
+changes. Enrichment is computed once per document without access to questions
+or answers, and a feature is eligible only when all its supporting nodes occur
+inside the authorized gold-page set.
+
+The run records deterministic enrichment preparation once per referenced
+document, plus total and amortized milliseconds per evaluated question. This
+keeps reusable document-conversion cost separate from per-query model latency.
+
+All three conditions share the answer prompt, provider, requested model,
+reasoning setting, output limit, deterministic scoring, and pricing. Record the
+exact representation, local representation tokens, provider usage, accuracy,
+token F1, ANLS, citation validity/support, latency, and cost. Questions without
+gold pages are skipped and listed in the manifest and summary. Immutable runs
+are published under `artifacts/representation-runs/<run-id>/`.
+
+The initial enriched condition contains deterministic outline, extractive
+section previews, numeric/normative/date/exception facts, definitions,
+explicit aliases, typed structural relationships, table schemas, and
+calculation-ready rows. It does not test abstractive LLM enrichment. Any
+accuracy gain must be reported alongside its token and one-time preprocessing
+overhead.
+
+The default answer prompt excludes calculation-ready row features because the
+same source tables are already present, and caps the remaining inline agent
+index at 128 features using fixed importance/page/ID ordering. The rows remain
+available in the reusable bundle for addressable tool access. Treat the cap and
+inline feature vocabulary as declared representation parameters, not hidden
+retrieval.
+
 ## First decision gate
 
 Development stops before generation. Inspect page-recall and full-coverage

@@ -101,6 +101,7 @@ def agent_document_jsonld(enrichment: AgentDocument) -> dict[str, object]:
                 "@type": f"cb:{_feature_type(feature.kind)}",
                 "cb:text": feature.text,
                 "cb:importance": feature.importance,
+                "cb:confidence": feature.confidence,
                 "cb:headingPath": list(feature.heading_path),
                 "cb:pageStart": feature.page_start,
                 "cb:pageEnd": feature.page_end,

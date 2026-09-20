@@ -3,8 +3,8 @@
 from typing import Any, Protocol
 
 from contextbench.generation.models import (
+    AnswerModelConfig,
     AnswerRequest,
-    GenerationConfig,
     ProviderAnswer,
 )
 
@@ -19,7 +19,7 @@ class AnswerProvider(Protocol):
         self,
         request: AnswerRequest,
         *,
-        config: GenerationConfig,
+        config: AnswerModelConfig,
     ) -> ProviderAnswer:
         """Generate one answer and return provider-reported usage."""
         ...
@@ -48,7 +48,7 @@ class OpenAIAnswerProvider:
         self,
         request: AnswerRequest,
         *,
-        config: GenerationConfig,
+        config: AnswerModelConfig,
     ) -> ProviderAnswer:
         params: dict[str, Any] = {
             "model": config.model,

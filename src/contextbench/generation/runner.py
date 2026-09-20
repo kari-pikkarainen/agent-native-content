@@ -16,6 +16,7 @@ from statistics import mean
 from contextbench.datasets.base import BenchmarkQuestion
 from contextbench.experiments import current_git_commit, utc_now
 from contextbench.generation.models import (
+    AnswerModelConfig,
     AnswerRequest,
     GenerationBenchmarkSummary,
     GenerationConfig,
@@ -188,7 +189,7 @@ def run_generation_benchmark(
                 model_id=response.model_id,
                 response_id=response.response_id,
                 provider_usage=response.provider_usage,
-                cost_usd=_response_cost(response, config),
+                cost_usd=response_cost(response, config),
             )
         )
 
@@ -218,6 +219,11 @@ def render_answer_prompt(question: str, context: ContextPacket) -> str:
         f'<evidence id="{item.evidence_id}">\n{item.content}\n</evidence>'
         for item in context.items
     )
+    return render_grounded_prompt(question, evidence)
+
+
+def render_grounded_prompt(question: str, evidence: str) -> str:
+    """Render the shared answer prompt around any controlled evidence encoding."""
     return (
         f"{ANSWER_PROMPT_INSTRUCTIONS}\n\n"
         f"Question:\n{question}\n\nEvidence:\n{evidence}"
@@ -248,7 +254,7 @@ def parse_answer_response(text: str) -> tuple[str, tuple[str, ...], bool]:
     return answer.strip(), tuple(citations), True
 
 
-def _response_cost(response: ProviderAnswer, config: GenerationConfig) -> float:
+def response_cost(response: ProviderAnswer, config: AnswerModelConfig) -> float:
     input_tokens = response.input_tokens
     cached_tokens = response.cached_input_tokens
     output_tokens = response.output_tokens

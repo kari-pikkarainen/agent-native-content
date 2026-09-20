@@ -1,6 +1,7 @@
 """Provider-neutral answer-generation evaluation."""
 
 from contextbench.generation.models import (
+    AnswerModelConfig,
     AnswerRequest,
     GenerationBenchmarkSummary,
     GenerationConfig,
@@ -15,10 +16,13 @@ from contextbench.generation.runner import (
     GenerationRun,
     parse_answer_response,
     render_answer_prompt,
+    render_grounded_prompt,
+    response_cost,
     run_generation_benchmark,
 )
 
 __all__ = [
+    "AnswerModelConfig",
     "AnswerProvider",
     "AnswerRequest",
     "GenerationBenchmarkSummary",
@@ -32,5 +36,7 @@ __all__ = [
     "ProviderAnswer",
     "parse_answer_response",
     "render_answer_prompt",
+    "render_grounded_prompt",
+    "response_cost",
     "run_generation_benchmark",
 ]
