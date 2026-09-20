@@ -1,0 +1,36 @@
+{
+  "name": "xldev6-perf",
+  "dataset": "microsoft/XL-DocBench",
+  "release_version": "xldocbench_strict_1345_v1",
+  "release_revision": "72954bd70ffffe230f08b57c57fa9274ec14d7ea",
+  "selection_seed": 20260920,
+  "selection_method": "Fixed performance diagnostic selected from the committed xldev24 tuning set before candidate-cap results were inspected. It takes the first answerable question in each domain in xldev24 source order, covers six distinct documents, and is used only with xldev24 as its declared retrieval corpus.",
+  "strata": {
+    "purpose": "cross_domain_performance_diagnostic_not_final_claims",
+    "domains": {
+      "finance_business": 1,
+      "legal_regulation": 1,
+      "medical_clinical": 1,
+      "narrative_literature": 1,
+      "scientific_academic": 1,
+      "technical_engineering": 1
+    },
+    "task_type": {
+      "single_doc": 6,
+      "cross_doc": 0
+    },
+    "answerability": {
+      "answerable": 6,
+      "unanswerable": 0
+    },
+    "source_documents": 6
+  },
+  "question_ids": [
+    "adubench_single_000011",
+    "adubench_single_000129",
+    "adubench_single_000185",
+    "adubench_single_000266",
+    "adubench_single_000440",
+    "adubench_single_000503"
+  ]
+}
