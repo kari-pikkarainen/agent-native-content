@@ -75,8 +75,10 @@ At larger budgets, optional multi-scale page-neighbor expansion can treat the
 highest-ranked node hits as anchors and rerank bounded fixed-token windows whose
 page spans fall within `page_neighbor_radius`. The expansion is disabled by
 default, activates only at `page_neighbor_min_budget`, and is bounded by both
-origin and candidate limits. The emitted windows retain every source node and
-source item used to derive them.
+origin and candidate limits. It runs only when unique core candidates cannot
+fill the requested budget, and its windows are ranked after core evidence so
+they backfill unused capacity instead of displacing direct hits. The emitted
+windows retain every source node and source item used to derive them.
 
 ### 4. Tables
 

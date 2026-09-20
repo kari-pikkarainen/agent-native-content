@@ -92,7 +92,9 @@ def compile_context(
         tokenizer=counter,
         reranker=index.reranker,
     )
-    unique = deduplicate_candidates(expanded, scope.documents)
+    unique = deduplicate_candidates(expanded, scope.documents)[
+        : my_config.max_expanded_candidates
+    ]
     return pack_candidates(
         query,
         unique,

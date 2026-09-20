@@ -142,20 +142,22 @@ def expand_candidates(
                 )
                 expansion_order += 1
 
-    page_neighbors = _page_neighbor_candidates(
-        query,
-        ranked,
-        documents,
-        token_budget=token_budget,
-        config=config,
-        tokenizer=tokenizer,
-        reranker=reranker,
-        expansion_order=expansion_order,
-    )
-    expanded.extend(page_neighbors)
+    if _unique_candidate_capacity(expanded, token_budget) < token_budget:
+        page_neighbors = _page_neighbor_candidates(
+            query,
+            ranked,
+            documents,
+            token_budget=token_budget,
+            config=config,
+            tokenizer=tokenizer,
+            reranker=reranker,
+            expansion_order=expansion_order,
+        )
+        expanded.extend(page_neighbors)
 
     expanded.sort(
         key=lambda candidate: (
+            candidate.priority_tier,
             -candidate.scores.reranked,
             -candidate.scores.fused,
             candidate.origin_rank,
@@ -163,7 +165,26 @@ def expand_candidates(
             candidate.chunk.id,
         )
     )
-    return tuple(expanded[: config.max_expanded_candidates])
+    return tuple(expanded)
+
+
+def _unique_candidate_capacity(
+    candidates: Sequence[CompilerCandidate],
+    token_budget: int,
+) -> int:
+    """Estimate packable core capacity without counting expanded duplicates."""
+    seen_sources: set[tuple[str, ...]] = set()
+    total = 0
+    for candidate in candidates:
+        chunk = candidate.chunk
+        if chunk.token_count > token_budget:
+            continue
+        source_key = (chunk.document_id, *sorted(chunk.source_item_ids))
+        if source_key in seen_sources:
+            continue
+        seen_sources.add(source_key)
+        total += chunk.token_count
+    return total
 
 
 def _page_neighbor_candidates(
@@ -246,6 +267,7 @@ def _page_neighbor_candidates(
                 ),
                 origin_rank=evidence.rank,
                 expansion_order=expansion_order + offset,
+                priority_tier=1,
             )
         )
     expanded.sort(

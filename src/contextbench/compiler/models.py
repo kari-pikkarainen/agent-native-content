@@ -66,4 +66,5 @@ class CompilerCandidate(BaseModel):
     scores: RetrievalScores
     origin_rank: int = Field(ge=1)
     expansion_order: int = Field(ge=0)
+    priority_tier: int = Field(default=0, ge=0)
     allow_shared_source: bool = False

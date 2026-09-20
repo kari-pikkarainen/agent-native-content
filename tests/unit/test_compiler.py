@@ -441,6 +441,7 @@ def test_page_neighbor_expansion_adds_bounded_multiscale_context(
     )
 
     assert all(item.page_start != 2 for item in small.items)
+    assert "Target revenue increased" in expanded.items[0].content
     assert any(item.page_end == 2 for item in expanded.items)
     assert any("Measurements were audited" in item.content for item in expanded.items)
     assert expanded.token_count <= expanded.token_budget
