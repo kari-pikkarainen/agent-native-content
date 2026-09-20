@@ -156,45 +156,6 @@ def oversized_table_source() -> DoclingDocument:
     return document
 
 
-def continued_table_source() -> DoclingDocument:
-    document = DoclingDocument(name="continued-table")
-    for page_no in range(1, 4):
-        document.add_page(page_no, Size(width=612, height=792))
-    heading = document.add_heading(
-        "Results",
-        level=1,
-        prov=provenance(1, "Results", 750),
-    )
-
-    def add_table(page_no: int, rows: tuple[tuple[str, ...], ...]) -> None:
-        cells = [
-            TableCell(
-                start_row_offset_idx=row,
-                end_row_offset_idx=row + 1,
-                start_col_offset_idx=column,
-                end_col_offset_idx=column + 1,
-                text=text,
-                column_header=row == 0,
-            )
-            for row, values in enumerate(rows)
-            for column, text in enumerate(values)
-        ]
-        document.add_table(
-            data=TableData(
-                table_cells=cells,
-                num_rows=len(rows),
-                num_cols=len(rows[0]),
-            ),
-            parent=heading,
-            prov=provenance(page_no, "table", 700),
-        )
-
-    add_table(1, (("Table A.1", "Value"), ("Alpha", "1")))
-    add_table(2, (("Name", "Value"), ("Beta", "2")))
-    add_table(3, (("Name", "Value", "Unit"), ("Gamma", "3", "kg")))
-    return document
-
-
 @pytest.fixture
 def compiler_fixture(tmp_path: Path):
     source = compiler_source()
@@ -674,41 +635,6 @@ def test_oversized_table_uses_reranked_docling_chunks(tmp_path: Path) -> None:
     assert "Revenue" in packet.items[0].content
     assert "District9" in packet.items[0].content
     assert "109" in packet.items[0].content
-
-
-def test_explicit_table_reference_adds_matching_continuation_pages(
-    tmp_path: Path,
-) -> None:
-    source = continued_table_source()
-    counter = FixtureTokenCounter()
-    ir = project_document(source, ingest_metadata(tmp_path), tokenizer=counter)
-    scope = DocumentScope.from_documents(
-        [ir],
-        source_documents={ir.id: source},
-    )
-    config = compiler_config(
-        retrieval=RetrievalConfig(
-            candidate_limit=5,
-            rerank_limit=1,
-            max_candidate_limit=5,
-            max_rerank_limit=1,
-        ),
-        include_heading_context=False,
-        table_neighbor_min_budget=1,
-        table_neighbor_limit=10,
-    )
-
-    packet = compile_context(
-        "Compare Table A.1 values",
-        scope,
-        100,
-        config,
-        tokenizer=counter,
-    )
-
-    assert {item.page_start for item in packet.items} == {1, 2}
-    assert any("Beta" in item.content for item in packet.items)
-    assert all("Gamma" not in item.content for item in packet.items)
 
 
 @pytest.mark.parametrize("budget", range(0, 21))

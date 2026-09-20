@@ -2,7 +2,6 @@
 
 import hashlib
 import json
-import re
 from collections.abc import Mapping, Sequence
 
 from docling_core.types.doc import DoclingDocument
@@ -23,11 +22,6 @@ from contextbench.retrieval.models import (
 )
 from contextbench.retrieval.rerank import Reranker
 
-_TABLE_REFERENCE = re.compile(
-    r"\btable\s+([A-Z0-9][A-Z0-9.\-–—]*)",
-    flags=re.IGNORECASE,
-)
-
 
 def expand_candidates(
     query: str,
@@ -45,7 +39,6 @@ def expand_candidates(
     documents_by_id = {document.id: document for document in documents}
     expanded: list[CompilerCandidate] = []
     table_chunks_by_document: dict[str, tuple[RetrievalChunk, ...]] = {}
-    table_references = _table_references(query)
     expansion_order = 0
 
     for evidence in ranked:
@@ -148,25 +141,6 @@ def expand_candidates(
                         evidence=evidence,
                         penalty=config.list_score_penalty**distance,
                         relation="list-neighbor",
-                        config=config,
-                        tokenizer=tokenizer,
-                        expansion_order=expansion_order,
-                    )
-                )
-                expansion_order += 1
-        if (
-            node.kind == IRNodeKind.TABLE
-            and token_budget >= config.table_neighbor_min_budget
-            and table_references
-            and _matches_table_reference(node, table_references)
-        ):
-            for neighbor, distance in _table_neighbors(node, document, config):
-                expanded.append(
-                    _candidate_for_related_node(
-                        neighbor,
-                        evidence=evidence,
-                        penalty=config.table_neighbor_score_penalty**distance,
-                        relation="table-neighbor",
                         config=config,
                         tokenizer=tokenizer,
                         expansion_order=expansion_order,
@@ -448,74 +422,6 @@ def _list_neighbors(
                 if neighbor.kind == IRNodeKind.LIST_ITEM:
                     selected.append((neighbor, distance))
     return tuple(selected)
-
-
-def _table_references(query: str) -> tuple[str, ...]:
-    references = []
-    for match in _TABLE_REFERENCE.finditer(query):
-        identifier = match.group(1).rstrip(".,;:")
-        reference = f"table {identifier}".casefold()
-        if reference not in references:
-            references.append(reference)
-    return tuple(references)
-
-
-def _matches_table_reference(node: IRNode, references: Sequence[str]) -> bool:
-    normalized = " ".join(node.text.casefold().split())
-    return any(reference in normalized for reference in references)
-
-
-def _table_neighbors(
-    node: IRNode,
-    document: IRDocument,
-    config: CompilerConfig,
-) -> tuple[tuple[IRNode, int], ...]:
-    if node.table is None or config.table_neighbor_limit == 0:
-        return ()
-    tables = [candidate for candidate in document.nodes if candidate.table is not None]
-    index = tables.index(node)
-    width = _table_width(node)
-    selected: list[tuple[IRNode, int]] = []
-    for direction in (-1, 1):
-        previous = node
-        for distance in range(1, config.table_neighbor_limit + 1):
-            position = index + direction * distance
-            if not 0 <= position < len(tables):
-                break
-            neighbor = tables[position]
-            if (
-                neighbor.heading_path != node.heading_path
-                or _table_width(neighbor) != width
-                or not _pages_are_contiguous(previous, neighbor)
-            ):
-                break
-            selected.append((neighbor, distance))
-            previous = neighbor
-    return tuple(selected)
-
-
-def _table_width(node: IRNode) -> int:
-    if node.table is None:
-        return 0
-    if node.table.column_headers:
-        return len(node.table.column_headers)
-    return len(node.table.rows[0]) if node.table.rows else 0
-
-
-def _pages_are_contiguous(first: IRNode, second: IRNode) -> bool:
-    if (
-        first.page_start is None
-        or first.page_end is None
-        or second.page_start is None
-        or second.page_end is None
-    ):
-        return False
-    return _page_range_distance(
-        first.page_start,
-        first.page_end,
-        second.page_start,
-        second.page_end,
-    ) <= 1
 
 
 def _siblings(node: IRNode, document: IRDocument) -> list[IRNode]:
