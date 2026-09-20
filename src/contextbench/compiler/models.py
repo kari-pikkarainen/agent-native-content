@@ -43,6 +43,9 @@ class CompilerConfig(BaseModel):
     page_neighbor_score_penalty: float = Field(default=0.8, gt=0, le=1)
     preserve_tables: bool = True
     table_chunk_tokens: int = Field(default=512, ge=1)
+    keyed_table_join_enabled: bool = False
+    keyed_table_join_candidate_limit: int = Field(default=16, ge=1)
+    keyed_table_join_empty_marker: str = Field(default="[blank]", min_length=1)
     max_expanded_candidates: int = Field(default=500, ge=1)
 
 
@@ -94,11 +97,18 @@ class CompilerQueryCache:
     page_neighbor_prepare_ms: float = 0.0
     page_neighbors_used: bool = False
     page_neighbor_cache_hit: bool = False
+    _keyed_join_key: str | None = None
+    _keyed_joins: tuple[CompilerCandidate, ...] = ()
+    keyed_join_prepare_ms: float = 0.0
+    keyed_joins_used: bool = False
+    keyed_join_cache_hit: bool = False
 
     def begin_compilation(self) -> None:
         """Reset per-compilation observations without clearing cached state."""
         self.page_neighbors_used = False
         self.page_neighbor_cache_hit = False
+        self.keyed_joins_used = False
+        self.keyed_join_cache_hit = False
 
     def page_neighbors(
         self,
@@ -119,3 +129,21 @@ class CompilerQueryCache:
             raise ValueError("CompilerQueryCache cannot be reused for another query")
         self.page_neighbor_cache_hit = True
         return self._page_neighbors
+
+    def keyed_joins(
+        self,
+        key: str,
+        factory: Callable[[], tuple[CompilerCandidate, ...]],
+    ) -> tuple[CompilerCandidate, ...]:
+        """Return one query-scoped keyed-table join ranking."""
+        self.keyed_joins_used = True
+        if self._keyed_join_key is None:
+            started = time.perf_counter_ns()
+            self._keyed_joins = factory()
+            self.keyed_join_prepare_ms = (time.perf_counter_ns() - started) / 1_000_000
+            self._keyed_join_key = key
+            return self._keyed_joins
+        if self._keyed_join_key != key:
+            raise ValueError("CompilerQueryCache cannot be reused for another query")
+        self.keyed_join_cache_hit = True
+        return self._keyed_joins

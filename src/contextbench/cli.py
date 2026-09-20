@@ -146,6 +146,16 @@ def evaluate_retrieval(
             ),
         ),
     ] = False,
+    compiler_keyed_table_joins: Annotated[
+        bool,
+        typer.Option(
+            "--compiler-keyed-table-joins",
+            help=(
+                "Enable deterministic joins between rows in explicitly "
+                "referenced tables."
+            ),
+        ),
+    ] = False,
     run_id: Annotated[
         str | None,
         typer.Option(help="Optional immutable run identifier."),
@@ -168,7 +178,10 @@ def evaluate_retrieval(
         seed=seed,
         compiler_stage_audit=compiler_stage_audit,
         retrieval=retrieval,
-        compiler=CompilerConfig(retrieval=retrieval),
+        compiler=CompilerConfig(
+            retrieval=retrieval,
+            keyed_table_join_enabled=compiler_keyed_table_joins,
+        ),
     )
     try:
         result = run_xl_retrieval(

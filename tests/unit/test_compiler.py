@@ -19,10 +19,12 @@ from contextbench.compiler import (
 )
 from contextbench.compiler.candidates import node_chunks
 from contextbench.compiler.expand import _penalize
+from contextbench.compiler.joins import keyed_table_join_candidates
 from contextbench.ir import project_document
 from contextbench.ir.models import IRNodeKind
 from contextbench.retrieval import RetrievalConfig, RetrievalScores
 from contextbench.retrieval.index import HybridIndex
+from contextbench.retrieval.rerank import LexicalOverlapReranker
 
 
 def compiler_source() -> DoclingDocument:
@@ -153,6 +155,67 @@ def oversized_table_source() -> DoclingDocument:
         caption=caption,
         parent=heading,
         prov=provenance(1, "district table", 690),
+    )
+    return document
+
+
+def joined_table_source() -> DoclingDocument:
+    document = DoclingDocument(name="joined-tables")
+    document.add_page(1, Size(width=612, height=792))
+    document.add_page(2, Size(width=612, height=792))
+    first_caption = document.add_text(
+        label=DocItemLabel.CAPTION,
+        text="Table A.1 | Model references",
+        prov=provenance(1, "Table A.1", 740),
+    )
+    first_values = (
+        ("Model", "Main References"),
+        ("ALPHA-1", "Alpha et al."),
+        ("BETA-2", ""),
+    )
+    first_cells = [
+        TableCell(
+            start_row_offset_idx=row,
+            end_row_offset_idx=row + 1,
+            start_col_offset_idx=column,
+            end_col_offset_idx=column + 1,
+            text=text,
+            column_header=row == 0,
+        )
+        for row, values in enumerate(first_values)
+        for column, text in enumerate(values)
+    ]
+    document.add_table(
+        data=TableData(table_cells=first_cells, num_rows=3, num_cols=2),
+        caption=first_caption,
+        prov=provenance(1, "model references", 700),
+    )
+    second_caption = document.add_text(
+        label=DocItemLabel.CAPTION,
+        text="Table A.2 | Model datasets",
+        prov=provenance(2, "Table A.2", 740),
+    )
+    second_values = (
+        ("Institute: Model", "Dataset citation and DOI"),
+        ("ORG:ALPHA-1", "Alpha dataset DOI"),
+        ("ORG:BETA-2", "Beta dataset DOI"),
+    )
+    second_cells = [
+        TableCell(
+            start_row_offset_idx=row,
+            end_row_offset_idx=row + 1,
+            start_col_offset_idx=column,
+            end_col_offset_idx=column + 1,
+            text=text,
+            column_header=row == 0,
+        )
+        for row, values in enumerate(second_values)
+        for column, text in enumerate(values)
+    ]
+    document.add_table(
+        data=TableData(table_cells=second_cells, num_rows=3, num_cols=2),
+        caption=second_caption,
+        prov=provenance(2, "model datasets", 700),
     )
     return document
 
@@ -665,6 +728,70 @@ def test_oversized_table_uses_reranked_docling_chunks(tmp_path: Path) -> None:
     assert "Revenue" in packet.items[0].content
     assert "District9" in packet.items[0].content
     assert "109" in packet.items[0].content
+
+
+def test_keyed_table_join_selects_constraint_row_and_preserves_provenance(
+    tmp_path: Path,
+) -> None:
+    source = joined_table_source()
+    counter = FixtureTokenCounter()
+    ir = project_document(source, ingest_metadata(tmp_path), tokenizer=counter)
+    query = (
+        "Which dataset in Table A.2 has a blank MainReferences entry "
+        "in Table A.1?"
+    )
+
+    candidates = keyed_table_join_candidates(
+        query,
+        [ir],
+        tokenizer=counter,
+        reranker=LexicalOverlapReranker(),
+        candidate_limit=4,
+        empty_marker="[blank]",
+    )
+
+    assert candidates
+    assert len(candidates) == 1
+    best = candidates[0]
+    assert "Joined table key: beta-2" in best.chunk.text
+    assert "Table A.2" in best.chunk.text
+    assert "Dataset citation and DOI: Beta dataset DOI" in best.chunk.text
+    assert "Table A.1" in best.chunk.text
+    assert "Main References: [blank]" in best.chunk.text
+    table_nodes = tuple(node for node in ir.nodes if node.kind == IRNodeKind.TABLE)
+    assert set(best.chunk.source_node_ids) == {node.id for node in table_nodes}
+    assert set(best.chunk.source_item_ids) == {
+        item_id for node in table_nodes for item_id in node.source_item_ids
+    }
+    assert best.chunk.page_start is None
+    assert best.chunk.page_end is None
+
+
+def test_keyed_table_join_is_prioritized_when_enabled(tmp_path: Path) -> None:
+    source = joined_table_source()
+    counter = FixtureTokenCounter()
+    ir = project_document(source, ingest_metadata(tmp_path), tokenizer=counter)
+    scope = DocumentScope.from_documents(
+        [ir],
+        source_documents={ir.id: source},
+    )
+    query = (
+        "Which dataset in Table A.2 has a blank MainReferences entry "
+        "in Table A.1?"
+    )
+
+    packet = compile_context(
+        query,
+        scope,
+        80,
+        compiler_config(keyed_table_join_enabled=True),
+        tokenizer=counter,
+    )
+
+    assert packet.items
+    assert "Joined table key: beta-2" in packet.items[0].content
+    assert "Main References: [blank]" in packet.items[0].content
+    assert packet.token_count <= packet.token_budget
 
 
 @pytest.mark.parametrize("budget", range(0, 21))

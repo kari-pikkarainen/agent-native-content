@@ -367,6 +367,12 @@ def _evaluate_cells(
                     and compiler_cache.page_neighbor_cache_hit
                 ):
                     elapsed_ms += compiler_cache.page_neighbor_prepare_ms
+                if (
+                    compiler_cache is not None
+                    and compiler_cache.keyed_joins_used
+                    and compiler_cache.keyed_join_cache_hit
+                ):
+                    elapsed_ms += compiler_cache.keyed_join_prepare_ms
                 metrics = evaluate_context(question, packet, corpus.documents)
                 records.append(
                     RetrievalEvaluationRecord(

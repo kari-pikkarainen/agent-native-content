@@ -6,6 +6,10 @@ from collections.abc import Mapping, Sequence
 
 from docling_core.types.doc import DoclingDocument
 
+from contextbench.compiler.joins import (
+    keyed_table_join_cache_key,
+    keyed_table_join_candidates,
+)
 from contextbench.compiler.models import (
     CompilerCandidate,
     CompilerConfig,
@@ -147,6 +151,45 @@ def expand_candidates(
                     )
                 )
                 expansion_order += 1
+
+    if config.keyed_table_join_enabled:
+        def join_factory() -> tuple[CompilerCandidate, ...]:
+            return keyed_table_join_candidates(
+                query,
+                documents,
+                tokenizer=tokenizer,
+                reranker=reranker,
+                candidate_limit=config.keyed_table_join_candidate_limit,
+                empty_marker=config.keyed_table_join_empty_marker,
+            )
+
+        joins = (
+            query_cache.keyed_joins(
+                keyed_table_join_cache_key(
+                    query,
+                    documents,
+                    candidate_limit=config.keyed_table_join_candidate_limit,
+                    empty_marker=config.keyed_table_join_empty_marker,
+                ),
+                join_factory,
+            )
+            if query_cache is not None
+            else join_factory()
+        )
+        if joins:
+            expanded = [
+                candidate.model_copy(
+                    update={"priority_tier": candidate.priority_tier + 1}
+                )
+                for candidate in expanded
+            ]
+            expanded.extend(
+                candidate.model_copy(
+                    update={"expansion_order": expansion_order + offset}
+                )
+                for offset, candidate in enumerate(joins)
+            )
+            expansion_order += len(joins)
 
     if (
         config.page_neighbor_radius > 0
