@@ -106,6 +106,7 @@ def compile_context_with_trace(
                 else token_budget
             ),
             document_ids=set(document_ids),
+            maximum_rerank_limit=my_config.node_rerank_candidate_limit,
         )
         ranked = retrieve_faceted(
             index,

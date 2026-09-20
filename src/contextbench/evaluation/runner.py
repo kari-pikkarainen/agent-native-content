@@ -304,6 +304,9 @@ def _evaluate_cells(
                     question.question,
                     token_budget=max(config.budgets),
                     document_ids=ir_document_ids,
+                    maximum_rerank_limit=(
+                        config.compiler.node_rerank_candidate_limit
+                    ),
                 )
                 ranked = retrieve_faceted(
                     indexes[system],

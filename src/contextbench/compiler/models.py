@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from typing import Literal
 
 from docling_core.types.doc import DoclingDocument
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from contextbench.ir.models import IRDocument
 from contextbench.retrieval.models import (
@@ -38,6 +38,7 @@ class CompilerConfig(BaseModel):
     query_facet_min_terms: int = Field(default=3, ge=1)
     query_facet_full_weight: float = Field(default=2.0, gt=0)
     query_facet_rerank_strategy: Literal["batched", "single_pass"] = "batched"
+    node_rerank_candidate_limit: int = Field(default=128, ge=1)
     page_neighbor_radius: int = Field(default=3, ge=0)
     page_neighbor_min_budget: int = Field(default=16384, ge=1)
     page_neighbor_origin_limit: int = Field(default=20, ge=1)
@@ -50,6 +51,14 @@ class CompilerConfig(BaseModel):
     keyed_table_join_candidate_limit: int = Field(default=16, ge=1)
     keyed_table_join_empty_marker: str = Field(default="[blank]", min_length=1)
     max_expanded_candidates: int = Field(default=500, ge=1)
+
+    @model_validator(mode="after")
+    def candidate_limit_can_satisfy_minimum(self) -> "CompilerConfig":
+        if self.node_rerank_candidate_limit < self.retrieval.rerank_limit:
+            raise ValueError(
+                "node_rerank_candidate_limit must be at least rerank_limit"
+            )
+        return self
 
 
 @dataclass(frozen=True)

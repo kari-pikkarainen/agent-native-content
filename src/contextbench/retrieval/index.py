@@ -221,6 +221,7 @@ class HybridIndex:
         limit: int | None = None,
         token_budget: int | None = None,
         document_ids: set[str] | None = None,
+        maximum_rerank_limit: int | None = None,
     ) -> tuple[RankedEvidence, ...]:
         """Run sparse, dense, RRF, and reranking stages."""
         candidates = self.retrieve_candidates(
@@ -228,6 +229,7 @@ class HybridIndex:
             limit=limit,
             token_budget=token_budget,
             document_ids=document_ids,
+            maximum_rerank_limit=maximum_rerank_limit,
         )
         return self.rerank(query, candidates)
 
@@ -238,10 +240,13 @@ class HybridIndex:
         limit: int | None = None,
         token_budget: int | None = None,
         document_ids: set[str] | None = None,
+        maximum_rerank_limit: int | None = None,
     ) -> tuple[RankedEvidence, ...]:
         """Run sparse, dense, and RRF stages without the cross-encoder."""
         if token_budget is not None and token_budget < 0:
             raise ValueError("token_budget must not be negative")
+        if maximum_rerank_limit is not None and maximum_rerank_limit < 1:
+            raise ValueError("maximum_rerank_limit must be positive")
         minimum_candidate_limit = limit or self.config.candidate_limit
         search_limit = (
             self.config.max_candidate_limit
@@ -317,7 +322,10 @@ class HybridIndex:
                 candidate_indices,
                 minimum_count=rerank_limit,
                 token_target=rerank_token_target,
-                maximum_count=self.config.max_rerank_limit,
+                maximum_count=min(
+                    self.config.max_rerank_limit,
+                    maximum_rerank_limit or self.config.max_rerank_limit,
+                ),
             )
         else:
             candidate_indices = candidate_indices[:rerank_limit]

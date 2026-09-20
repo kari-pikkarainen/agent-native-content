@@ -231,6 +231,36 @@ def test_candidate_retrieval_defers_reranking() -> None:
     ]
 
 
+def test_candidate_retrieval_honors_an_explicit_rerank_cap() -> None:
+    chunks = tuple(
+        RetrievalChunk(
+            id=f"chunk-{index}",
+            arm=RetrievalArm.COMPILER,
+            document_id="doc",
+            text=f"shared evidence {index}",
+            token_count=1,
+            source_node_ids=(f"node-{index}",),
+            source_item_ids=(f"item-{index}",),
+        )
+        for index in range(20)
+    )
+    config = RetrievalConfig(
+        candidate_limit=2,
+        rerank_limit=2,
+        max_candidate_limit=20,
+        max_rerank_limit=20,
+    )
+    index = HybridIndex(chunks, config=config, tokenizer=FixtureTokenCounter())
+
+    candidates = index.retrieve_candidates(
+        "shared evidence",
+        token_budget=20,
+        maximum_rerank_limit=7,
+    )
+
+    assert len(candidates) == 7
+
+
 def test_rerank_many_batches_query_candidate_pairs() -> None:
     class PairReranker:
         name = "pair"
