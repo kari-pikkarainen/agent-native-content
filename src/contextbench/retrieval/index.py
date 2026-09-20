@@ -222,6 +222,7 @@ class HybridIndex:
         query: str,
         *,
         token_budget: int,
+        retrieval_token_budget: int | None = None,
         limit: int | None = None,
         document_ids: set[str] | None = None,
     ) -> ContextPacket:
@@ -229,7 +230,11 @@ class HybridIndex:
         ranked = self.retrieve(
             query,
             limit=limit,
-            token_budget=token_budget,
+            token_budget=(
+                retrieval_token_budget
+                if retrieval_token_budget is not None
+                else token_budget
+            ),
             document_ids=document_ids,
         )
         return pack_evidence(

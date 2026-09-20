@@ -31,6 +31,7 @@ def compile_context(
     embedder: EmbeddingModel | None = None,
     reranker: Reranker | None = None,
     hybrid_index: HybridIndex | None = None,
+    retrieval_token_budget: int | None = None,
 ) -> ContextPacket:
     """Compile query-specific evidence without an LLM or budget overflow."""
     if not query.strip():
@@ -62,7 +63,11 @@ def compile_context(
         )
     ranked = index.retrieve(
         query,
-        token_budget=token_budget,
+        token_budget=(
+            retrieval_token_budget
+            if retrieval_token_budget is not None
+            else token_budget
+        ),
         document_ids=set(document_ids),
     )
     expanded = expand_candidates(

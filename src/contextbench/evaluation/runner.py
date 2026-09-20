@@ -266,6 +266,7 @@ def _evaluate_cells(
                     tokenizer=tokenizer,
                     embedder=embedder,
                     reranker=reranker,
+                    retrieval_token_budget=max(config.budgets),
                 )
                 elapsed_ms = (time.perf_counter_ns() - started) / 1_000_000
                 metrics = evaluate_context(question, packet, corpus.documents)
@@ -305,6 +306,7 @@ def _context_for_system(
     tokenizer: TokenCounter,
     embedder: EmbeddingModel,
     reranker: Reranker,
+    retrieval_token_budget: int,
 ) -> ContextPacket:
     if system == BenchmarkSystem.COMPILER:
         return compile_context(
@@ -316,10 +318,12 @@ def _context_for_system(
             embedder=embedder,
             reranker=reranker,
             hybrid_index=index,
+            retrieval_token_budget=retrieval_token_budget,
         )
     return index.pack(
         query,
         token_budget=budget,
+        retrieval_token_budget=retrieval_token_budget,
         document_ids=ir_document_ids,
     )
 

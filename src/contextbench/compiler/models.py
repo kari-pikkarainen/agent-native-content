@@ -13,7 +13,7 @@ from contextbench.retrieval.models import (
     RetrievalScores,
 )
 
-COMPILER_VERSION = "0.1.0"
+COMPILER_VERSION = "0.2.0"
 
 
 class CompilerConfig(BaseModel):
@@ -31,7 +31,7 @@ class CompilerConfig(BaseModel):
     list_score_penalty: float = Field(default=0.9, gt=0, le=1)
     preserve_tables: bool = True
     table_chunk_tokens: int = Field(default=512, ge=1)
-    max_expanded_candidates: int = Field(default=100, ge=1)
+    max_expanded_candidates: int = Field(default=500, ge=1)
 
 
 @dataclass(frozen=True)

@@ -225,6 +225,45 @@ def test_duplicate_search_text_does_not_consume_rerank_capacity() -> None:
     }
 
 
+def test_fixed_retrieval_capacity_keeps_budget_contexts_nested() -> None:
+    chunks = tuple(
+        RetrievalChunk(
+            id=f"chunk-{index:02d}",
+            arm=RetrievalArm.COMPILER,
+            document_id="doc",
+            text=f"evidence{index}",
+            token_count=1,
+            source_node_ids=(f"node-{index}",),
+            source_item_ids=(f"item-{index}",),
+        )
+        for index in range(20)
+    )
+    config = RetrievalConfig(
+        candidate_limit=2,
+        rerank_limit=2,
+        candidate_token_multiplier=3,
+        rerank_token_multiplier=2,
+        max_candidate_limit=20,
+        max_rerank_limit=20,
+    )
+    index = HybridIndex(chunks, config=config, tokenizer=FixtureTokenCounter())
+
+    small = index.pack(
+        "evidence",
+        token_budget=2,
+        retrieval_token_budget=10,
+    )
+    large = index.pack(
+        "evidence",
+        token_budget=10,
+        retrieval_token_budget=10,
+    )
+
+    assert small.items == large.items[: len(small.items)]
+    assert small.token_count == 2
+    assert large.token_count == 10
+
+
 def test_repeated_builds_have_identical_rankings_and_artifact_keys(
     tmp_path: Path, retrieval_fixture
 ) -> None:
