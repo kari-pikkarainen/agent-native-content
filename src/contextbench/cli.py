@@ -24,6 +24,9 @@ DEFAULT_DATASET_DIR = Path("data/raw/xl-docbench")
 DEFAULT_DOCUMENT_CACHE = Path("data/cache/xl-docbench")
 DEFAULT_INGEST_CACHE = Path("data/cache/ingest")
 DEFAULT_XL100 = Path("configs/subsets/xl100.json")
+DEFAULT_ARTIFACTS_ROOT = Path("artifacts")
+DEFAULT_EMBEDDING_MODEL = "BAAI/bge-small-en-v1.5"
+DEFAULT_RERANKER_MODEL = "cross-encoder/ms-marco-MiniLM-L-6-v2"
 
 
 def version_callback(value: bool) -> None:
@@ -86,6 +89,95 @@ def ingest_document(
     typer.echo(json.dumps(value, ensure_ascii=False, sort_keys=True))
 
 
+@app.command("eval-retrieval")
+def evaluate_retrieval(
+    data_dir: Annotated[
+        Path,
+        typer.Option(help="Directory for pinned XL-DocBench release metadata."),
+    ] = DEFAULT_DATASET_DIR,
+    subset_file: Annotated[
+        Path,
+        typer.Option(help="Committed benchmark subset manifest."),
+    ] = DEFAULT_XL100,
+    source_cache_dir: Annotated[
+        Path,
+        typer.Option(help="Content-addressed source PDF cache."),
+    ] = DEFAULT_DOCUMENT_CACHE,
+    ingest_cache_dir: Annotated[
+        Path,
+        typer.Option(help="Content-addressed Docling ingestion cache."),
+    ] = DEFAULT_INGEST_CACHE,
+    artifacts_root: Annotated[
+        Path,
+        typer.Option(help="Root for derived indexes and immutable runs."),
+    ] = DEFAULT_ARTIFACTS_ROOT,
+    docling_artifacts_dir: Annotated[
+        Path | None,
+        typer.Option(help="Optional directory of pre-downloaded Docling models."),
+    ] = None,
+    embedding_model: Annotated[
+        str,
+        typer.Option(help="SentenceTransformers embedding model ID."),
+    ] = DEFAULT_EMBEDDING_MODEL,
+    reranker_model: Annotated[
+        str,
+        typer.Option(help="SentenceTransformers cross-encoder model ID."),
+    ] = DEFAULT_RERANKER_MODEL,
+    seed: Annotated[
+        int,
+        typer.Option(help="Recorded benchmark seed."),
+    ] = 20260919,
+    run_id: Annotated[
+        str | None,
+        typer.Option(help="Optional immutable run identifier."),
+    ] = None,
+) -> None:
+    """Run the evidence-only A/B/D benchmark on the committed XL100 subset."""
+    # Keep evaluation and model imports off lightweight CLI paths.
+    from contextbench.compiler import CompilerConfig
+    from contextbench.evaluation import RetrievalBenchmarkConfig
+    from contextbench.evaluation.xl_docbench import run_xl100_retrieval
+    from contextbench.ingest import IngestionError
+    from contextbench.ir.project import IRProjectionError
+    from contextbench.retrieval import RetrievalConfig
+
+    retrieval = RetrievalConfig(
+        embedding_model=embedding_model,
+        reranker_model=reranker_model,
+    )
+    config = RetrievalBenchmarkConfig(
+        seed=seed,
+        retrieval=retrieval,
+        compiler=CompilerConfig(retrieval=retrieval),
+    )
+    try:
+        result = run_xl100_retrieval(
+            data_dir=data_dir,
+            subset_file=subset_file,
+            source_cache_dir=source_cache_dir,
+            ingest_cache_dir=ingest_cache_dir,
+            artifacts_root=artifacts_root,
+            docling_artifacts_dir=docling_artifacts_dir,
+            config=config,
+            run_id=run_id,
+            progress=lambda message: typer.echo(message, err=True),
+        )
+    except (DatasetError, IngestionError, IRProjectionError, RuntimeError) as exc:
+        _abort(str(exc))
+    typer.echo(
+        json.dumps(
+            {
+                "report": str(result.path / "report.md"),
+                "run_dir": str(result.path),
+                "run_id": result.manifest.run_id,
+                "summary": str(result.path / "summary.json"),
+            },
+            ensure_ascii=False,
+            sort_keys=True,
+        )
+    )
+
+
 @dataset_app.command("download")
 def download_dataset(
     dataset_name: Annotated[str, typer.Argument(help="Dataset name.")],
@@ -137,9 +229,7 @@ def download_dataset(
                 typer.echo(f"{source.id}: ERROR {exc}", err=True)
         if failures:
             failure_log = cache_dir / "failures.jsonl"
-            _abort(
-                f"{failures} source download(s) failed; see {failure_log}"
-            )
+            _abort(f"{failures} source download(s) failed; see {failure_log}")
     except DatasetError as exc:
         _abort(str(exc))
 

@@ -2,11 +2,13 @@
 
 import json
 from pathlib import Path
+from types import SimpleNamespace
 
 from typer.testing import CliRunner
 
 from contextbench import __version__
 from contextbench.cli import app
+from contextbench.evaluation import BenchmarkSystem
 
 runner = CliRunner()
 FIXTURES = Path(__file__).parents[1] / "fixtures"
@@ -93,3 +95,43 @@ def test_dataset_error_is_reported_without_traceback(tmp_path: Path) -> None:
     assert result.exit_code == 1
     assert "release file not found" in result.output
     assert "Traceback" not in result.output
+
+
+def test_eval_retrieval_runs_all_default_budgets_and_prints_artifacts(
+    tmp_path: Path, monkeypatch
+) -> None:
+    captured = {}
+
+    def fake_run_xl100_retrieval(**kwargs):
+        captured.update(kwargs)
+        path = tmp_path / "artifacts" / "runs" / "run-1"
+        return SimpleNamespace(
+            path=path,
+            manifest=SimpleNamespace(run_id="run-1"),
+        )
+
+    monkeypatch.setattr(
+        "contextbench.evaluation.xl_docbench.run_xl100_retrieval",
+        fake_run_xl100_retrieval,
+    )
+
+    result = runner.invoke(
+        app,
+        [
+            "eval-retrieval",
+            "--artifacts-root",
+            str(tmp_path / "artifacts"),
+            "--run-id",
+            "run-1",
+        ],
+    )
+
+    assert result.exit_code == 0
+    output = json.loads(result.stdout)
+    assert output["run_id"] == "run-1"
+    assert output["report"].endswith("run-1/report.md")
+    config = captured["config"]
+    assert config.budgets == (2048, 4096, 8192, 16384)
+    assert set(config.systems) == set(BenchmarkSystem)
+    assert config.retrieval.embedding_model == "BAAI/bge-small-en-v1.5"
+    assert config.retrieval.reranker_model == ("cross-encoder/ms-marco-MiniLM-L-6-v2")

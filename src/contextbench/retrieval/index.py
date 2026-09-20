@@ -47,8 +47,8 @@ class HybridIndex:
     ) -> None:
         self.chunks = tuple(chunks)
         self.config = config
-        self.embedder = embedder or _embedding_model(config)
-        self.reranker = reranker or _reranker(config)
+        self.embedder = embedder or embedding_model_from_config(config)
+        self.reranker = reranker or reranker_from_config(config)
         self.tokenizer = tokenizer or TiktokenTokenCounter(config.tokenizer_name)
         self.sparse = BM25Index(
             self.chunks,
@@ -104,12 +104,33 @@ class HybridIndex:
         return index
 
     def retrieve(
-        self, query: str, *, limit: int | None = None
+        self,
+        query: str,
+        *,
+        limit: int | None = None,
+        document_ids: set[str] | None = None,
     ) -> tuple[RankedEvidence, ...]:
         """Run sparse, dense, RRF, and reranking stages."""
         candidate_limit = limit or self.config.candidate_limit
-        sparse_hits = self.sparse.search(query, candidate_limit)
-        dense_hits = self._dense_search(query, candidate_limit)
+        allowed_indices = (
+            {
+                index
+                for index, chunk in enumerate(self.chunks)
+                if chunk.document_id in document_ids
+            }
+            if document_ids is not None
+            else None
+        )
+        sparse_hits = self.sparse.search(
+            query,
+            candidate_limit,
+            allowed_indices=allowed_indices,
+        )
+        dense_hits = self._dense_search(
+            query,
+            candidate_limit,
+            allowed_indices=allowed_indices,
+        )
         sparse_ranks = {
             index: rank for rank, (index, _score) in enumerate(sparse_hits, 1)
         }
@@ -165,9 +186,14 @@ class HybridIndex:
         *,
         token_budget: int,
         limit: int | None = None,
+        document_ids: set[str] | None = None,
     ) -> ContextPacket:
         """Pack ranked evidence without exceeding the requested budget."""
-        ranked = self.retrieve(query, limit=limit)
+        ranked = self.retrieve(
+            query,
+            limit=limit,
+            document_ids=document_ids,
+        )
         return pack_evidence(
             query,
             ranked,
@@ -189,7 +215,18 @@ class HybridIndex:
         arm: RetrievalArm,
     ) -> Path:
         """Persist the derived index under a deterministic content/config hash."""
-        key = _index_key(documents, arm=arm, config=self.config, chunks=self.chunks)
+        key = _index_key(
+            documents,
+            arm=arm,
+            config=self.config,
+            chunks=self.chunks,
+            embedding_model=self.embedder.name,
+            embedding_version=self.embedder.version,
+            reranker_model=self.reranker.name,
+            reranker_version=self.reranker.version,
+            tokenizer=self.tokenizer.name,
+            tokenizer_version=self.tokenizer.version,
+        )
         output_dir = artifacts_root / "indexes" / key
         output_dir.mkdir(parents=True, exist_ok=True)
         value = {
@@ -204,15 +241,25 @@ class HybridIndex:
             "embedding_model": self.embedder.name,
             "embedding_version": self.embedder.version,
             "reranker_model": self.reranker.name,
+            "reranker_version": self.reranker.version,
+            "tokenizer": self.tokenizer.name,
+            "tokenizer_version": self.tokenizer.version,
         }
         _atomic_json(output_dir / "index.json", value)
         return output_dir
 
-    def _dense_search(self, query: str, limit: int) -> list[tuple[int, float]]:
+    def _dense_search(
+        self,
+        query: str,
+        limit: int,
+        *,
+        allowed_indices: set[int] | None = None,
+    ) -> list[tuple[int, float]]:
         query_vector = self.embedder.embed([query])[0]
         scores = [
             (_cosine(query_vector, vector), index)
             for index, vector in enumerate(self._vectors)
+            if allowed_indices is None or index in allowed_indices
         ]
         scores.sort(key=lambda pair: (-pair[0], self.chunks[pair[1]].id))
         return [(index, score) for score, index in scores[:limit]]
@@ -270,13 +317,15 @@ def _cosine(left: Sequence[float], right: Sequence[float]) -> float:
     return sum(a * b for a, b in zip(left, right, strict=True))
 
 
-def _embedding_model(config: RetrievalConfig) -> EmbeddingModel:
+def embedding_model_from_config(config: RetrievalConfig) -> EmbeddingModel:
+    """Construct the configured dense model lazily."""
     if config.embedding_model.startswith("hash-"):
         return HashEmbeddingModel(config.embedding_dimensions)
     return SentenceTransformerEmbeddingModel(config.embedding_model)
 
 
-def _reranker(config: RetrievalConfig) -> Reranker:
+def reranker_from_config(config: RetrievalConfig) -> Reranker:
+    """Construct the configured reranker lazily."""
     if config.reranker_model == "lexical-overlap-v1":
         return LexicalOverlapReranker()
     return SentenceTransformerCrossEncoderReranker(config.reranker_model)
@@ -295,12 +344,24 @@ def _index_key(
     arm: RetrievalArm,
     config: RetrievalConfig,
     chunks: Sequence[RetrievalChunk],
+    embedding_model: str,
+    embedding_version: str,
+    reranker_model: str,
+    reranker_version: str,
+    tokenizer: str,
+    tokenizer_version: str,
 ) -> str:
     payload = {
         "arm": arm.value,
         "config": config.model_dump(mode="json"),
         "documents": [document.id for document in documents],
         "chunks": [chunk.id for chunk in chunks],
+        "embedding_model": embedding_model,
+        "embedding_version": embedding_version,
+        "reranker_model": reranker_model,
+        "reranker_version": reranker_version,
+        "tokenizer": tokenizer,
+        "tokenizer_version": tokenizer_version,
     }
     serialized = json.dumps(payload, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(serialized.encode()).hexdigest()

@@ -143,3 +143,39 @@ def test_repeated_builds_have_identical_rankings_and_artifact_keys(
     assert (first_artifact / "index.json").read_bytes() == (
         second_artifact / "index.json"
     ).read_bytes()
+
+
+def test_global_index_respects_per_question_document_scope(tmp_path: Path) -> None:
+    counter = FixtureTokenCounter()
+    allowed_source = source_document()
+    excluded_source = source_document()
+    excluded_source.add_text(label="text", text="exclusive scope leak phrase")
+    allowed = project_document(
+        allowed_source,
+        ingest_metadata(tmp_path),
+        tokenizer=counter,
+    )
+    excluded_metadata = ingest_metadata(tmp_path).model_copy(
+        update={"source_sha256": "d" * 64}
+    )
+    excluded = project_document(
+        excluded_source,
+        excluded_metadata,
+        tokenizer=counter,
+    )
+    config = RetrievalConfig(candidate_limit=20, rerank_limit=20)
+    index = HybridIndex.build(
+        [allowed, excluded],
+        arm=RetrievalArm.FIXED,
+        config=config,
+        tokenizer=counter,
+    )
+
+    packet = index.pack(
+        "exclusive scope leak phrase",
+        token_budget=100,
+        document_ids={allowed.id},
+    )
+
+    assert packet.items
+    assert {item.document_id for item in packet.items} == {allowed.id}

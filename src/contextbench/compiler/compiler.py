@@ -30,6 +30,7 @@ def compile_context(
     tokenizer: TokenCounter | None = None,
     embedder: EmbeddingModel | None = None,
     reranker: Reranker | None = None,
+    hybrid_index: HybridIndex | None = None,
 ) -> ContextPacket:
     """Compile query-specific evidence without an LLM or budget overflow."""
     if not query.strip():
@@ -47,15 +48,19 @@ def compile_context(
         raise ValueError("document_scope contains duplicate document IDs")
 
     counter = tokenizer or TiktokenTokenCounter(my_config.retrieval.tokenizer_name)
-    chunks = node_chunks(scope.documents, tokenizer=counter)
-    index = HybridIndex(
-        chunks,
-        config=my_config.retrieval,
-        tokenizer=counter,
-        embedder=embedder,
-        reranker=reranker,
-    )
-    ranked = index.retrieve(query)
+    if hybrid_index is not None and hybrid_index.config != my_config.retrieval:
+        raise ValueError("hybrid_index configuration differs from compiler config")
+    index = hybrid_index
+    if index is None:
+        chunks = node_chunks(scope.documents, tokenizer=counter)
+        index = HybridIndex(
+            chunks,
+            config=my_config.retrieval,
+            tokenizer=counter,
+            embedder=embedder,
+            reranker=reranker,
+        )
+    ranked = index.retrieve(query, document_ids=set(document_ids))
     expanded = expand_candidates(
         query,
         ranked,

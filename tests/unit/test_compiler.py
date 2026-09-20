@@ -10,9 +10,11 @@ from docling_core.types.doc.labels import DocItemLabel
 from test_ir import FixtureTokenCounter, ingest_metadata, provenance
 
 from contextbench.compiler import CompilerConfig, DocumentScope, compile_context
+from contextbench.compiler.candidates import node_chunks
 from contextbench.ir import project_document
 from contextbench.ir.models import IRNodeKind
 from contextbench.retrieval import RetrievalConfig
+from contextbench.retrieval.index import HybridIndex
 
 
 def compiler_source() -> DoclingDocument:
@@ -164,6 +166,57 @@ def compiler_config(**updates) -> CompilerConfig:
         retrieval=RetrievalConfig(candidate_limit=20, rerank_limit=10),
     )
     return base.model_copy(update=updates)
+
+
+def test_prebuilt_global_index_matches_per_scope_index(compiler_fixture) -> None:
+    _source, ir, scope, counter = compiler_fixture
+    config = compiler_config()
+    index = HybridIndex(
+        node_chunks([ir], tokenizer=counter),
+        config=config.retrieval,
+        tokenizer=counter,
+    )
+
+    direct = compile_context(
+        "target revenue increased",
+        scope,
+        40,
+        config,
+        tokenizer=counter,
+    )
+    reused = compile_context(
+        "target revenue increased",
+        scope,
+        40,
+        config,
+        tokenizer=counter,
+        hybrid_index=index,
+    )
+
+    assert reused == direct
+
+
+def test_prebuilt_index_must_share_compiler_retrieval_config(
+    compiler_fixture,
+) -> None:
+    _source, ir, scope, counter = compiler_fixture
+    config = compiler_config()
+    different = RetrievalConfig(candidate_limit=2, rerank_limit=1)
+    index = HybridIndex(
+        node_chunks([ir], tokenizer=counter),
+        config=different,
+        tokenizer=counter,
+    )
+
+    with pytest.raises(ValueError, match="configuration differs"):
+        compile_context(
+            "target revenue increased",
+            scope,
+            40,
+            config,
+            tokenizer=counter,
+            hybrid_index=index,
+        )
 
 
 def test_heading_ancestry_is_metadata_and_rendered_context(compiler_fixture) -> None:

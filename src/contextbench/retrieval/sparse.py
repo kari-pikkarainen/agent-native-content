@@ -29,10 +29,18 @@ class BM25Index:
             for term, frequency in document_frequency.items()
         }
 
-    def search(self, query: str, limit: int) -> list[tuple[int, float]]:
+    def search(
+        self,
+        query: str,
+        limit: int,
+        *,
+        allowed_indices: set[int] | None = None,
+    ) -> list[tuple[int, float]]:
         query_terms = _tokens(query)
         scored: list[tuple[int, float]] = []
         for index, terms in enumerate(self._terms):
+            if allowed_indices is not None and index not in allowed_indices:
+                continue
             frequencies = Counter(terms)
             length = self._lengths[index]
             score = 0.0

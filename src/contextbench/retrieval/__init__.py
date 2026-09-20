@@ -5,7 +5,12 @@ from contextbench.retrieval.embeddings import (
     HashEmbeddingModel,
     SentenceTransformerEmbeddingModel,
 )
-from contextbench.retrieval.index import HybridIndex, pack_evidence
+from contextbench.retrieval.index import (
+    HybridIndex,
+    embedding_model_from_config,
+    pack_evidence,
+    reranker_from_config,
+)
 from contextbench.retrieval.models import (
     ContextItem,
     ContextPacket,
@@ -34,6 +39,8 @@ __all__ = [
     "SentenceTransformerCrossEncoderReranker",
     "SentenceTransformerEmbeddingModel",
     "fixed_chunks",
+    "embedding_model_from_config",
     "pack_evidence",
+    "reranker_from_config",
     "structural_chunks",
 ]
