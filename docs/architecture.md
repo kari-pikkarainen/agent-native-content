@@ -67,6 +67,13 @@ to reranked Docling fragments with repeated caption/header context. Queries that
 explicitly reference multiple tables may also produce compact, provenance-
 preserving row joins on exact normalized model/dataset identifiers.
 
+Query-independent compiler state is derived once per corpus: node and sibling
+lookups, fixed page windows, table-label continuations, and exact-key row
+postings. Query faceting retrieves the same bounded candidate pools as before,
+but all full-query and facet pairs are submitted to the shared cross-encoder in
+one batch. Persisted retrieval indexes are reused only after their chunks,
+configuration, model versions, tokenizer version, and vector shape validate.
+
 Deduplication uses normalized content plus exact source IDs and bounding boxes.
 Final rendered evidence is recounted and greedily packed under a hard token
 budget. Every output maps back to IR nodes and authoritative Docling item IDs.
@@ -82,6 +89,10 @@ remain outside query latency.
 Each selected item is mapped from IR document and node IDs back to dataset
 document IDs and exact PDF pages before page recall, coverage, tokens-to-full,
 and redundancy are calculated.
+When the dataset supplies evidence quotes, the evaluator also records exact
+normalized quote recall and full quote coverage. This stricter diagnostic helps
+distinguish compact row-level evidence from coincidental coverage of a broadly
+annotated page.
 
 An opt-in compiler-stage audit snapshots immutable candidate pools at raw node
 retrieval, faceted fusion, structural expansion, and deduplication, then

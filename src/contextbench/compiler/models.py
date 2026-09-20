@@ -16,7 +16,7 @@ from contextbench.retrieval.models import (
     RetrievalScores,
 )
 
-COMPILER_VERSION = "0.5.0"
+COMPILER_VERSION = "0.6.0"
 
 
 class CompilerConfig(BaseModel):

@@ -1,6 +1,6 @@
 # Context Compiler v0 Specification
 
-Status: implemented compiler version `0.5.0`.
+Status: implemented compiler version `0.6.0`.
 
 The context compiler is benchmark Arm D. It consumes canonical IR documents
 and produces a deterministic, citation-ready `ContextPacket` for one query. It

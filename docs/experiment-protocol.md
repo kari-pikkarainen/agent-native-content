@@ -60,6 +60,9 @@ The selected compiler also applies deterministic lexical query faceting. Every
 facet uses the same shared retrieval models and is fused back to the original
 candidate capacity; no LLM query generation is used. Facet retrieval time is
 included in compiler latency.
+The full query and facet candidate pairs are scored in one cross-encoder batch;
+this preserves the independently reranked facet lists and their fusion while
+amortizing model invocation overhead.
 
 For queries that explicitly name multiple tables, the selected compiler may
 also construct bounded keyed-row joins. These use exact normalized identifiers
@@ -81,6 +84,8 @@ Every question × system × budget cell records:
 - exact packed token count;
 - retrieval/compilation latency in milliseconds;
 - evidence-page recall and full-evidence coverage;
+- exact normalized evidence-quote recall and full-quote coverage when quotes
+  are supplied by the dataset;
 - tokens to full evidence, when full coverage is reached;
 - approximate context redundancy.
 
@@ -89,6 +94,12 @@ every required `(document ID, page)` pair occurs in the selected evidence. A
 question with no annotated gold pages has vacuous recall `1.0`, full coverage
 `true`, and tokens-to-full `0`; this convention applies identically to all
 systems and must be disclosed when interpreting absolute averages.
+
+Evidence-quote recall is the fraction of non-empty annotated quotes that occur
+verbatim after case-folding and whitespace normalization in the packed context.
+A question without annotated quotes has vacuous quote recall `1.0` and full
+quote coverage `true`. Quote recall is intentionally strict and complements,
+rather than replaces, page recall.
 
 Tokens-to-full is the cumulative item-token count at the earliest ranked
 context prefix covering every gold page. It is null when the budget never
