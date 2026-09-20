@@ -217,6 +217,28 @@ def test_heading_paths_follow_flat_docling_heading_levels(tmp_path: Path) -> Non
     assert second_node.heading_path == ("Second",)
 
 
+def test_empty_normalized_text_falls_back_to_source_text(tmp_path: Path) -> None:
+    document = DoclingDocument(name="formula-fallback")
+    document.add_page(1, Size(width=612, height=792))
+    formula = document.add_text(
+        label=DocItemLabel.FORMULA,
+        text="",
+        orig="Absolute Global Warming Potential equation",
+        prov=provenance(1, "Absolute Global Warming Potential equation", 700),
+    )
+
+    ir = project_document(
+        document,
+        ingest_metadata(tmp_path),
+        tokenizer=FixtureTokenCounter(),
+    )
+
+    node = next(node for node in ir.nodes if formula.self_ref in node.source_item_ids)
+    assert node.text == "Absolute Global Warming Potential equation"
+    assert node.page_start == node.page_end == 1
+    assert node.token_count == 5
+
+
 def test_table_spans_are_expanded_into_the_logical_grid(tmp_path: Path) -> None:
     document = DoclingDocument(name="merged-table")
     document.add_page(1, Size(width=612, height=792))

@@ -219,7 +219,9 @@ def _node_text(
         lines.extend(" | ".join(row) for row in table.rows)
         return "\n".join(lines)
     if isinstance(item, TextItem):
-        return item.text
+        if item.text.strip():
+            return item.text
+        return item.orig or item.text
     if isinstance(item, PictureItem):
         return item.caption_text(document)
     if isinstance(item, GroupItem):

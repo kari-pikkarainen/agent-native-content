@@ -100,8 +100,11 @@ path.
 
 ## Text and tables
 
-Text items retain their source text. A figure uses its source caption text when
-present. A list group uses its source name, if any.
+Text items retain their normalized source text. If Docling emits an empty
+normalized `text` value but preserves non-empty source-derived `orig` text, the
+projection uses `orig` rather than creating an evidence-free node. A figure
+uses its source caption text when present. A list group uses its source name,
+if any.
 
 A table preserves:
 
