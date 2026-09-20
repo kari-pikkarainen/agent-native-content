@@ -21,6 +21,9 @@ compile_context(
 `DocumentScope`. The latter can also carry the authoritative Docling documents
 needed to split oversized tables. Optional tokenizer, embedding, and reranker
 objects may be injected for controlled experiments and offline tests.
+Callers evaluating several packing budgets may also pass one precomputed
+`ranked_evidence` sequence; the compiler validates its document scope and still
+performs budget-dependent structural expansion and packing independently.
 
 `CompilerConfig` contains the nested shared `RetrievalConfig` plus every
 structural decision: heading rendering, previous/next paragraph expansion,

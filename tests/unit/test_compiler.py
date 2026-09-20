@@ -192,8 +192,50 @@ def test_prebuilt_global_index_matches_per_scope_index(compiler_fixture) -> None
         tokenizer=counter,
         hybrid_index=index,
     )
+    ranked = index.retrieve("target revenue increased", token_budget=40)
+    pre_ranked = compile_context(
+        "target revenue increased",
+        scope,
+        40,
+        config,
+        tokenizer=counter,
+        hybrid_index=index,
+        ranked_evidence=ranked,
+    )
 
     assert reused == direct
+    assert pre_ranked == direct
+
+
+def test_pre_ranked_evidence_rejects_documents_outside_scope(
+    compiler_fixture,
+) -> None:
+    _source, ir, scope, counter = compiler_fixture
+    config = compiler_config()
+    index = HybridIndex(
+        node_chunks([ir], tokenizer=counter),
+        config=config.retrieval,
+        tokenizer=counter,
+    )
+    ranked = index.retrieve("target revenue increased", token_budget=40)
+    foreign = ranked[0].model_copy(
+        update={
+            "chunk": ranked[0].chunk.model_copy(
+                update={"document_id": "foreign-document"}
+            )
+        }
+    )
+
+    with pytest.raises(ValueError, match="outside document_scope"):
+        compile_context(
+            "target revenue increased",
+            scope,
+            40,
+            config,
+            tokenizer=counter,
+            hybrid_index=index,
+            ranked_evidence=(foreign,),
+        )
 
 
 def test_node_candidates_exclude_furniture_and_search_with_headings(

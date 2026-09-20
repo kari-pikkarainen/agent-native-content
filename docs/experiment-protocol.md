@@ -75,6 +75,9 @@ four-token n-gram previously seen in another selected item. It is an
 approximation, not semantic redundancy. Latency includes query embedding,
 sparse/dense search, fusion, reranking, and packing or compilation. It excludes
 dataset loading, PDF parsing, IR projection, model loading, and index building.
+The runner computes one ranking per question and system at the largest declared
+budget, then reuses it for every packing budget. Each cell's latency includes
+the full shared retrieval cost plus that cell's packing or compilation cost.
 
 ## Outputs and immutability
 

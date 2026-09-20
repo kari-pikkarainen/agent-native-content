@@ -237,6 +237,16 @@ class HybridIndex:
             ),
             document_ids=document_ids,
         )
+        return self.pack_ranked(query, ranked, token_budget=token_budget)
+
+    def pack_ranked(
+        self,
+        query: str,
+        ranked: Sequence[RankedEvidence],
+        *,
+        token_budget: int,
+    ) -> ContextPacket:
+        """Pack an existing ranking without repeating retrieval or reranking."""
         return pack_evidence(
             query,
             ranked,

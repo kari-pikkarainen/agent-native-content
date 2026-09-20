@@ -17,7 +17,7 @@ from contextbench.ir.models import IRDocument
 from contextbench.ir.tokenizer import TiktokenTokenCounter, TokenCounter
 from contextbench.retrieval.embeddings import EmbeddingModel
 from contextbench.retrieval.index import HybridIndex
-from contextbench.retrieval.models import ContextPacket
+from contextbench.retrieval.models import ContextPacket, RankedEvidence
 from contextbench.retrieval.rerank import Reranker
 
 
@@ -32,6 +32,7 @@ def compile_context(
     reranker: Reranker | None = None,
     hybrid_index: HybridIndex | None = None,
     retrieval_token_budget: int | None = None,
+    ranked_evidence: Sequence[RankedEvidence] | None = None,
 ) -> ContextPacket:
     """Compile query-specific evidence without an LLM or budget overflow."""
     if not query.strip():
@@ -61,15 +62,26 @@ def compile_context(
             embedder=embedder,
             reranker=reranker,
         )
-    ranked = index.retrieve(
-        query,
-        token_budget=(
-            retrieval_token_budget
-            if retrieval_token_budget is not None
-            else token_budget
-        ),
-        document_ids=set(document_ids),
-    )
+    if ranked_evidence is None:
+        ranked = index.retrieve(
+            query,
+            token_budget=(
+                retrieval_token_budget
+                if retrieval_token_budget is not None
+                else token_budget
+            ),
+            document_ids=set(document_ids),
+        )
+    else:
+        ranked = tuple(ranked_evidence)
+        unexpected_documents = {
+            evidence.chunk.document_id for evidence in ranked
+        }.difference(document_ids)
+        if unexpected_documents:
+            raise ValueError(
+                "ranked_evidence contains documents outside document_scope: "
+                f"{sorted(unexpected_documents)}"
+            )
     expanded = expand_candidates(
         query,
         ranked,

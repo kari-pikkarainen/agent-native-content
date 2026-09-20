@@ -20,6 +20,7 @@ from contextbench.evaluation import (
 from contextbench.ir import project_document
 from contextbench.retrieval import (
     HashEmbeddingModel,
+    HybridIndex,
     LexicalOverlapReranker,
     RetrievalConfig,
 )
@@ -148,3 +149,22 @@ def test_invalid_run_id_is_rejected_before_artifacts_are_written(
         _run(tmp_path, run_id="../escape")
 
     assert not (tmp_path / "escape").exists()
+
+
+def test_runner_retrieves_once_per_question_and_system(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls = 0
+    original = HybridIndex.retrieve
+
+    def counted_retrieve(self, *args, **kwargs):
+        nonlocal calls
+        calls += 1
+        return original(self, *args, **kwargs)
+
+    monkeypatch.setattr(HybridIndex, "retrieve", counted_retrieve)
+
+    _run(tmp_path, run_id="single-retrieval")
+
+    assert calls == len(BenchmarkSystem)

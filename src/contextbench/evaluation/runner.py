@@ -36,6 +36,7 @@ from contextbench.ir.models import IRDocument
 from contextbench.ir.tokenizer import TiktokenTokenCounter, TokenCounter
 from contextbench.retrieval import (
     HybridIndex,
+    RankedEvidence,
     RetrievalArm,
     embedding_model_from_config,
     reranker_from_config,
@@ -253,22 +254,32 @@ def _evaluate_cells(
             },
         )
         for system in config.systems:
+            retrieval_started = time.perf_counter_ns()
+            ranked = indexes[system].retrieve(
+                question.question,
+                token_budget=max(config.budgets),
+                document_ids=ir_document_ids,
+            )
+            retrieval_elapsed_ms = (
+                time.perf_counter_ns() - retrieval_started
+            ) / 1_000_000
             for budget in config.budgets:
                 started = time.perf_counter_ns()
                 packet = _context_for_system(
                     question.question,
                     system=system,
                     budget=budget,
-                    ir_document_ids=ir_document_ids,
                     scope=scope,
                     config=config,
                     index=indexes[system],
                     tokenizer=tokenizer,
                     embedder=embedder,
                     reranker=reranker,
-                    retrieval_token_budget=max(config.budgets),
+                    ranked_evidence=ranked,
                 )
-                elapsed_ms = (time.perf_counter_ns() - started) / 1_000_000
+                elapsed_ms = retrieval_elapsed_ms + (
+                    time.perf_counter_ns() - started
+                ) / 1_000_000
                 metrics = evaluate_context(question, packet, corpus.documents)
                 records.append(
                     RetrievalEvaluationRecord(
@@ -299,14 +310,13 @@ def _context_for_system(
     *,
     system: BenchmarkSystem,
     budget: int,
-    ir_document_ids: set[str],
     scope: DocumentScope,
     config: RetrievalBenchmarkConfig,
     index: HybridIndex,
     tokenizer: TokenCounter,
     embedder: EmbeddingModel,
     reranker: Reranker,
-    retrieval_token_budget: int,
+    ranked_evidence: Sequence[RankedEvidence],
 ) -> ContextPacket:
     if system == BenchmarkSystem.COMPILER:
         return compile_context(
@@ -318,13 +328,12 @@ def _context_for_system(
             embedder=embedder,
             reranker=reranker,
             hybrid_index=index,
-            retrieval_token_budget=retrieval_token_budget,
+            ranked_evidence=ranked_evidence,
         )
-    return index.pack(
+    return index.pack_ranked(
         query,
+        ranked_evidence,
         token_budget=budget,
-        retrieval_token_budget=retrieval_token_budget,
-        document_ids=ir_document_ids,
     )
 
 
