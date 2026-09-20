@@ -46,12 +46,22 @@ def expand_candidates(
             expansion_order=expansion_order,
         )
         expansion_order += 1
+        minimum_table_tokens = _minimum_table_context_tokens(
+            node,
+            config,
+            tokenizer,
+        )
+        minimum_table_fragment_tokens = _minimum_table_fragment_tokens(
+            node,
+            config,
+            tokenizer,
+        )
 
         if (
             config.preserve_tables
             and node.kind == IRNodeKind.TABLE
             and direct.chunk.token_count > token_budget
-            and _minimum_table_context_tokens(node, config, tokenizer) <= token_budget
+            and minimum_table_fragment_tokens <= token_budget
             and document.id in source_documents
         ):
             table_chunks = table_chunks_by_document.get(document.id)
@@ -60,7 +70,7 @@ def expand_candidates(
                     update={
                         "structural_chunk_tokens": min(
                             config.table_chunk_tokens,
-                            max(token_budget, 1),
+                            token_budget - minimum_table_tokens,
                         )
                     }
                 )
@@ -268,6 +278,31 @@ def _minimum_table_context_tokens(
         include_headings=config.include_heading_context,
     )
     return tokenizer.count(rendered)
+
+
+def _minimum_table_fragment_tokens(
+    node: IRNode,
+    config: CompilerConfig,
+    tokenizer: TokenCounter,
+) -> int:
+    if node.table is None or not node.table.rows:
+        return _minimum_table_context_tokens(node, config, tokenizer)
+    rows = node.table.rows
+    if node.table.column_headers and rows[0] == node.table.column_headers:
+        rows = rows[1:]
+    if not rows:
+        return _minimum_table_context_tokens(node, config, tokenizer)
+    counts = [
+        tokenizer.count(
+            _render_table_chunk(
+                node,
+                " | ".join(row),
+                include_headings=config.include_heading_context,
+            )
+        )
+        for row in rows
+    ]
+    return min(counts)
 
 
 def _render_table_chunk(

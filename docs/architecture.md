@@ -56,3 +56,16 @@ stack. Fixed windows and Docling HybridChunker structural chunks are indexed
 separately under deterministic content/config hashes, while BM25, dense search,
 RRF, reranking, and budget packing remain identical. See
 [`retrieval-spec.md`](retrieval-spec.md) for the baseline contract.
+
+## Compiler boundary
+
+Arm D indexes content-bearing IR nodes through the shared hybrid retrieval
+stack, then performs deterministic structural expansion before packing. Heading
+paths add context without pulling full parent sections; paragraph siblings and
+adjacent list items are controlled explicitly; tables remain whole or fall back
+to reranked Docling fragments with repeated caption/header context.
+
+Deduplication uses normalized content plus exact source IDs and bounding boxes.
+Final rendered evidence is recounted and greedily packed under a hard token
+budget. Every output maps back to IR nodes and authoritative Docling item IDs.
+See [`compiler-spec.md`](compiler-spec.md) for the normative behavior.

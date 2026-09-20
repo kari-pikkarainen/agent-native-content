@@ -84,3 +84,27 @@ The retrieval baselines are documented in
 [docs/retrieval-spec.md](docs/retrieval-spec.md). Arms A and B share BM25,
 dense retrieval, RRF, reranking, and token-budget packing; only their chunk
 construction differs.
+
+## Context compiler
+
+Compile structure-aware evidence for benchmark Arm D with:
+
+```python
+from contextbench.compiler import CompilerConfig, DocumentScope, compile_context
+
+scope = DocumentScope.from_documents(
+    [ir],
+    source_documents={ir.id: docling_document},
+)
+packet = compile_context(
+    query,
+    scope,
+    token_budget=4096,
+    config=CompilerConfig(),
+)
+```
+
+The compiler performs shared hybrid retrieval, heading and configurable sibling
+expansion, adjacent-list grouping, table preservation, provenance-aware
+deduplication, and exact-token packing without an LLM call. See
+[docs/compiler-spec.md](docs/compiler-spec.md) for the full contract.
