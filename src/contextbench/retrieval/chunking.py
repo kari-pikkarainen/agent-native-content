@@ -32,7 +32,7 @@ class TiktokenChunkTokenizer(BaseTokenizer):
         return self.max_tokens
 
     def get_tokenizer(self) -> Any:
-        return self._counter.encode
+        return self._counter.count
 
 
 class CounterChunkTokenizer(BaseTokenizer):
@@ -50,8 +50,7 @@ class CounterChunkTokenizer(BaseTokenizer):
         return self.max_tokens
 
     def get_tokenizer(self) -> Any:
-        encode = getattr(self.counter, "encode", None)
-        return encode or (lambda text: text.split())
+        return self.counter.count
 
 
 def fixed_chunks(

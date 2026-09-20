@@ -6,10 +6,11 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class RetrievalArm(StrEnum):
-    """The two baseline chunking strategies."""
+    """Benchmark retrieval chunking strategies."""
 
     FIXED = "fixed"
     STRUCTURAL = "structural"
+    COMPILER = "compiler"
 
 
 class RetrievalConfig(BaseModel):
