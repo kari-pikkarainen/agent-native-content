@@ -16,6 +16,9 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+generation = [
+    "openai>=2.0.0,<3",
+]
 retrieval = [
     "sentence-transformers>=3.0.0,<6",
 ]

@@ -168,6 +168,30 @@ at the run's largest declared budget; expansion and later stages remain
 budget-specific. Aggregate candidate tokens before packing quantify search
 space volume and may exceed the context budget.
 
+## Generation evaluation
+
+Generation is a separate experiment over the immutable context packets from a
+completed retrieval run. It never repeats ingestion, index construction,
+retrieval, or context compilation. All selected arms use the same answer
+prompt, model, reasoning setting, maximum output, JSON response contract,
+scoring functions, and pricing metadata.
+
+The prompt requires a concise answer plus evidence-ID citations and requires
+`INSUFFICIENT_EVIDENCE` when the context cannot support an answer. Invalid JSON
+is not repaired and scores zero. Scoring follows the released XL-DocBench
+deterministic evaluator: relaxed rule-based accuracy, normalized token F1, and
+ANLS. Citation validity is the fraction of returned IDs present in the context;
+it checks traceability, not semantic entailment.
+
+Every cell records raw and parsed responses, citations, provider/model IDs,
+provider usage, input/cached-input/output/reasoning tokens, latency, accuracy,
+similarity metrics, abstention correctness, and configured cost. Pricing is
+explicit experiment metadata, never inferred from a mutable live price table.
+The CLI requires a `--max-calls` authorization ceiling before constructing the
+provider. Runs are atomically published under
+`artifacts/generation-runs/<run-id>/` and bind to hashes of the retrieval
+manifest and contexts.
+
 ## First decision gate
 
 Development stops before generation. Inspect page-recall and full-coverage

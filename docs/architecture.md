@@ -111,3 +111,19 @@ available for failure analysis; the JSON and Markdown summaries are derived
 from the per-cell records. See
 [`experiment-protocol.md`](experiment-protocol.md) for metric definitions and
 the first decision gate.
+
+## Generation boundary
+
+Answer generation reads immutable `contexts.jsonl` packets rather than running
+retrieval again. A provider-neutral interface receives one fully rendered
+prompt and returns answer text plus provider-reported usage. Every arm in a run
+shares the exact prompt template, requested model, reasoning setting, output
+limit, deterministic benchmark scorer, and explicit pricing metadata.
+
+The OpenAI adapter is optional and uses the Responses API. The runner requires
+strict JSON containing an answer and evidence-ID citations; invalid responses
+score zero rather than being repaired. It records native XL-DocBench relaxed
+accuracy, token F1, ANLS, citation-ID validity, abstention correctness, tokens,
+latency, and dollars per query/correct answer. Completed artifacts are
+atomically published under `artifacts/generation-runs/<run-id>/` and bind the
+results to hashes of the source retrieval manifest and contexts.

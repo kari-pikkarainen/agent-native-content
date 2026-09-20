@@ -1,0 +1,140 @@
+"""Provider-neutral models for answer-generation experiments."""
+
+from typing import Any, Literal
+
+from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+from contextbench.evaluation.models import DEFAULT_TOKEN_BUDGETS, BenchmarkSystem
+
+
+class PricingMetadata(BaseModel):
+    """Explicit USD prices used to calculate benchmark economics."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    input_usd_per_million: float = Field(ge=0)
+    cached_input_usd_per_million: float = Field(default=0, ge=0)
+    output_usd_per_million: float = Field(ge=0)
+
+
+class GenerationConfig(BaseModel):
+    """Model and experiment settings shared by every comparison arm."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    model: str = Field(min_length=1)
+    max_output_tokens: int = Field(default=256, ge=1)
+    reasoning_effort: str | None = None
+    systems: tuple[BenchmarkSystem, ...] = tuple(BenchmarkSystem)
+    budgets: tuple[int, ...] = DEFAULT_TOKEN_BUDGETS
+    pricing: PricingMetadata
+    prompt_version: Literal["answer-json-v1"] = "answer-json-v1"
+
+    @model_validator(mode="after")
+    def selections_are_canonical(self) -> "GenerationConfig":
+        if not self.systems or len(self.systems) != len(set(self.systems)):
+            raise ValueError("systems must be non-empty and unique")
+        if not self.budgets or any(value < 1 for value in self.budgets):
+            raise ValueError("budgets must contain positive values")
+        if self.budgets != tuple(sorted(set(self.budgets))):
+            raise ValueError("budgets must be sorted and unique")
+        return self
+
+
+class AnswerRequest(BaseModel):
+    """One provider request with an already-rendered, arm-invariant prompt."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    question_id: str
+    system: BenchmarkSystem
+    token_budget: int = Field(ge=1)
+    prompt: str
+    evidence_ids: tuple[str, ...]
+
+
+class ProviderAnswer(BaseModel):
+    """Normalized response and provider-reported usage."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    text: str
+    model_id: str
+    response_id: str | None = None
+    input_tokens: int = Field(ge=0)
+    cached_input_tokens: int = Field(default=0, ge=0)
+    output_tokens: int = Field(ge=0)
+    reasoning_tokens: int = Field(default=0, ge=0)
+    provider_usage: dict[str, Any] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def cached_tokens_are_part_of_input(self) -> "ProviderAnswer":
+        if self.cached_input_tokens > self.input_tokens:
+            raise ValueError("cached_input_tokens cannot exceed input_tokens")
+        return self
+
+
+class GenerationEvaluationRecord(BaseModel):
+    """Answer quality, citation, usage, latency, and cost for one cell."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    retrieval_run_id: str
+    question_id: str
+    system: BenchmarkSystem
+    token_budget: int = Field(ge=1)
+    answerable: bool
+    gold_answer: str
+    raw_response: str
+    parsed_answer: str
+    citations: tuple[str, ...]
+    response_valid: bool
+    accuracy: float = Field(ge=0, le=1)
+    token_f1: float = Field(ge=0, le=1)
+    anls: float = Field(ge=0, le=1)
+    citation_validity: float = Field(ge=0, le=1)
+    citation_support: float | None = Field(default=None, ge=0, le=1)
+    citation_present: bool
+    insufficient_evidence_correct: bool
+    input_tokens: int = Field(ge=0)
+    cached_input_tokens: int = Field(ge=0)
+    output_tokens: int = Field(ge=0)
+    reasoning_tokens: int = Field(ge=0)
+    calls: int = Field(default=1, ge=1)
+    latency_ms: float = Field(ge=0)
+    model_id: str
+    response_id: str | None = None
+    provider_usage: dict[str, Any]
+    cost_usd: float = Field(ge=0)
+
+
+class GenerationSummaryRow(BaseModel):
+    """Aggregate answer metrics for one system and budget."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    system: BenchmarkSystem
+    token_budget: int
+    question_count: int
+    mean_accuracy: float
+    mean_token_f1: float
+    mean_anls: float
+    mean_citation_validity: float
+    mean_citation_support: float | None
+    citation_present_rate: float
+    insufficient_evidence_accuracy: float | None
+    mean_input_tokens: float
+    mean_output_tokens: float
+    mean_latency_ms: float
+    dollars_per_query: float
+    dollars_per_correct: float | None
+
+
+class GenerationBenchmarkSummary(BaseModel):
+    """Machine-readable answer-generation comparison."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    run_id: str
+    retrieval_run_id: str
+    rows: tuple[GenerationSummaryRow, ...]

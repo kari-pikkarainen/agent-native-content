@@ -243,6 +243,134 @@ def evaluate_retrieval(
     )
 
 
+@app.command("eval-generation")
+def evaluate_generation(
+    retrieval_run: Annotated[
+        Path,
+        typer.Argument(help="Completed retrieval run containing contexts.jsonl."),
+    ],
+    model: Annotated[
+        str,
+        typer.Option(help="Explicit answer model ID."),
+    ],
+    input_usd_per_million: Annotated[
+        float,
+        typer.Option(min=0, help="Configured uncached input-token price."),
+    ],
+    cached_input_usd_per_million: Annotated[
+        float,
+        typer.Option(min=0, help="Configured cached input-token price."),
+    ],
+    output_usd_per_million: Annotated[
+        float,
+        typer.Option(min=0, help="Configured output-token price."),
+    ],
+    max_calls: Annotated[
+        int,
+        typer.Option(min=1, help="Hard authorization ceiling for provider calls."),
+    ],
+    data_dir: Annotated[
+        Path,
+        typer.Option(help="Directory for pinned XL-DocBench release metadata."),
+    ] = DEFAULT_DATASET_DIR,
+    subset_file: Annotated[
+        Path,
+        typer.Option(help="Committed subset containing the retrieval questions."),
+    ] = DEFAULT_XL100,
+    artifacts_root: Annotated[
+        Path,
+        typer.Option(help="Root for immutable generation runs."),
+    ] = DEFAULT_ARTIFACTS_ROOT,
+    system: Annotated[
+        list[str] | None,
+        typer.Option("--system", help="Repeatable system; defaults to retrieval run."),
+    ] = None,
+    budget: Annotated[
+        list[int] | None,
+        typer.Option("--budget", min=1, help="Repeatable budget; defaults to run."),
+    ] = None,
+    max_output_tokens: Annotated[
+        int,
+        typer.Option(min=1, help="Maximum answer tokens per provider call."),
+    ] = 256,
+    reasoning_effort: Annotated[
+        str | None,
+        typer.Option(help="Optional provider reasoning-effort setting."),
+    ] = None,
+    run_id: Annotated[
+        str | None,
+        typer.Option(help="Optional immutable generation run identifier."),
+    ] = None,
+) -> None:
+    """Generate and score answers from immutable retrieval contexts."""
+    from contextbench.evaluation import BenchmarkSystem
+    from contextbench.generation import (
+        GenerationConfig,
+        GenerationError,
+        OpenAIAnswerProvider,
+        PricingMetadata,
+        run_generation_benchmark,
+    )
+
+    try:
+        retrieval_manifest = json.loads(
+            (retrieval_run / "manifest.json").read_text(encoding="utf-8")
+        )
+        selected_systems = tuple(
+            BenchmarkSystem(value)
+            for value in (system or retrieval_manifest["systems"])
+        )
+        selected_budgets = tuple(
+            sorted(set(budget or retrieval_manifest["token_budgets"]))
+        )
+        subset = load_subset(subset_file)
+        dataset = XLDocBenchDataset(data_dir)
+        questions = tuple(dataset.iter_subset(subset))
+        expected_calls = (
+            len(retrieval_manifest["question_ids"])
+            * len(selected_systems)
+            * len(selected_budgets)
+        )
+        if expected_calls > max_calls:
+            raise GenerationError(
+                f"run requires {expected_calls} calls, above --max-calls {max_calls}"
+            )
+        config = GenerationConfig(
+            model=model,
+            max_output_tokens=max_output_tokens,
+            reasoning_effort=reasoning_effort,
+            systems=selected_systems,
+            budgets=selected_budgets,
+            pricing=PricingMetadata(
+                input_usd_per_million=input_usd_per_million,
+                cached_input_usd_per_million=cached_input_usd_per_million,
+                output_usd_per_million=output_usd_per_million,
+            ),
+        )
+        result = run_generation_benchmark(
+            retrieval_run,
+            questions,
+            config=config,
+            provider=OpenAIAnswerProvider(),
+            artifacts_root=artifacts_root,
+            run_id=run_id,
+        )
+    except (DatasetError, GenerationError, OSError, RuntimeError, ValueError) as exc:
+        _abort(str(exc))
+    typer.echo(
+        json.dumps(
+            {
+                "report": str(result.path / "report.md"),
+                "run_dir": str(result.path),
+                "run_id": result.summary.run_id,
+                "summary": str(result.path / "summary.json"),
+            },
+            ensure_ascii=False,
+            sort_keys=True,
+        )
+    )
+
+
 @dataset_app.command("download")
 def download_dataset(
     dataset_name: Annotated[str, typer.Argument(help="Dataset name.")],

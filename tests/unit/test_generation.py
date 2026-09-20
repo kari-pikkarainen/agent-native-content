@@ -1,0 +1,201 @@
+"""Generation prompt, provider, scoring, and artifact acceptance tests."""
+
+import json
+from datetime import UTC, datetime
+from pathlib import Path
+from types import SimpleNamespace
+
+import pytest
+from test_evaluation import _corpus, _run
+
+from contextbench.evaluation import BenchmarkSystem
+from contextbench.generation import (
+    GenerationConfig,
+    GenerationError,
+    OpenAIAnswerProvider,
+    PricingMetadata,
+    ProviderAnswer,
+    parse_answer_response,
+    run_generation_benchmark,
+)
+from contextbench.generation.models import AnswerRequest
+from contextbench.generation.scoring import accuracy_score, anls_score, token_f1_score
+
+
+class FixtureProvider:
+    name = "fixture"
+    version = "1"
+
+    def __init__(self) -> None:
+        self.requests: list[AnswerRequest] = []
+
+    def generate(self, request: AnswerRequest, *, config: GenerationConfig):
+        self.requests.append(request)
+        return ProviderAnswer(
+            text=json.dumps(
+                {
+                    "answer": "revenue",
+                    "citations": [request.evidence_ids[0]],
+                }
+            ),
+            model_id=config.model,
+            response_id=f"response-{len(self.requests)}",
+            input_tokens=100,
+            cached_input_tokens=20,
+            output_tokens=10,
+            reasoning_tokens=2,
+            provider_usage={"total_tokens": 110},
+        )
+
+
+def _generation_config() -> GenerationConfig:
+    return GenerationConfig(
+        model="fixture-model",
+        systems=tuple(BenchmarkSystem),
+        budgets=(12,),
+        pricing=PricingMetadata(
+            input_usd_per_million=1,
+            cached_input_usd_per_million=0.5,
+            output_usd_per_million=2,
+        ),
+    )
+
+
+def test_generation_runner_reuses_immutable_contexts_and_writes_costs(
+    tmp_path: Path,
+) -> None:
+    retrieval = _run(tmp_path, run_id="retrieval-fixture")
+    provider = FixtureProvider()
+
+    result = run_generation_benchmark(
+        retrieval.path,
+        _corpus(tmp_path).questions,
+        config=_generation_config(),
+        provider=provider,
+        artifacts_root=tmp_path / "artifacts",
+        run_id="generation-fixture",
+        git_commit="b" * 40,
+        clock=lambda: datetime(2026, 9, 20, tzinfo=UTC),
+    )
+
+    assert len(result.records) == len(BenchmarkSystem)
+    assert len(provider.requests) == len(BenchmarkSystem)
+    assert {record.system for record in result.records} == set(BenchmarkSystem)
+    assert all(record.accuracy == 1 for record in result.records)
+    assert all(record.citation_validity == 1 for record in result.records)
+    assert all(record.citation_support == 1 for record in result.records)
+    assert all(record.cost_usd == pytest.approx(0.00011) for record in result.records)
+    assert len(result.summary.rows) == len(BenchmarkSystem)
+    assert {path.name for path in result.path.iterdir()} == {
+        "generation.jsonl",
+        "manifest.json",
+        "report.md",
+        "summary.json",
+    }
+    manifest = json.loads((result.path / "manifest.json").read_text())
+    assert manifest["retrieval_run_id"] == "retrieval-fixture"
+    assert manifest["provider"] == "fixture"
+    assert manifest["git_commit"] == "b" * 40
+    assert len(manifest["retrieval_artifact_sha256"]) == 64
+
+    with pytest.raises(GenerationError, match="completed run already exists"):
+        run_generation_benchmark(
+            retrieval.path,
+            _corpus(tmp_path).questions,
+            config=_generation_config(),
+            provider=provider,
+            artifacts_root=tmp_path / "artifacts",
+            run_id="generation-fixture",
+        )
+
+
+def test_answer_parser_is_strict_but_accepts_json_fences() -> None:
+    answer, citations, valid = parse_answer_response(
+        '```json\n{"answer":"42","citations":["evidence_1"]}\n```'
+    )
+
+    assert (answer, citations, valid) == ("42", ("evidence_1",), True)
+    assert parse_answer_response("Answer: 42") == ("", (), False)
+    assert parse_answer_response('{"answer":"42","citations":"evidence_1"}') == (
+        "",
+        (),
+        False,
+    )
+
+
+@pytest.mark.parametrize(
+    ("prediction", "gold", "kind", "expected"),
+    (
+        ("25.9", "25", "numeric", 1.0),
+        ("27", "25", "numeric", 0.0),
+        ("Option B", "B", "single_choice", 1.0),
+        ("INSUFFICIENT_EVIDENCE", "Not answerable", "unanswerable", 1.0),
+        ("The answer is revenue increased", "revenue", "entity", 1.0),
+    ),
+)
+def test_native_accuracy_rules(
+    prediction: str,
+    gold: str,
+    kind: str,
+    expected: float,
+) -> None:
+    assert accuracy_score(prediction, gold, kind) == expected
+
+
+def test_native_similarity_metrics() -> None:
+    assert token_f1_score("red red blue", "red green") == pytest.approx(0.5)
+    assert anls_score("revenue", "revenve") > 0.5
+    assert anls_score("x", "revenue") == 0
+
+
+def test_openai_provider_maps_responses_usage_without_importing_sdk() -> None:
+    calls: list[dict[str, object]] = []
+
+    class Responses:
+        @staticmethod
+        def create(**kwargs):
+            calls.append(kwargs)
+            usage = SimpleNamespace(
+                input_tokens=120,
+                output_tokens=20,
+                total_tokens=140,
+                input_tokens_details=SimpleNamespace(cached_tokens=40),
+                output_tokens_details=SimpleNamespace(reasoning_tokens=5),
+                model_dump=lambda **_kwargs: {"total_tokens": 140},
+            )
+            return SimpleNamespace(
+                id="response-1",
+                model="resolved-model",
+                output_text='{"answer":"yes","citations":[]}',
+                usage=usage,
+            )
+
+    provider = OpenAIAnswerProvider(
+        client=SimpleNamespace(responses=Responses()),
+    )
+    config = _generation_config().model_copy(
+        update={"reasoning_effort": "low"}
+    )
+    result = provider.generate(
+        AnswerRequest(
+            question_id="question-1",
+            system=BenchmarkSystem.COMPILER,
+            token_budget=12,
+            prompt="prompt",
+            evidence_ids=("evidence-1",),
+        ),
+        config=config,
+    )
+
+    assert calls == [
+        {
+            "model": "fixture-model",
+            "input": "prompt",
+            "max_output_tokens": 256,
+            "store": False,
+            "reasoning": {"effort": "low"},
+        }
+    ]
+    assert result.model_id == "resolved-model"
+    assert result.cached_input_tokens == 40
+    assert result.reasoning_tokens == 5

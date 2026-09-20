@@ -111,8 +111,9 @@ deduplication, and exact-token packing without an LLM call. See
 
 ## Evidence-only retrieval benchmark
 
-Run the registered XL100 comparison for fixed RAG, structural RAG, and the
-context compiler at 2K, 4K, 8K, and 16K token budgets with one command:
+Run the registered XL100 comparison for fixed RAG, structural RAG, source-order
+long context, and the context compiler at 2K, 4K, 8K, and 16K token budgets
+with one command:
 
 ```shell
 uv sync --extra retrieval
@@ -168,3 +169,22 @@ manifest, `summary.json`, and `report.md`. The milestone stops before answer
 generation so the evidence-recall/token curve can be reviewed first. Metric
 conventions and the decision gate are defined in
 [the experiment protocol](docs/experiment-protocol.md).
+
+## Answer-generation benchmark
+
+Generation consumes a completed run's `contexts.jsonl`; it does not repeat PDF
+parsing, indexing, retrieval, or compilation. The model, prompt, output limit,
+scoring, and pricing policy are identical across selected systems. Install the
+optional provider dependency and inspect the guarded command with:
+
+```shell
+uv sync --extra generation
+uv run --extra generation contextbench eval-generation --help
+```
+
+The command requires an explicit model ID, uncached/cached input and output
+prices, and `--max-calls`. It refuses a run whose question × system × budget
+cell count exceeds that authorization ceiling. Provider usage, resolved model
+ID, latency, benchmark accuracy, token F1, ANLS, citation validity, and cost are
+written to a separate immutable generation run. No default command performs a
+paid model call.
