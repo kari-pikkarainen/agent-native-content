@@ -1,6 +1,8 @@
 # XL10 Compiler Improvement Decision
 
-Selected run: `xl10-stable-22f00c3`
+Selected retrieval run: `xl10-stable-22f00c3`
+
+Current IR-correctness validation: `xl10-source-fallback-24ac563`
 
 This decision follows the initial XL10 smoke run and uses the same 10 questions,
 six documents, models, and evidence-only metrics. XL10 is a development smoke
@@ -69,3 +71,16 @@ continuation provenance. Neither should be tuned against these 10 questions.
 
 The immutable run artifacts remain under `artifacts/runs/` and are intentionally
 ignored by Git.
+
+## Follow-up: empty normalized source text
+
+The authoritative Docling artifact for one missing gold page contained an empty
+normalized `text` value but retained 1,081 characters of source-derived `orig`
+text and the correct page-24 provenance box. IR projection now uses that source
+text as a fallback rather than emitting an evidence-free node.
+
+The full XL10 regression increased compiler 16K recall from 0.769 to 0.814. On
+the affected table question, compiler recall increased from 0.500 to 0.833 and
+page 24 became retrievable. Structural results were unchanged. Compiler 2K
+recall moved from 0.592 to 0.581, so the next larger evaluation must continue to
+report the full budget curve rather than only the high-budget gain.
