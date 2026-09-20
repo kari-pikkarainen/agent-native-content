@@ -94,15 +94,124 @@ class HybridIndex:
                         tokenizer=counter,
                     )
                 )
-        index = cls(
+        return cls.from_chunks(
             chunks,
             config=my_config,
             embedder=embedder,
             reranker=reranker,
             tokenizer=counter,
+            artifacts_root=artifacts_root,
+            documents=documents,
+            arm=arm,
+        )
+
+    @classmethod
+    def from_chunks(
+        cls,
+        chunks: Sequence[RetrievalChunk],
+        *,
+        config: RetrievalConfig,
+        documents: Sequence[IRDocument],
+        arm: RetrievalArm,
+        artifacts_root: Path | None = None,
+        embedder: EmbeddingModel | None = None,
+        reranker: Reranker | None = None,
+        tokenizer: TokenCounter | None = None,
+    ) -> "HybridIndex":
+        """Load a verified derived index when present, otherwise build it."""
+        counter = tokenizer or TiktokenTokenCounter(config.tokenizer_name)
+        dense_model = embedder or embedding_model_from_config(config)
+        ranking_model = reranker or reranker_from_config(config)
+        if artifacts_root is not None:
+            key = _index_key(
+                documents,
+                arm=arm,
+                config=config,
+                chunks=chunks,
+                embedding_model=dense_model.name,
+                embedding_version=dense_model.version,
+                reranker_model=ranking_model.name,
+                reranker_version=ranking_model.version,
+                tokenizer=counter.name,
+                tokenizer_version=counter.version,
+            )
+            artifact_path = artifacts_root / "indexes" / key / "index.json"
+            if artifact_path.is_file():
+                return cls.load(
+                    artifact_path,
+                    config=config,
+                    chunks=chunks,
+                    embedder=dense_model,
+                    reranker=ranking_model,
+                    tokenizer=counter,
+                )
+        index = cls(
+            chunks,
+            config=config,
+            embedder=dense_model,
+            reranker=ranking_model,
+            tokenizer=counter,
         )
         if artifacts_root is not None:
             index.save(artifacts_root, documents=documents, arm=arm)
+        return index
+
+    @classmethod
+    def load(
+        cls,
+        path: Path,
+        *,
+        config: RetrievalConfig,
+        chunks: Sequence[RetrievalChunk],
+        embedder: EmbeddingModel,
+        reranker: Reranker,
+        tokenizer: TokenCounter,
+    ) -> "HybridIndex":
+        """Load and validate a deterministic index artifact without re-embedding."""
+        value = json.loads(path.read_text(encoding="utf-8"))
+        expected_metadata = {
+            "embedding_model": embedder.name,
+            "embedding_version": embedder.version,
+            "reranker_model": reranker.name,
+            "reranker_version": reranker.version,
+            "tokenizer": tokenizer.name,
+            "tokenizer_version": tokenizer.version,
+        }
+        for field_name, expected in expected_metadata.items():
+            if value.get(field_name) != expected:
+                raise ValueError(
+                    f"index artifact {field_name} does not match configured value"
+                )
+        if RetrievalConfig.model_validate(value.get("config")) != config:
+            raise ValueError("index artifact retrieval config does not match")
+        loaded_chunks = tuple(
+            RetrievalChunk.model_validate(chunk) for chunk in value.get("chunks", ())
+        )
+        if loaded_chunks != tuple(chunks):
+            raise ValueError("index artifact chunks do not match derived chunks")
+        vectors = value.get("vectors")
+        if not isinstance(vectors, list) or len(vectors) != len(loaded_chunks):
+            raise ValueError("index artifact vectors do not match derived chunks")
+        if vectors:
+            dimensions = len(vectors[0])
+            if dimensions == 0 or any(
+                not isinstance(vector, list) or len(vector) != dimensions
+                for vector in vectors
+            ):
+                raise ValueError("index artifact vectors have inconsistent dimensions")
+
+        index = cls.__new__(cls)
+        index.chunks = loaded_chunks
+        index.config = config
+        index.embedder = embedder
+        index.reranker = reranker
+        index.tokenizer = tokenizer
+        index.sparse = BM25Index(
+            loaded_chunks,
+            k1=config.sparse_k1,
+            b=config.sparse_b,
+        )
+        index._vectors = vectors
         return index
 
     def retrieve(

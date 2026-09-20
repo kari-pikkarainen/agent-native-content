@@ -245,15 +245,13 @@ def _build_indexes(
         )
     if BenchmarkSystem.COMPILER in systems:
         chunks = node_chunks(documents, tokenizer=tokenizer)
-        index = HybridIndex(
+        index = HybridIndex.from_chunks(
             chunks,
             config=config.retrieval,
             tokenizer=tokenizer,
             embedder=embedder,
             reranker=reranker,
-        )
-        index.save(
-            artifacts_root,
+            artifacts_root=artifacts_root,
             documents=documents,
             arm=RetrievalArm.COMPILER,
         )

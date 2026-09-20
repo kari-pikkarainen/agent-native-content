@@ -344,6 +344,47 @@ def test_repeated_builds_have_identical_rankings_and_artifact_keys(
     ).read_bytes()
 
 
+def test_repeated_build_loads_verified_vectors_without_reembedding(
+    tmp_path: Path,
+    retrieval_fixture,
+) -> None:
+    source, ir, config = retrieval_fixture
+
+    class CountingEmbedder(HashEmbeddingModel):
+        def __init__(self) -> None:
+            super().__init__(config.embedding_dimensions)
+            self.calls = 0
+
+        def embed(self, texts):
+            self.calls += 1
+            return super().embed(texts)
+
+    first_embedder = CountingEmbedder()
+    first = HybridIndex.build(
+        [ir],
+        arm=RetrievalArm.STRUCTURAL,
+        config=config,
+        source_documents={ir.id: source},
+        tokenizer=FixtureTokenCounter(),
+        embedder=first_embedder,
+        artifacts_root=tmp_path / "artifacts",
+    )
+    second_embedder = CountingEmbedder()
+    second = HybridIndex.build(
+        [ir],
+        arm=RetrievalArm.STRUCTURAL,
+        config=config,
+        source_documents={ir.id: source},
+        tokenizer=FixtureTokenCounter(),
+        embedder=second_embedder,
+        artifacts_root=tmp_path / "artifacts",
+    )
+
+    assert first_embedder.calls == 1
+    assert second_embedder.calls == 0
+    assert second.retrieve("revenue results") == first.retrieve("revenue results")
+
+
 def test_global_index_respects_per_question_document_scope(tmp_path: Path) -> None:
     counter = FixtureTokenCounter()
     allowed_source = source_document()
