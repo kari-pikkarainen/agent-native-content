@@ -120,7 +120,7 @@ uv run --extra retrieval contextbench eval-retrieval
 ```
 
 For a real-data smoke run covering all six domains with 10 questions over only
-6 PDFs (619 pages, about 30 MiB), use the committed `xl10` subset:
+6 PDFs (718 pages, about 29 MiB), use the committed `xl10` subset:
 
 ```shell
 uv run --extra retrieval contextbench eval-retrieval \

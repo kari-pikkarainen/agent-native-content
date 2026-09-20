@@ -8,11 +8,11 @@
   "strata": {
     "purpose": "smoke_benchmark_not_claims",
     "domains": {
-      "finance_business": 2,
+      "finance_business": 1,
       "legal_regulation": 1,
       "medical_clinical": 1,
       "narrative_literature": 2,
-      "scientific_academic": 2,
+      "scientific_academic": 3,
       "technical_engineering": 2
     },
     "task_type": {
@@ -24,22 +24,22 @@
       "unanswerable": 1
     },
     "source_documents": 6,
-    "source_pages": 619,
-    "source_bytes": 31269166,
+    "source_pages": 718,
+    "source_bytes": 30210940,
     "evidence_modality": {
-      "table_chart_or_image": 3,
-      "text_or_no_evidence": 7
+      "table_chart_or_image": 4,
+      "text_or_no_evidence": 6
     }
   },
   "question_ids": [
-    "adubench_single_000572",
-    "adubench_single_001243",
+    "adubench_single_000697",
     "adubench_single_000005",
     "adubench_single_000638",
     "adubench_single_000198",
     "adubench_single_000885",
     "adubench_single_000321",
     "adubench_single_000322",
+    "adubench_single_001007",
     "adubench_single_000114",
     "adubench_single_000803"
   ]

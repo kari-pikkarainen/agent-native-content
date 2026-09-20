@@ -86,4 +86,4 @@ def test_committed_xl10_is_an_explicit_xl100_smoke_subset() -> None:
     assert set(xl10.question_ids).issubset(xl100.question_ids)
     assert sum(xl10.strata["domains"].values()) == 10
     assert xl10.strata["source_documents"] == 6
-    assert xl10.strata["source_pages"] == 619
+    assert xl10.strata["source_pages"] == 718
