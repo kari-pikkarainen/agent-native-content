@@ -5,6 +5,7 @@ import json
 from collections.abc import Sequence
 
 from contextbench.compiler.candidates import node_chunks
+from contextbench.compiler.corpus import CompilerCorpusIndex
 from contextbench.compiler.dedupe import deduplicate_candidates
 from contextbench.compiler.expand import expand_candidates
 from contextbench.compiler.facets import retrieve_faceted
@@ -37,6 +38,7 @@ def compile_context(
     retrieval_token_budget: int | None = None,
     ranked_evidence: Sequence[RankedEvidence] | None = None,
     query_cache: CompilerQueryCache | None = None,
+    corpus_index: CompilerCorpusIndex | None = None,
 ) -> ContextPacket:
     """Compile query-specific evidence without an LLM or budget overflow."""
     packet, _trace = compile_context_with_trace(
@@ -51,6 +53,7 @@ def compile_context(
         retrieval_token_budget=retrieval_token_budget,
         ranked_evidence=ranked_evidence,
         query_cache=query_cache,
+        corpus_index=corpus_index,
     )
     return packet
 
@@ -68,6 +71,7 @@ def compile_context_with_trace(
     retrieval_token_budget: int | None = None,
     ranked_evidence: Sequence[RankedEvidence] | None = None,
     query_cache: CompilerQueryCache | None = None,
+    corpus_index: CompilerCorpusIndex | None = None,
 ) -> tuple[ContextPacket, CompilerTrace]:
     """Compile context and expose immutable candidate stages for diagnostics."""
     if not query.strip():
@@ -87,6 +91,18 @@ def compile_context_with_trace(
     counter = tokenizer or TiktokenTokenCounter(my_config.retrieval.tokenizer_name)
     if hybrid_index is not None and hybrid_index.config != my_config.retrieval:
         raise ValueError("hybrid_index configuration differs from compiler config")
+    if (
+        corpus_index is not None
+        and corpus_index.retrieval_config != my_config.retrieval
+    ):
+        raise ValueError("corpus_index configuration differs from compiler config")
+    if corpus_index is not None:
+        missing_documents = set(document_ids).difference(corpus_index.documents_by_id)
+        if missing_documents:
+            raise ValueError(
+                "corpus_index is missing document_scope IDs: "
+                f"{sorted(missing_documents)}"
+            )
     index = hybrid_index
     if index is None:
         chunks = node_chunks(scope.documents, tokenizer=counter)
@@ -142,6 +158,7 @@ def compile_context_with_trace(
         tokenizer=counter,
         reranker=index.reranker,
         query_cache=query_cache,
+        corpus_index=corpus_index,
     )
     unique = deduplicate_candidates(expanded, scope.documents)[
         : my_config.max_expanded_candidates

@@ -15,6 +15,7 @@ from pathlib import Path
 from docling_core.types.doc import DoclingDocument
 
 from contextbench.compiler import (
+    CompilerCorpusIndex,
     CompilerQueryCache,
     DocumentScope,
     compile_context,
@@ -146,6 +147,15 @@ def run_retrieval_benchmark(
         embedder=shared_embedder,
         reranker=shared_reranker,
     )
+    compiler_corpus_index = (
+        CompilerCorpusIndex.build(
+            documents,
+            retrieval_config=config.retrieval,
+            tokenizer=counter,
+        )
+        if BenchmarkSystem.COMPILER in config.systems
+        else None
+    )
     records, contexts, stage_audits = _evaluate_cells(
         corpus,
         config=config,
@@ -153,6 +163,7 @@ def run_retrieval_benchmark(
         tokenizer=counter,
         embedder=shared_embedder,
         reranker=shared_reranker,
+        compiler_corpus_index=compiler_corpus_index,
     )
     summary = summarize(resolved_run_id, records)
     python_version, platform_name = environment_info()
@@ -267,6 +278,7 @@ def _evaluate_cells(
     tokenizer: TokenCounter,
     embedder: EmbeddingModel,
     reranker: Reranker,
+    compiler_corpus_index: CompilerCorpusIndex | None,
 ) -> tuple[
     tuple[RetrievalEvaluationRecord, ...],
     tuple[dict[str, object], ...],
@@ -350,6 +362,7 @@ def _evaluate_cells(
                         hybrid_index=indexes[system],
                         ranked_evidence=ranked,
                         query_cache=compiler_cache,
+                        corpus_index=compiler_corpus_index,
                     )
                 else:
                     packet = _context_for_system(
@@ -364,6 +377,7 @@ def _evaluate_cells(
                         reranker=reranker,
                         ranked_evidence=ranked,
                         compiler_cache=compiler_cache,
+                        compiler_corpus_index=compiler_corpus_index,
                     )
                 elapsed_ms = retrieval_elapsed_ms + (
                     time.perf_counter_ns() - started
@@ -462,6 +476,7 @@ def _context_for_system(
     reranker: Reranker,
     ranked_evidence: Sequence[RankedEvidence],
     compiler_cache: CompilerQueryCache | None,
+    compiler_corpus_index: CompilerCorpusIndex | None,
 ) -> ContextPacket:
     if system == BenchmarkSystem.COMPILER:
         return compile_context(
@@ -475,6 +490,7 @@ def _context_for_system(
             hybrid_index=index,
             ranked_evidence=ranked_evidence,
             query_cache=compiler_cache,
+            corpus_index=compiler_corpus_index,
         )
     return index.pack_ranked(
         query,

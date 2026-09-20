@@ -6,6 +6,7 @@ from collections.abc import Mapping, Sequence
 
 from docling_core.types.doc import DoclingDocument
 
+from contextbench.compiler.corpus import CompilerCorpusIndex
 from contextbench.compiler.joins import (
     keyed_table_join_cache_key,
     keyed_table_join_candidates,
@@ -38,6 +39,7 @@ def expand_candidates(
     tokenizer: TokenCounter,
     reranker: Reranker,
     query_cache: CompilerQueryCache | None = None,
+    corpus_index: CompilerCorpusIndex | None = None,
 ) -> tuple[CompilerCandidate, ...]:
     """Add heading context, siblings, list neighbors, and table fallbacks."""
     documents_by_id = {document.id: document for document in documents}
@@ -47,7 +49,11 @@ def expand_candidates(
 
     for evidence in ranked:
         document = documents_by_id[evidence.chunk.document_id]
-        node = document.node_by_id[evidence.chunk.source_node_ids[0]]
+        node = (
+            corpus_index.node(document.id, evidence.chunk.source_node_ids[0])
+            if corpus_index is not None
+            else document.node_by_id[evidence.chunk.source_node_ids[0]]
+        )
         direct = _candidate_for_node(
             node,
             evidence=evidence,
@@ -124,7 +130,12 @@ def expand_candidates(
             expanded.append(direct)
 
         if node.kind == IRNodeKind.PARAGRAPH:
-            for sibling, distance in _paragraph_siblings(node, document, config):
+            for sibling, distance in _paragraph_siblings(
+                node,
+                document,
+                config,
+                corpus_index=corpus_index,
+            ):
                 expanded.append(
                     _candidate_for_related_node(
                         sibling,
@@ -138,7 +149,12 @@ def expand_candidates(
                 )
                 expansion_order += 1
         if node.kind == IRNodeKind.LIST_ITEM and config.group_adjacent_list_items:
-            for neighbor, distance in _list_neighbors(node, document, config):
+            for neighbor, distance in _list_neighbors(
+                node,
+                document,
+                config,
+                corpus_index=corpus_index,
+            ):
                 expanded.append(
                     _candidate_for_related_node(
                         neighbor,
@@ -204,6 +220,7 @@ def expand_candidates(
                 config=config,
                 tokenizer=tokenizer,
                 reranker=reranker,
+                corpus_index=corpus_index,
             )
 
         page_neighbors = (
@@ -261,6 +278,7 @@ def _page_neighbor_candidates(
     config: CompilerConfig,
     tokenizer: TokenCounter,
     reranker: Reranker,
+    corpus_index: CompilerCorpusIndex | None = None,
 ) -> tuple[CompilerCandidate, ...]:
     """Rerank bounded fixed windows near the strongest node-level hits."""
     documents_by_id = {document.id: document for document in documents}
@@ -271,7 +289,11 @@ def _page_neighbor_candidates(
         if anchor.page_start is None or anchor.page_end is None:
             continue
         document = documents_by_id[anchor.document_id]
-        page_chunks = chunks_by_document.get(document.id)
+        page_chunks = (
+            corpus_index.page_chunks_by_document.get(document.id)
+            if corpus_index is not None
+            else chunks_by_document.get(document.id)
+        )
         if page_chunks is None:
             page_chunks = fixed_chunks(
                 document,
@@ -439,8 +461,10 @@ def _paragraph_siblings(
     node: IRNode,
     document: IRDocument,
     config: CompilerConfig,
+    *,
+    corpus_index: CompilerCorpusIndex | None = None,
 ) -> tuple[tuple[IRNode, int], ...]:
-    siblings = _siblings(node, document)
+    siblings = _siblings(node, document, corpus_index=corpus_index)
     index = siblings.index(node)
     selected: list[tuple[IRNode, int]] = []
     for distance in range(1, config.sibling_neighbor_limit + 1):
@@ -464,8 +488,10 @@ def _list_neighbors(
     node: IRNode,
     document: IRDocument,
     config: CompilerConfig,
+    *,
+    corpus_index: CompilerCorpusIndex | None = None,
 ) -> tuple[tuple[IRNode, int], ...]:
-    siblings = _siblings(node, document)
+    siblings = _siblings(node, document, corpus_index=corpus_index)
     index = siblings.index(node)
     selected: list[tuple[IRNode, int]] = []
     for distance in range(1, config.list_neighbor_limit + 1):
@@ -477,7 +503,14 @@ def _list_neighbors(
     return tuple(selected)
 
 
-def _siblings(node: IRNode, document: IRDocument) -> list[IRNode]:
+def _siblings(
+    node: IRNode,
+    document: IRDocument,
+    *,
+    corpus_index: CompilerCorpusIndex | None = None,
+) -> Sequence[IRNode]:
+    if corpus_index is not None:
+        return corpus_index.siblings(node)
     if node.parent_id is not None:
         parent = document.node_by_id[node.parent_id]
         return [document.node_by_id[node_id] for node_id in parent.children_ids]

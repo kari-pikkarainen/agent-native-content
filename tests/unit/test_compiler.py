@@ -12,6 +12,7 @@ from test_ir import FixtureTokenCounter, ingest_metadata, provenance
 import contextbench.compiler.expand as compiler_expand
 from contextbench.compiler import (
     CompilerConfig,
+    CompilerCorpusIndex,
     CompilerQueryCache,
     DocumentScope,
     compile_context,
@@ -277,6 +278,36 @@ def test_prebuilt_global_index_matches_per_scope_index(compiler_fixture) -> None
 
     assert reused == direct
     assert pre_ranked == direct
+
+
+def test_precomputed_compiler_corpus_index_preserves_output(
+    compiler_fixture,
+) -> None:
+    _source, ir, scope, counter = compiler_fixture
+    config = compiler_config()
+    index = CompilerCorpusIndex.build(
+        [ir],
+        retrieval_config=config.retrieval,
+        tokenizer=counter,
+    )
+
+    direct = compile_context(
+        "target revenue increased",
+        scope,
+        100,
+        config,
+        tokenizer=counter,
+    )
+    precomputed = compile_context(
+        "target revenue increased",
+        scope,
+        100,
+        config,
+        tokenizer=counter,
+        corpus_index=index,
+    )
+
+    assert precomputed == direct
 
 
 def test_compiler_trace_preserves_output_and_candidate_boundaries(
