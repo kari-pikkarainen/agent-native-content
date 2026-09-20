@@ -17,7 +17,7 @@ from contextbench.compiler import (
     compile_context,
     compile_context_with_trace,
 )
-from contextbench.compiler.candidates import node_chunks
+from contextbench.compiler.candidates import _table_search_labels, node_chunks
 from contextbench.compiler.expand import _penalize
 from contextbench.ir import project_document
 from contextbench.ir.models import IRNodeKind
@@ -399,6 +399,25 @@ def test_table_row_candidates_group_adjacent_rows(compiler_fixture) -> None:
     assert len(rows) == 1
     assert "Region: North | Revenue: 42" in rows[0].text
     assert "Region: South | Revenue: 37" in rows[0].text
+
+
+def test_table_labels_propagate_to_header_matched_continuations(
+    compiler_fixture,
+) -> None:
+    _source, ir, _scope, _counter = compiler_fixture
+    paragraph = next(node for node in ir.nodes if node.kind == IRNodeKind.PARAGRAPH)
+    table = next(node for node in ir.nodes if node.kind == IRNodeKind.TABLE)
+    label = paragraph.model_copy(
+        update={"text": "Table AII.5 | Coupled model details"}
+    )
+    continuation = table.model_copy(update={"id": f"{table.id}-continuation"})
+
+    labels = _table_search_labels((label, table, continuation))
+
+    assert labels == {
+        table.id: ("Table AII.5",),
+        continuation.id: ("Table AII.5",),
+    }
 
 
 def test_prebuilt_index_must_share_compiler_retrieval_config(

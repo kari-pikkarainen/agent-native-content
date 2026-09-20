@@ -9,6 +9,10 @@ from contextbench.ir.tokenizer import TokenCounter
 from contextbench.retrieval.models import RetrievalArm, RetrievalChunk
 
 _NON_EVIDENCE_GROUPS = {IRNodeKind.LIST}
+_TABLE_LABEL = re.compile(
+    r"\bTable\s+[A-Z0-9]+(?:[.\-][A-Z0-9]+)+",
+    flags=re.IGNORECASE,
+)
 
 
 def node_chunks(
@@ -22,6 +26,7 @@ def node_chunks(
     """Represent each content-bearing IR node as a retrieval candidate."""
     chunks: list[RetrievalChunk] = []
     for document in documents:
+        table_search_labels = _table_search_labels(document.nodes)
         for node in document.nodes:
             if (
                 not node.text.strip()
@@ -36,6 +41,7 @@ def node_chunks(
                     tokenizer=tokenizer,
                     group_size=table_row_group_size,
                     empty_marker=table_empty_cell_marker,
+                    search_labels=table_search_labels.get(node.id, ()),
                 )
                 if row_chunks:
                     chunks.extend(row_chunks)
@@ -69,6 +75,7 @@ def _table_row_chunks(
     tokenizer: TokenCounter,
     group_size: int,
     empty_marker: str,
+    search_labels: tuple[str, ...],
 ) -> tuple[RetrievalChunk, ...]:
     if node.table is None or not node.table.rows:
         return ()
@@ -88,7 +95,7 @@ def _table_row_chunks(
             continue
         aliases = _compact_header_aliases(node.table.column_headers)
         search_text = _contextual_search_text(
-            "\n".join((*aliases, text)),
+            "\n".join((*search_labels, *aliases, text)),
             node.heading_path,
         )
         payload = (
@@ -142,6 +149,37 @@ def _compact_header_aliases(headers: tuple[str, ...]) -> tuple[str, ...]:
         if compact and compact.casefold() != header.casefold():
             aliases.append(compact)
     return tuple(dict.fromkeys(aliases))
+
+
+def _table_search_labels(nodes: Sequence[IRNode]) -> dict[str, tuple[str, ...]]:
+    """Carry source table labels across header-matched continuation fragments."""
+    pending: tuple[str, ...] = ()
+    by_headers: dict[tuple[str, ...], tuple[str, ...]] = {}
+    labels_by_node: dict[str, tuple[str, ...]] = {}
+    for node in nodes:
+        stripped = node.text.lstrip()
+        if (
+            node.kind == IRNodeKind.CAPTION
+            or stripped.casefold().startswith("table ")
+            or stripped.casefold().startswith("[start table ")
+        ):
+            pending = tuple(dict.fromkeys(_TABLE_LABEL.findall(node.text)))
+        if node.kind != IRNodeKind.TABLE or node.table is None:
+            continue
+        signature = tuple(
+            " ".join(header.casefold().split())
+            for header in node.table.column_headers
+        )
+        own = tuple(
+            dict.fromkeys(_TABLE_LABEL.findall(node.table.caption or ""))
+        )
+        labels = own or pending or by_headers.get(signature, ())
+        if labels:
+            labels_by_node[node.id] = labels
+            if signature:
+                by_headers[signature] = labels
+        pending = ()
+    return labels_by_node
 
 
 def _contextual_search_text(text: str, heading_path: tuple[str, ...]) -> str:
