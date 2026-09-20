@@ -24,9 +24,13 @@ Both arms run the same deterministic stages:
 2. Dense brute-force cosine retrieval over the same candidate corpus.
 3. Reciprocal Rank Fusion with explicit `rrf_k`.
 4. A shared reranker over the fused top candidates.
-5. Provenance-aware token-budget packing.
+5. A second Reciprocal Rank Fusion, with explicit `rerank_rrf_k`, combining
+   the hybrid rank and reranker rank so either signal can rescue strong
+   evidence from a failure in the other.
+6. Provenance-aware token-budget packing.
 
-The returned `RankedEvidence` records dense, sparse, fused, and reranked scores.
+The returned `RankedEvidence` records dense, sparse, fused, and final reranked
+fusion scores.
 Packed `ContextItem` values carry document IDs, pages, heading paths, IR node
 IDs, Docling source item IDs, and an evidence ID suitable for answer citations.
 
