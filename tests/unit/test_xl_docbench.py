@@ -105,15 +105,15 @@ def test_committed_xldev24_is_balanced_and_disjoint_from_xl100() -> None:
         "technical_engineering": 4,
     }
     assert xldev24.strata["task_type"] == {
-        "single_doc": 18,
-        "cross_doc": 6,
+        "single_doc": 24,
+        "cross_doc": 0,
     }
     assert xldev24.strata["answerability"] == {
-        "answerable": 20,
-        "unanswerable": 4,
+        "answerable": 18,
+        "unanswerable": 6,
     }
     assert xldev24.strata["evidence_modality"] == {
         "table_chart_or_image": 6,
         "text_or_no_evidence": 18,
     }
-    assert xldev24.strata["source_documents"] == 28
+    assert xldev24.strata["source_documents"] == 13

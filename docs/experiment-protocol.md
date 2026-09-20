@@ -15,10 +15,12 @@ Milestone 1 pins the conservative XL-DocBench release as follows:
 
 The tuning subset is the explicit ordered list in
 `configs/subsets/xldev24.json`. It contains 24 questions selected only from
-release metadata: four per domain, including 18 single-document, six
-cross-document, four unanswerable, and six table/chart/image questions. It is
-disjoint from XL100. The selection minimizes added source documents and bytes
-after satisfying its quotas so development runs remain practical.
+release metadata and source-availability checks: four single-document questions
+per domain, including six unanswerable and six table/chart/image questions. It
+is disjoint from XL100. The selection minimizes added source bytes after
+satisfying its quotas so development runs remain practical. Cross-document
+questions remain in the held-out XL100 evaluation rather than expanding the
+development corpus with dozens of additional and frequently stale mirrors.
 
 `configs/subsets/xl100.json` remains the held-out final retrieval evaluation:
 100 questions balanced across all six domains, including 80 single-document
