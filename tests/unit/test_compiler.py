@@ -262,7 +262,12 @@ def test_configurable_paragraph_siblings_receive_score_penalty(
 ) -> None:
     _source, _ir, scope, counter = compiler_fixture
     config = compiler_config(
-        retrieval=RetrievalConfig(candidate_limit=10, rerank_limit=1),
+        retrieval=RetrievalConfig(
+            candidate_limit=10,
+            rerank_limit=1,
+            max_candidate_limit=10,
+            max_rerank_limit=1,
+        ),
         include_previous_sibling=True,
         include_next_sibling=True,
         sibling_score_penalty=0.5,

@@ -60,7 +60,11 @@ def compile_context(
             embedder=embedder,
             reranker=reranker,
         )
-    ranked = index.retrieve(query, document_ids=set(document_ids))
+    ranked = index.retrieve(
+        query,
+        token_budget=token_budget,
+        document_ids=set(document_ids),
+    )
     expanded = expand_candidates(
         query,
         ranked,

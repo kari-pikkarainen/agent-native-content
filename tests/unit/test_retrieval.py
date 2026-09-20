@@ -115,7 +115,12 @@ def test_fixed_chunks_overlap_and_packing_deduplicates_source_material(
 
 
 def test_search_text_drives_retrieval_but_emitted_text_stays_exact() -> None:
-    config = RetrievalConfig(candidate_limit=2, rerank_limit=1)
+    config = RetrievalConfig(
+        candidate_limit=2,
+        rerank_limit=1,
+        max_candidate_limit=2,
+        max_rerank_limit=1,
+    )
     chunks = (
         RetrievalChunk(
             id="chunk-wrong",
@@ -144,6 +149,80 @@ def test_search_text_drives_retrieval_but_emitted_text_stays_exact() -> None:
 
     assert len(packet.items) == 1
     assert packet.items[0].content == "Precise emitted evidence"
+
+
+def test_token_budget_expands_rerank_pool_by_candidate_token_mass() -> None:
+    chunks = tuple(
+        RetrievalChunk(
+            id=f"chunk-{index:02d}",
+            arm=RetrievalArm.COMPILER,
+            document_id="doc",
+            text=f"evidence {index}",
+            search_text=f"shared query evidence {index}",
+            token_count=1,
+            source_node_ids=(f"node-{index}",),
+            source_item_ids=(f"item-{index}",),
+        )
+        for index in range(20)
+    )
+    config = RetrievalConfig(
+        candidate_limit=2,
+        rerank_limit=2,
+        candidate_token_multiplier=3,
+        rerank_token_multiplier=2,
+        max_candidate_limit=20,
+        max_rerank_limit=20,
+    )
+    index = HybridIndex(chunks, config=config, tokenizer=FixtureTokenCounter())
+
+    fixed_count = index.retrieve("shared query")
+    token_aware = index.retrieve("shared query", token_budget=5)
+
+    assert len(fixed_count) == 2
+    assert len(token_aware) == 10
+    assert sum(item.chunk.token_count for item in token_aware) >= 10
+
+
+def test_duplicate_search_text_does_not_consume_rerank_capacity() -> None:
+    chunks = tuple(
+        RetrievalChunk(
+            id=f"duplicate-{index}",
+            arm=RetrievalArm.COMPILER,
+            document_id="doc",
+            text=f"duplicate occurrence {index}",
+            search_text="same repeated boilerplate",
+            token_count=1,
+            source_node_ids=(f"duplicate-node-{index}",),
+            source_item_ids=(f"duplicate-item-{index}",),
+        )
+        for index in range(5)
+    ) + (
+        RetrievalChunk(
+            id="unique",
+            arm=RetrievalArm.COMPILER,
+            document_id="doc",
+            text="unique evidence",
+            search_text="unique evidence",
+            token_count=1,
+            source_node_ids=("unique-node",),
+            source_item_ids=("unique-item",),
+        ),
+    )
+    config = RetrievalConfig(
+        candidate_limit=6,
+        rerank_limit=2,
+        max_candidate_limit=6,
+        max_rerank_limit=2,
+    )
+    index = HybridIndex(chunks, config=config, tokenizer=FixtureTokenCounter())
+
+    ranked = index.retrieve("same repeated boilerplate")
+
+    assert len(ranked) == 2
+    assert {item.chunk.retrieval_text for item in ranked} == {
+        "same repeated boilerplate",
+        "unique evidence",
+    }
 
 
 def test_repeated_builds_have_identical_rankings_and_artifact_keys(

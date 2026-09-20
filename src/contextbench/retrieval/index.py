@@ -110,10 +110,18 @@ class HybridIndex:
         query: str,
         *,
         limit: int | None = None,
+        token_budget: int | None = None,
         document_ids: set[str] | None = None,
     ) -> tuple[RankedEvidence, ...]:
         """Run sparse, dense, RRF, and reranking stages."""
-        candidate_limit = limit or self.config.candidate_limit
+        if token_budget is not None and token_budget < 0:
+            raise ValueError("token_budget must not be negative")
+        minimum_candidate_limit = limit or self.config.candidate_limit
+        search_limit = (
+            self.config.max_candidate_limit
+            if token_budget is not None
+            else minimum_candidate_limit
+        )
         allowed_indices = (
             {
                 index
@@ -125,14 +133,28 @@ class HybridIndex:
         )
         sparse_hits = self.sparse.search(
             query,
-            candidate_limit,
+            search_limit,
             allowed_indices=allowed_indices,
         )
         dense_hits = self._dense_search(
             query,
-            candidate_limit,
+            search_limit,
             allowed_indices=allowed_indices,
         )
+        if token_budget is not None:
+            candidate_token_target = round(
+                token_budget * self.config.candidate_token_multiplier
+            )
+            sparse_hits = self._trim_hits(
+                sparse_hits,
+                minimum_count=minimum_candidate_limit,
+                token_target=candidate_token_target,
+            )
+            dense_hits = self._trim_hits(
+                dense_hits,
+                minimum_count=minimum_candidate_limit,
+                token_target=candidate_token_target,
+            )
         sparse_ranks = {
             index: rank for rank, (index, _score) in enumerate(sparse_hits, 1)
         }
@@ -159,7 +181,20 @@ class HybridIndex:
             for index in candidate_indices
         }
         candidate_indices.sort(key=lambda index: (-fused[index], self.chunks[index].id))
-        candidate_indices = candidate_indices[: self.config.rerank_limit]
+        candidate_indices = self._unique_by_search_text(candidate_indices)
+        rerank_limit = self.config.rerank_limit
+        if token_budget is not None:
+            rerank_token_target = round(
+                token_budget * self.config.rerank_token_multiplier
+            )
+            candidate_indices = self._trim_indices(
+                candidate_indices,
+                minimum_count=rerank_limit,
+                token_target=rerank_token_target,
+                maximum_count=self.config.max_rerank_limit,
+            )
+        else:
+            candidate_indices = candidate_indices[:rerank_limit]
         rerank_scores = self.reranker.score(
             query,
             [self.chunks[index] for index in candidate_indices],
@@ -194,6 +229,7 @@ class HybridIndex:
         ranked = self.retrieve(
             query,
             limit=limit,
+            token_budget=token_budget,
             document_ids=document_ids,
         )
         return pack_evidence(
@@ -265,6 +301,50 @@ class HybridIndex:
         ]
         scores.sort(key=lambda pair: (-pair[0], self.chunks[pair[1]].id))
         return [(index, score) for score, index in scores[:limit]]
+
+    def _trim_hits(
+        self,
+        hits: Sequence[tuple[int, float]],
+        *,
+        minimum_count: int,
+        token_target: int,
+    ) -> list[tuple[int, float]]:
+        selected: list[tuple[int, float]] = []
+        token_count = 0
+        for hit in hits:
+            selected.append(hit)
+            token_count += self.chunks[hit[0]].token_count
+            if len(selected) >= minimum_count and token_count >= token_target:
+                break
+        return selected
+
+    def _unique_by_search_text(self, indices: Sequence[int]) -> list[int]:
+        seen: set[str] = set()
+        selected: list[int] = []
+        for index in indices:
+            normalized = " ".join(self.chunks[index].retrieval_text.casefold().split())
+            if normalized in seen:
+                continue
+            seen.add(normalized)
+            selected.append(index)
+        return selected
+
+    def _trim_indices(
+        self,
+        indices: Sequence[int],
+        *,
+        minimum_count: int,
+        token_target: int,
+        maximum_count: int,
+    ) -> list[int]:
+        selected: list[int] = []
+        token_count = 0
+        for index in indices[:maximum_count]:
+            selected.append(index)
+            token_count += self.chunks[index].token_count
+            if len(selected) >= minimum_count and token_count >= token_target:
+                break
+        return selected
 
 
 def pack_evidence(

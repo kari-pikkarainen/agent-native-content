@@ -26,6 +26,10 @@ class RetrievalConfig(BaseModel):
     rrf_k: int = Field(default=60, ge=1)
     candidate_limit: int = Field(default=40, ge=1)
     rerank_limit: int = Field(default=20, ge=1)
+    candidate_token_multiplier: float = Field(default=3.0, ge=1)
+    rerank_token_multiplier: float = Field(default=2.0, ge=1)
+    max_candidate_limit: int = Field(default=500, ge=1)
+    max_rerank_limit: int = Field(default=250, ge=1)
     embedding_model: str = "hash-256-v1"
     embedding_dimensions: int = Field(default=256, ge=8)
     reranker_model: str = "lexical-overlap-v1"
@@ -35,6 +39,14 @@ class RetrievalConfig(BaseModel):
     def overlap_is_smaller_than_chunk(self) -> "RetrievalConfig":
         if self.fixed_overlap_tokens >= self.fixed_chunk_tokens:
             raise ValueError("fixed_overlap_tokens must be smaller than chunk size")
+        if self.max_candidate_limit < self.candidate_limit:
+            raise ValueError("max_candidate_limit must be at least candidate_limit")
+        if self.max_rerank_limit < self.rerank_limit:
+            raise ValueError("max_rerank_limit must be at least rerank_limit")
+        if self.max_rerank_limit > self.max_candidate_limit * 2:
+            raise ValueError(
+                "max_rerank_limit cannot exceed the fused candidate capacity"
+            )
         return self
 
 
