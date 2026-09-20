@@ -47,14 +47,18 @@ The comparison includes:
 
 - `fixed` (Arm A): 512-token windows with 64-token overlap;
 - `structural` (Arm B): Docling HybridChunker structural chunks;
+- `long_context` (Arm C): relevant source documents in original node order,
+  with no query-time retrieval or reranking;
 - `compiler` (Arm D): IR-node retrieval, deterministic structural expansion,
   provenance-aware deduplication, and budget packing.
 
-All three systems share the same tokenizer, BM25 parameters, brute-force dense
+Arms A, B and D share the same tokenizer, BM25 parameters, brute-force dense
 similarity, embedding model, reciprocal-rank fusion parameters, candidate
-limits, and reranker. The compiler's structural expansion and packing policy is
-the treatment under test. Indexes are built once before query timing and are
-filtered to the exact source-document scope of each question.
+limits, and reranker. Arm C intentionally performs no retrieval: it uses the
+same tokenizer and exact source-document scope, then packs source-derived body
+nodes in their original order. The compiler's structural expansion and packing
+policy is the treatment under test. Indexes and the Arm C source projection are
+built once before query timing.
 
 The selected compiler also applies deterministic lexical query faceting. Every
 facet uses the same shared retrieval models and is fused back to the original

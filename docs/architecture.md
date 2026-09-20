@@ -82,10 +82,11 @@ See [`compiler-spec.md`](compiler-spec.md) for the normative behavior.
 ## Evaluation boundary
 
 The evidence-only evaluator builds one index per A/B/D arm over the complete
-retrieval corpus, which defaults to the evaluation subset but may be a declared
-parent subset for small diagnostics. It then filters every retrieval call to
-the document IDs authorized by that question. Index creation and model loading
-remain outside query latency.
+retrieval corpus and projects Arm C into source-ordered body chunks without an
+index. The corpus defaults to the evaluation subset but may be a declared
+parent subset for small diagnostics. Every arm is filtered to the document IDs
+authorized by that question. Index creation, Arm C projection, and model
+loading remain outside query latency.
 Each selected item is mapped from IR document and node IDs back to dataset
 document IDs and exact PDF pages before page recall, coverage, tokens-to-full,
 and redundancy are calculated.

@@ -11,6 +11,7 @@ from contextbench.retrieval.index import (
     pack_evidence,
     reranker_from_config,
 )
+from contextbench.retrieval.long_context import long_context_chunks, rank_long_context
 from contextbench.retrieval.models import (
     ContextItem,
     ContextPacket,
@@ -40,7 +41,9 @@ __all__ = [
     "SentenceTransformerEmbeddingModel",
     "fixed_chunks",
     "embedding_model_from_config",
+    "long_context_chunks",
     "pack_evidence",
+    "rank_long_context",
     "reranker_from_config",
     "structural_chunks",
 ]

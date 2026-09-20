@@ -6,12 +6,16 @@ import pytest
 from test_ir import FixtureTokenCounter, ingest_metadata, source_document
 
 from contextbench.ir import project_document
+from contextbench.ir.models import IRNodeKind
 from contextbench.retrieval import (
     HashEmbeddingModel,
     HybridIndex,
     RetrievalArm,
     RetrievalChunk,
     RetrievalConfig,
+    long_context_chunks,
+    pack_evidence,
+    rank_long_context,
 )
 
 
@@ -112,6 +116,42 @@ def test_fixed_chunks_overlap_and_packing_deduplicates_source_material(
     packet = index.pack("term20", token_budget=30)
     assert packet.token_count <= 30
     assert len(packet.items) == len({item.source_item_ids for item in packet.items})
+
+
+def test_long_context_preserves_body_source_order_without_retrieval(
+    tmp_path: Path,
+) -> None:
+    source = source_document()
+    counter = FixtureTokenCounter()
+    document = project_document(
+        source,
+        ingest_metadata(tmp_path),
+        tokenizer=counter,
+    )
+    expected = [
+        node
+        for node in document.nodes
+        if node.text.strip()
+        and node.content_layer == "body"
+        and node.kind != IRNodeKind.LIST
+    ]
+
+    chunks = long_context_chunks([document], tokenizer=counter)
+    ranked = rank_long_context(chunks, document_ids={document.id})
+    packet = pack_evidence(
+        "question",
+        ranked,
+        token_budget=sum(chunk.token_count for chunk in chunks),
+        tokenizer=counter,
+        metadata={"arm": RetrievalArm.LONG_CONTEXT.value},
+    )
+
+    assert [chunk.source_node_ids[0] for chunk in chunks] == [
+        node.id for node in expected
+    ]
+    assert [item.content for item in packet.items] == [node.text for node in expected]
+    assert packet.metadata == {"arm": "long_context"}
+    assert all(item.scores.reranked == 0 for item in packet.items)
 
 
 def test_search_text_drives_retrieval_but_emitted_text_stays_exact() -> None:

@@ -13,11 +13,12 @@ DEFAULT_TOKEN_BUDGETS = (2048, 4096, 8192, 16384)
 class BenchmarkSystem(StrEnum):
     FIXED = "fixed"
     STRUCTURAL = "structural"
+    LONG_CONTEXT = "long_context"
     COMPILER = "compiler"
 
 
 class RetrievalBenchmarkConfig(BaseModel):
-    """Fully explicit, shared configuration for one A/B/D benchmark run."""
+    """Fully explicit configuration for one A/B/C/D benchmark run."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 

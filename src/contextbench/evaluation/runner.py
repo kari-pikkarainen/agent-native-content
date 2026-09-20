@@ -1,4 +1,4 @@
-"""Evidence-only A/B/D benchmark orchestration and immutable artifacts."""
+"""Evidence-only A/B/C/D benchmark orchestration and immutable artifacts."""
 
 import hashlib
 import json
@@ -52,7 +52,11 @@ from contextbench.retrieval import (
     HybridIndex,
     RankedEvidence,
     RetrievalArm,
+    RetrievalChunk,
     embedding_model_from_config,
+    long_context_chunks,
+    pack_evidence,
+    rank_long_context,
     reranker_from_config,
 )
 from contextbench.retrieval.embeddings import EmbeddingModel
@@ -147,6 +151,11 @@ def run_retrieval_benchmark(
         embedder=shared_embedder,
         reranker=shared_reranker,
     )
+    long_chunks = (
+        long_context_chunks(documents, tokenizer=counter)
+        if BenchmarkSystem.LONG_CONTEXT in config.systems
+        else ()
+    )
     compiler_corpus_index = (
         CompilerCorpusIndex.build(
             documents,
@@ -164,6 +173,7 @@ def run_retrieval_benchmark(
         embedder=shared_embedder,
         reranker=shared_reranker,
         compiler_corpus_index=compiler_corpus_index,
+        long_chunks=long_chunks,
     )
     summary = summarize(resolved_run_id, records)
     python_version, platform_name = environment_info()
@@ -279,6 +289,7 @@ def _evaluate_cells(
     embedder: EmbeddingModel,
     reranker: Reranker,
     compiler_corpus_index: CompilerCorpusIndex | None,
+    long_chunks: Sequence[RetrievalChunk] = (),
 ) -> tuple[
     tuple[RetrievalEvaluationRecord, ...],
     tuple[dict[str, object], ...],
@@ -300,7 +311,11 @@ def _evaluate_cells(
                 for document_id, document in question_documents.items()
             },
         )
-        retrieval_systems = list(config.systems)
+        retrieval_systems = [
+            system
+            for system in config.systems
+            if system != BenchmarkSystem.LONG_CONTEXT
+        ]
         if (
             config.compiler_stage_audit
             and BenchmarkSystem.STRUCTURAL not in retrieval_systems
@@ -341,6 +356,18 @@ def _evaluate_cells(
                 time.perf_counter_ns() - retrieval_started
             ) / 1_000_000
 
+        if BenchmarkSystem.LONG_CONTEXT in config.systems:
+            retrieval_started = time.perf_counter_ns()
+            long_ranked = rank_long_context(
+                long_chunks,
+                document_ids=ir_document_ids,
+            )
+            raw_rankings[BenchmarkSystem.LONG_CONTEXT] = long_ranked
+            rankings[BenchmarkSystem.LONG_CONTEXT] = long_ranked
+            retrieval_latencies[BenchmarkSystem.LONG_CONTEXT] = (
+                time.perf_counter_ns() - retrieval_started
+            ) / 1_000_000
+
         for system in config.systems:
             compiler_cache = (
                 CompilerQueryCache() if system == BenchmarkSystem.COMPILER else None
@@ -371,7 +398,7 @@ def _evaluate_cells(
                         budget=budget,
                         scope=scope,
                         config=config,
-                        index=indexes[system],
+                        index=indexes.get(system),
                         tokenizer=tokenizer,
                         embedder=embedder,
                         reranker=reranker,
@@ -470,7 +497,7 @@ def _context_for_system(
     budget: int,
     scope: DocumentScope,
     config: RetrievalBenchmarkConfig,
-    index: HybridIndex,
+    index: HybridIndex | None,
     tokenizer: TokenCounter,
     embedder: EmbeddingModel,
     reranker: Reranker,
@@ -478,6 +505,16 @@ def _context_for_system(
     compiler_cache: CompilerQueryCache | None,
     compiler_corpus_index: CompilerCorpusIndex | None,
 ) -> ContextPacket:
+    if system == BenchmarkSystem.LONG_CONTEXT:
+        return pack_evidence(
+            query,
+            ranked_evidence,
+            token_budget=budget,
+            tokenizer=tokenizer,
+            metadata={"arm": RetrievalArm.LONG_CONTEXT.value},
+        )
+    if index is None:
+        raise EvaluationError(f"missing retrieval index for {system.value}")
     if system == BenchmarkSystem.COMPILER:
         return compile_context(
             query,

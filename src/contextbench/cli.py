@@ -182,7 +182,7 @@ def evaluate_retrieval(
         typer.Option(help="Optional immutable run identifier."),
     ] = None,
 ) -> None:
-    """Run the evidence-only A/B/D benchmark on a committed XL subset."""
+    """Run the evidence-only A/B/C/D benchmark on a committed XL subset."""
     # Keep evaluation and model imports off lightweight CLI paths.
     from contextbench.compiler import CompilerConfig
     from contextbench.evaluation import RetrievalBenchmarkConfig

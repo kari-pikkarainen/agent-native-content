@@ -10,6 +10,7 @@ class RetrievalArm(StrEnum):
 
     FIXED = "fixed"
     STRUCTURAL = "structural"
+    LONG_CONTEXT = "long_context"
     COMPILER = "compiler"
 
 

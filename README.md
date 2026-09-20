@@ -162,8 +162,9 @@ SentenceTransformers models. Later runs reuse verified caches. Pass
 `--embedding-model`, `--reranker-model`, and `--run-id` as needed.
 
 Completed runs are atomically written beneath `artifacts/runs/<run-id>` and are
-never overwritten. Each contains raw evidence metrics and contexts, a complete
-reproducibility manifest, `summary.json`, and `report.md`. The milestone stops
-before answer generation so the evidence-recall/token curve can be reviewed
-first. Metric conventions and the decision gate are defined in
+never overwritten. Each contains raw evidence metrics and contexts for fixed,
+structural, long-context, and compiler arms, a complete reproducibility
+manifest, `summary.json`, and `report.md`. The milestone stops before answer
+generation so the evidence-recall/token curve can be reviewed first. Metric
+conventions and the decision gate are defined in
 [the experiment protocol](docs/experiment-protocol.md).

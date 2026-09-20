@@ -105,7 +105,7 @@ def _run(
 def test_runner_writes_complete_immutable_evidence_artifacts(tmp_path: Path) -> None:
     result = _run(tmp_path, run_id="fixture-run")
 
-    assert len(result.records) == 6
+    assert len(result.records) == 8
     assert {record.system for record in result.records} == set(BenchmarkSystem)
     assert all(record.token_count <= record.token_budget for record in result.records)
     assert all(
@@ -114,7 +114,7 @@ def test_runner_writes_complete_immutable_evidence_artifacts(tmp_path: Path) -> 
     assert all(record.retrieval_latency_ms >= 0 for record in result.records)
     assert all(record.gold_quote_count == 1 for record in result.records)
     assert all(record.matched_quote_count <= 1 for record in result.records)
-    assert len(result.summary.rows) == 6
+    assert len(result.summary.rows) == 8
 
     expected_files = {
         "contexts.jsonl",
@@ -252,9 +252,9 @@ def test_runner_reranks_once_per_question_and_system(
 
     _run(tmp_path, run_id="single-retrieval")
 
-    assert retrieve_calls == len(BenchmarkSystem) - 1
-    assert candidate_calls == len(BenchmarkSystem)
-    assert rerank_calls == len(BenchmarkSystem)
+    assert retrieve_calls == 2
+    assert candidate_calls == 3
+    assert rerank_calls == 3
 
 
 def test_runner_reuses_compiler_page_ranking_across_budgets(
