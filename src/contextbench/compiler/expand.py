@@ -66,7 +66,7 @@ def expand_candidates(
         if (
             config.preserve_tables
             and node.kind == IRNodeKind.TABLE
-            and direct.chunk.token_count > token_budget
+            and direct.chunk.token_count > config.table_chunk_tokens
             and minimum_table_fragment_tokens <= token_budget
             and document.id in source_documents
         ):

@@ -1,0 +1,37 @@
+{
+  "name": "xldev2-tables",
+  "dataset": "microsoft/XL-DocBench",
+  "release_version": "xldocbench_strict_1345_v1",
+  "release_revision": "72954bd70ffffe230f08b57c57fa9274ec14d7ea",
+  "selection_seed": 20260920,
+  "selection_method": "Failure-selected diagnostic from XLDev24 after the query-faceting run. Includes the two answerable 16K questions where the selected compiler trailed the best baseline, both requiring cross-table scientific reconciliation. This subset is for mechanism diagnosis, not validation or claims.",
+  "strata": {
+    "purpose": "failure_selected_table_diagnostic_not_claims",
+    "domains": {
+      "scientific_academic": 2
+    },
+    "task_type": {
+      "single_doc": 2,
+      "cross_doc": 0
+    },
+    "answerability": {
+      "answerable": 2,
+      "unanswerable": 0
+    },
+    "evidence_modality": {
+      "table_chart_or_image": 2,
+      "text_or_no_evidence": 0
+    },
+    "source_documents": 2,
+    "source_document_ids": [
+      "doc_000008",
+      "doc_000166"
+    ],
+    "source_pages": 107,
+    "source_bytes": 4179626
+  },
+  "question_ids": [
+    "adubench_single_000324",
+    "adubench_single_000703"
+  ]
+}
