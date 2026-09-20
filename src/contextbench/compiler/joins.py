@@ -2,7 +2,7 @@
 
 import hashlib
 import re
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from itertools import combinations
 
@@ -21,6 +21,7 @@ _TABLE_REFERENCE = re.compile(
     flags=re.IGNORECASE,
 )
 _IDENTIFIER = re.compile(r"[A-Z0-9][A-Z0-9_.-]{3,}", flags=re.IGNORECASE)
+_DATE = re.compile(r"(?:19|20)\d{2}[-/]\d{2}[-/]\d{2}")
 _TERM = re.compile(r"[\w]+", flags=re.UNICODE)
 _HEADER_STOPWORDS = {"and", "the", "for", "with", "from"}
 
@@ -36,6 +37,27 @@ class _TableRow:
     keys: tuple[str, ...]
 
 
+@dataclass(frozen=True)
+class KeyedTableIndex:
+    """Query-independent exact-key rows grouped by document and table label."""
+
+    rows_by_document: Mapping[str, Mapping[str, tuple[_TableRow, ...]]]
+
+    @classmethod
+    def build(cls, documents: Sequence[IRDocument]) -> "KeyedTableIndex":
+        return cls(
+            {
+                document.id: _rows_by_reference(document, references=None)
+                for document in documents
+            }
+        )
+
+    def rows(self, document_id: str, reference: str) -> tuple[_TableRow, ...]:
+        return self.rows_by_document.get(document_id, {}).get(
+            _reference_key(reference), ()
+        )
+
+
 def keyed_table_join_candidates(
     query: str,
     documents: Sequence[IRDocument],
@@ -44,6 +66,7 @@ def keyed_table_join_candidates(
     reranker: Reranker,
     candidate_limit: int,
     empty_marker: str,
+    table_index: KeyedTableIndex | None = None,
 ) -> tuple[CompilerCandidate, ...]:
     """Join rows from named tables on exact normalized identifier cells."""
     references = _query_table_references(query)
@@ -53,10 +76,14 @@ def keyed_table_join_candidates(
     chunks: list[tuple[RetrievalChunk, float, tuple[str, str, str, str]]] = []
     seen_pairs: set[tuple[str, int, str, int]] = set()
     for document in documents:
-        rows_by_reference = _rows_by_reference(document, references)
         for left_reference, right_reference in combinations(references, 2):
-            left_rows = rows_by_reference.get(_reference_key(left_reference), ())
-            right_rows = rows_by_reference.get(_reference_key(right_reference), ())
+            if table_index is None:
+                rows_by_reference = _rows_by_reference(document, references)
+                left_rows = rows_by_reference.get(_reference_key(left_reference), ())
+                right_rows = rows_by_reference.get(_reference_key(right_reference), ())
+            else:
+                left_rows = table_index.rows(document.id, left_reference)
+                right_rows = table_index.rows(document.id, right_reference)
             right_by_key: dict[str, list[_TableRow]] = {}
             for row in right_rows:
                 for key in row.keys:
@@ -174,9 +201,13 @@ def _query_table_references(query: str) -> tuple[str, ...]:
 
 def _rows_by_reference(
     document: IRDocument,
-    references: Sequence[str],
+    references: Sequence[str] | None,
 ) -> dict[str, tuple[_TableRow, ...]]:
-    requested = {_reference_key(reference) for reference in references}
+    requested = (
+        {_reference_key(reference) for reference in references}
+        if references is not None
+        else None
+    )
     labels = _table_labels(document.nodes)
     rows: dict[str, list[_TableRow]] = {}
     for node in document.nodes:
@@ -184,7 +215,9 @@ def _rows_by_reference(
             continue
         node_labels = labels.get(node.id, ())
         selected_labels = [
-            label for label in node_labels if _reference_key(label) in requested
+            label
+            for label in node_labels
+            if requested is None or _reference_key(label) in requested
         ]
         if not selected_labels:
             continue
@@ -197,7 +230,7 @@ def _rows_by_reference(
         ):
             table_rows = table_rows[1:]
         for row_index, values in enumerate(table_rows):
-            keys = _row_keys(values, key_columns)
+            keys = _row_keys(values, key_columns, node.table.column_headers)
             if not keys:
                 continue
             for label in selected_labels:
@@ -251,24 +284,56 @@ def _key_columns(headers: tuple[str, ...]) -> tuple[int, ...]:
     return tuple(
         index
         for index, header in enumerate(headers)
-        if "model" in _compact(header) or "datasetid" in _compact(header)
+        if _key_kind(header) is not None
     )
 
 
-def _row_keys(values: tuple[str, ...], columns: tuple[int, ...]) -> tuple[str, ...]:
+def _row_keys(
+    values: tuple[str, ...],
+    columns: tuple[int, ...],
+    headers: tuple[str, ...],
+) -> tuple[str, ...]:
     keys = []
     for index in columns:
         if index >= len(values):
             continue
-        for match in _IDENTIFIER.findall(values[index]):
-            normalized = match.casefold().strip("._-")
-            if (
-                len(normalized) >= 4
-                and any(character.isalpha() for character in normalized)
-                and any(character.isdigit() for character in normalized)
-            ):
-                keys.append(normalized)
+        kind = _key_kind(headers[index]) if index < len(headers) else None
+        value = " ".join(values[index].split())
+        if kind == "date":
+            keys.extend(
+                f"date:{match.replace('/', '-')}" for match in _DATE.findall(value)
+            )
+        elif kind == "dataset":
+            if 4 <= len(value) <= 120:
+                keys.append(f"dataset:{value.casefold()}")
+        else:
+            for match in _IDENTIFIER.findall(value):
+                normalized = match.casefold().strip("._-")
+                if (
+                    len(normalized) >= 4
+                    and any(character.isalpha() for character in normalized)
+                    and any(character.isdigit() for character in normalized)
+                ):
+                    keys.append(f"identifier:{normalized}")
     return tuple(dict.fromkeys(keys))
+
+
+def _key_kind(header: str) -> str | None:
+    compact = _compact(header)
+    if "date" in compact:
+        return "date"
+    if compact in {"dataset", "datasetname"}:
+        return "dataset"
+    if (
+        "model" in compact
+        or "datasetid" in compact
+        or "productcode" in compact
+        or "partnumber" in compact
+        or "accession" in compact
+        or compact in {"sku", "isin", "cusip", "securityid"}
+    ):
+        return "identifier"
+    return None
 
 
 def _render_join(
@@ -279,7 +344,8 @@ def _render_join(
     shared_key: str,
     empty_marker: str,
 ) -> str:
-    lines = [f"Joined table key: {shared_key}"]
+    display_key = shared_key.split(":", 1)[-1]
+    lines = [f"Joined table key: {display_key}"]
     for row in (left, right):
         lines.append(row.reference)
         selected = _selected_columns(query, row)

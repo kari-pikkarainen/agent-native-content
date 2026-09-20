@@ -20,7 +20,11 @@ from contextbench.compiler import (
 )
 from contextbench.compiler.candidates import node_chunks
 from contextbench.compiler.expand import _penalize
-from contextbench.compiler.joins import keyed_table_join_candidates
+from contextbench.compiler.joins import (
+    _key_columns,
+    _row_keys,
+    keyed_table_join_candidates,
+)
 from contextbench.ir import project_document
 from contextbench.ir.models import IRNodeKind
 from contextbench.retrieval import RetrievalConfig, RetrievalScores
@@ -220,6 +224,22 @@ def joined_table_source() -> DoclingDocument:
         prov=provenance(2, "model datasets", 700),
     )
     return document
+
+
+def test_exact_table_keys_support_codes_dates_and_dataset_names() -> None:
+    headers = ("Product code", "Effective date", "Dataset name", "Description")
+    columns = _key_columns(headers)
+
+    assert columns == (0, 1, 2)
+    assert _row_keys(
+        ("SKU-2048", "2026/09/20", "Climate Atlas", "ignored"),
+        columns,
+        headers,
+    ) == (
+        "identifier:sku-2048",
+        "date:2026-09-20",
+        "dataset:climate atlas",
+    )
 
 
 @pytest.fixture

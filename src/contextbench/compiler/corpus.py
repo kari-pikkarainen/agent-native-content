@@ -3,6 +3,7 @@
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 
+from contextbench.compiler.joins import KeyedTableIndex
 from contextbench.ir.models import IRDocument, IRNode
 from contextbench.ir.tokenizer import TokenCounter
 from contextbench.retrieval.chunking import fixed_chunks
@@ -18,6 +19,7 @@ class CompilerCorpusIndex:
     nodes_by_document: Mapping[str, Mapping[str, IRNode]]
     siblings_by_node: Mapping[tuple[str, str], tuple[IRNode, ...]]
     page_chunks_by_document: Mapping[str, tuple[RetrievalChunk, ...]]
+    keyed_table_index: KeyedTableIndex
 
     @classmethod
     def build(
@@ -61,6 +63,7 @@ class CompilerCorpusIndex:
                 )
                 for document in documents
             },
+            keyed_table_index=KeyedTableIndex.build(documents),
         )
 
     def node(self, document_id: str, node_id: str) -> IRNode:

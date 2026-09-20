@@ -177,6 +177,11 @@ def expand_candidates(
                 reranker=reranker,
                 candidate_limit=config.keyed_table_join_candidate_limit,
                 empty_marker=config.keyed_table_join_empty_marker,
+                table_index=(
+                    corpus_index.keyed_table_index
+                    if corpus_index is not None
+                    else None
+                ),
             )
 
         joins = (
