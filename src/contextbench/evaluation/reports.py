@@ -39,6 +39,12 @@ def summarize(
                 full_evidence_coverage_rate=statistics.fmean(
                     float(record.full_evidence_coverage) for record in selected
                 ),
+                mean_evidence_quote_recall=statistics.fmean(
+                    record.evidence_quote_recall for record in selected
+                ),
+                full_quote_coverage_rate=statistics.fmean(
+                    float(record.full_quote_coverage) for record in selected
+                ),
                 mean_context_tokens=statistics.fmean(
                     record.token_count for record in selected
                 ),
@@ -66,9 +72,10 @@ def markdown_report(summary: RetrievalBenchmarkSummary) -> str:
         "",
         "No answer-generation model was used in this run.",
         "",
-        "| System | Budget | Page recall | Full coverage | Mean tokens | "
-        "Median tokens-to-full | Redundancy | Latency (ms) |",
-        "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+        "| System | Budget | Page recall | Full pages | Quote recall | "
+        "Full quotes | Mean tokens | Median tokens-to-full | Redundancy | "
+        "Latency (ms) |",
+        "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
     ]
     for row in summary.rows:
         tokens_to_full = (
@@ -80,6 +87,8 @@ def markdown_report(summary: RetrievalBenchmarkSummary) -> str:
             f"| {row.system.value} | {row.token_budget} | "
             f"{row.mean_evidence_page_recall:.3f} | "
             f"{row.full_evidence_coverage_rate:.3f} | "
+            f"{row.mean_evidence_quote_recall:.3f} | "
+            f"{row.full_quote_coverage_rate:.3f} | "
             f"{row.mean_context_tokens:.1f} | {tokens_to_full} | "
             f"{row.mean_redundancy:.3f} | "
             f"{row.mean_retrieval_latency_ms:.2f} |"

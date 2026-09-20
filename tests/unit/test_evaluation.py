@@ -10,7 +10,7 @@ from test_ir import FixtureTokenCounter, ingest_metadata
 
 import contextbench.compiler.expand as compiler_expand
 from contextbench.compiler import CompilerConfig
-from contextbench.datasets.base import BenchmarkQuestion, GoldEvidence
+from contextbench.datasets.base import BenchmarkQuestion, EvidenceItem, GoldEvidence
 from contextbench.evaluation import (
     BenchmarkSystem,
     EvaluationCorpus,
@@ -50,6 +50,7 @@ def _corpus(tmp_path: Path) -> EvaluationCorpus:
                 document_id="dataset-doc-1",
                 pages=(1,),
                 page_numbering="pdf_index",
+                items=(EvidenceItem(quote="Target revenue increased."),),
             ),
         ),
         answerable=True,
@@ -111,6 +112,8 @@ def test_runner_writes_complete_immutable_evidence_artifacts(tmp_path: Path) -> 
         record.gold_pages == {"dataset-doc-1": (1,)} for record in result.records
     )
     assert all(record.retrieval_latency_ms >= 0 for record in result.records)
+    assert all(record.gold_quote_count == 1 for record in result.records)
+    assert all(record.matched_quote_count <= 1 for record in result.records)
     assert len(result.summary.rows) == 6
 
     expected_files = {
@@ -143,6 +146,8 @@ def test_report_breaks_baseline_coverage_ties_with_recall() -> None:
             question_count=2,
             mean_evidence_page_recall=recall,
             full_evidence_coverage_rate=0.0,
+            mean_evidence_quote_recall=0.0,
+            full_quote_coverage_rate=0.0,
             mean_context_tokens=2048.0,
             median_context_tokens=2048.0,
             median_tokens_to_full_evidence=None,

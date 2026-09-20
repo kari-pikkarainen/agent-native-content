@@ -33,12 +33,19 @@ def evaluate_context(
     matched_count = sum(len(pages) for pages in matched.values())
     recall = matched_count / gold_count if gold_count else 1.0
     full_coverage = matched_count == gold_count
+    quote_count, matched_quote_count, quote_recall, full_quote_coverage = (
+        _quote_coverage(question, packet.items)
+    )
     return {
         "selected_pages": selected,
         "gold_pages": gold,
         "matched_pages": matched,
         "evidence_page_recall": recall,
         "full_evidence_coverage": full_coverage,
+        "gold_quote_count": quote_count,
+        "matched_quote_count": matched_quote_count,
+        "evidence_quote_recall": quote_recall,
+        "full_quote_coverage": full_quote_coverage,
         "tokens_to_full_evidence": _tokens_to_full(
             packet.items,
             item_pages,
@@ -46,6 +53,27 @@ def evaluate_context(
         ),
         "redundancy": context_redundancy(packet.items),
     }
+
+
+def _quote_coverage(
+    question: BenchmarkQuestion,
+    items: Sequence[ContextItem],
+) -> tuple[int, int, float, bool]:
+    quotes = tuple(
+        _normalize_text(item.quote)
+        for evidence in question.gold_evidence
+        for item in evidence.items
+        if item.quote and item.quote.strip()
+    )
+    if not quotes:
+        return 0, 0, 1.0, True
+    context = _normalize_text("\n".join(item.content for item in items))
+    matched = sum(quote in context for quote in quotes)
+    return len(quotes), matched, matched / len(quotes), matched == len(quotes)
+
+
+def _normalize_text(value: str) -> str:
+    return " ".join(value.casefold().split())
 
 
 def context_redundancy(items: Sequence[ContextItem], *, ngram_size: int = 4) -> float:

@@ -88,6 +88,10 @@ class RetrievalEvaluationRecord(BaseModel):
     matched_pages: dict[str, tuple[int, ...]]
     evidence_page_recall: float = Field(ge=0, le=1)
     full_evidence_coverage: bool
+    gold_quote_count: int = Field(ge=0)
+    matched_quote_count: int = Field(ge=0)
+    evidence_quote_recall: float = Field(ge=0, le=1)
+    full_quote_coverage: bool
     tokens_to_full_evidence: int | None = Field(default=None, ge=0)
     redundancy: float = Field(ge=0, le=1)
     retrieval_latency_ms: float = Field(ge=0)
@@ -103,6 +107,8 @@ class RetrievalSummaryRow(BaseModel):
     question_count: int
     mean_evidence_page_recall: float
     full_evidence_coverage_rate: float
+    mean_evidence_quote_recall: float
+    full_quote_coverage_rate: float
     mean_context_tokens: float
     median_context_tokens: float
     median_tokens_to_full_evidence: float | None
