@@ -33,7 +33,10 @@ def test_query_facets_extract_table_references_when_requested() -> None:
         include_table_references=True,
     )
 
-    assert facets[:2] == ("Table AII.10", "Table AII.5")
+    assert facets[:2] == (
+        "dataset in Table AII.10",
+        "has a blank entry in Table AII.5",
+    )
 
 
 def test_faceted_retrieval_promotes_evidence_from_separate_clauses() -> None:

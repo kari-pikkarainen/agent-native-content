@@ -36,11 +36,19 @@ def query_facets(
     facets = []
     seen = {normalized.casefold().rstrip("?.!")}
     if include_table_references:
-        for reference in _TABLE_REFERENCE.findall(normalized):
-            key = reference.casefold()
+        previous_end = 0
+        for match in _TABLE_REFERENCE.finditer(normalized):
+            local_context = normalized[previous_end : match.start()]
+            local_context = _LEADING_SCAFFOLD.sub("", local_context).strip(
+                " .?!,:;-"
+            )
+            reference = match.group()
+            facet = f"{local_context} {reference}".strip()
+            key = facet.casefold()
             if key not in seen:
                 seen.add(key)
-                facets.append(reference)
+                facets.append(facet)
+            previous_end = match.end()
     clause_count = 0
     for candidate in candidates:
         facet = _LEADING_SCAFFOLD.sub("", candidate).strip(" .?!,:;-")
