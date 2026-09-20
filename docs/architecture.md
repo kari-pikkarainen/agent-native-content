@@ -63,7 +63,9 @@ Arm D indexes content-bearing IR nodes through the shared hybrid retrieval
 stack, then performs deterministic structural expansion before packing. Heading
 paths add context without pulling full parent sections; paragraph siblings and
 adjacent list items are controlled explicitly; tables remain whole or fall back
-to reranked Docling fragments with repeated caption/header context.
+to reranked Docling fragments with repeated caption/header context. Queries that
+explicitly reference multiple tables may also produce compact, provenance-
+preserving row joins on exact normalized model/dataset identifiers.
 
 Deduplication uses normalized content plus exact source IDs and bounding boxes.
 Final rendered evidence is recounted and greedily packed under a hard token

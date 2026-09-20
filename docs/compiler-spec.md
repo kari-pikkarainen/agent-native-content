@@ -1,6 +1,6 @@
 # Context Compiler v0 Specification
 
-Status: implemented compiler version `0.4.0`.
+Status: implemented compiler version `0.5.0`.
 
 The context compiler is benchmark Arm D. It consumes canonical IR documents
 and produces a deterministic, citation-ready `ContextPacket` for one query. It
@@ -27,8 +27,8 @@ performs budget-dependent structural expansion and packing independently.
 
 `CompilerConfig` contains the nested shared `RetrievalConfig` plus every
 structural decision: heading rendering, previous/next paragraph expansion,
-sibling penalties, list grouping, table preservation and chunk size, and the
-maximum expanded candidate count.
+sibling penalties, list grouping, table preservation and chunk size, keyed
+table joining, and the maximum expanded candidate count.
 
 ## Pipeline
 
@@ -91,10 +91,10 @@ of displacing direct hits. The emitted windows retain every source node and
 source item used to derive them.
 
 When several budgets are compiled for the same query, a query-scoped cache may
-reuse the deterministic page-window ranking. Cache identity binds the query,
-source documents, ranked node evidence, and complete compiler configuration;
-attempted reuse for different inputs fails explicitly. Only the page-window
-ranking is cached. Budget-dependent table handling, deduplication, and packing
+reuse deterministic page-window and keyed-table-join rankings. Cache identity
+binds the query, source documents, ranked node evidence where applicable, and
+the relevant compiler configuration; attempted reuse for different inputs
+fails explicitly. Budget-dependent table handling, deduplication, and packing
 still execute independently for every requested budget.
 
 ### 4. Tables
@@ -108,6 +108,21 @@ reranks the resulting fragments against the query, then prefixes every fragment
 with any missing source caption and column headers. The compiler does not invent
 semantic row extraction. If the mandatory caption/header context cannot fit, no
 partial table is emitted.
+
+When a query explicitly names at least two tables, keyed table joining is
+enabled by default. Source table labels are propagated only across matching
+continuation schemas. Model- or dataset-identifier columns provide conservative
+identifier candidates, and rows join only on exact normalized identifiers.
+Explicit blank/empty constraints must match the query-named column. The emitted
+candidate contains the key and query-relevant columns, keeps both table nodes
+and their Docling item IDs, and is reranked with the shared reranker. At most one
+candidate is retained per normalized entity key. No fuzzy matching or generated
+entity annotation is used. The policy can be disabled with
+`keyed_table_join_enabled=false`.
+
+Joined sources on non-contiguous pages use null page-range metadata rather than
+claiming an artificial continuous span. Their exact pages remain recoverable
+from the retained IR source node IDs.
 
 ### 5. Deduplication
 
@@ -156,4 +171,4 @@ configuration hashing, source-based deduplication, and greedy packing make
 repeated compilation identical for the same inputs and model implementations.
 
 Compiler v0 has no LLM planner, query rewriting, generated summary, entity
-graph, semantic row extraction, or full-parent-section expansion.
+graph, fuzzy entity matching, or full-parent-section expansion.

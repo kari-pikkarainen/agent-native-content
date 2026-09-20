@@ -135,7 +135,7 @@ def test_eval_retrieval_runs_all_default_budgets_and_prints_artifacts(
     assert set(config.systems) == set(BenchmarkSystem)
     assert config.retrieval.embedding_model == "BAAI/bge-small-en-v1.5"
     assert config.retrieval.reranker_model == ("cross-encoder/ms-marco-MiniLM-L-6-v2")
-    assert not config.compiler.keyed_table_join_enabled
+    assert config.compiler.keyed_table_join_enabled
     assert captured["retrieval_corpus_subset_file"] is None
 
 
@@ -173,7 +173,7 @@ def test_eval_retrieval_accepts_fixed_retrieval_corpus(
     assert captured["retrieval_corpus_subset_file"] == corpus
 
 
-def test_eval_retrieval_enables_keyed_table_joins(
+def test_eval_retrieval_disables_keyed_table_joins(
     tmp_path: Path, monkeypatch
 ) -> None:
     captured = {}
@@ -195,11 +195,11 @@ def test_eval_retrieval_enables_keyed_table_joins(
         app,
         [
             "eval-retrieval",
-            "--compiler-keyed-table-joins",
+            "--no-compiler-keyed-table-joins",
             "--run-id",
             "run-joins",
         ],
     )
 
     assert result.exit_code == 0
-    assert captured["config"].compiler.keyed_table_join_enabled
+    assert not captured["config"].compiler.keyed_table_join_enabled

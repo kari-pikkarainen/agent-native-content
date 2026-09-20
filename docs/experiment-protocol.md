@@ -61,6 +61,11 @@ facet uses the same shared retrieval models and is fused back to the original
 candidate capacity; no LLM query generation is used. Facet retrieval time is
 included in compiler latency.
 
+For queries that explicitly name multiple tables, the selected compiler may
+also construct bounded keyed-row joins. These use exact normalized identifiers
+from source-derived model/dataset columns, preserve both tables' provenance,
+and use the shared reranker. No LLM or fuzzy entity matcher participates.
+
 The preregistered budgets are 2,048, 4,096, 8,192, and 16,384 tokens. The CLI
 defaults to `BAAI/bge-small-en-v1.5` and
 `cross-encoder/ms-marco-MiniLM-L-6-v2`; both model IDs are configurable and the

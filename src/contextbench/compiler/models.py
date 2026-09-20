@@ -15,7 +15,7 @@ from contextbench.retrieval.models import (
     RetrievalScores,
 )
 
-COMPILER_VERSION = "0.4.0"
+COMPILER_VERSION = "0.5.0"
 
 
 class CompilerConfig(BaseModel):
@@ -43,7 +43,7 @@ class CompilerConfig(BaseModel):
     page_neighbor_score_penalty: float = Field(default=0.8, gt=0, le=1)
     preserve_tables: bool = True
     table_chunk_tokens: int = Field(default=512, ge=1)
-    keyed_table_join_enabled: bool = False
+    keyed_table_join_enabled: bool = True
     keyed_table_join_candidate_limit: int = Field(default=16, ge=1)
     keyed_table_join_empty_marker: str = Field(default="[blank]", min_length=1)
     max_expanded_candidates: int = Field(default=500, ge=1)

@@ -149,13 +149,13 @@ def evaluate_retrieval(
     compiler_keyed_table_joins: Annotated[
         bool,
         typer.Option(
-            "--compiler-keyed-table-joins",
+            "--compiler-keyed-table-joins/--no-compiler-keyed-table-joins",
             help=(
-                "Enable deterministic joins between rows in explicitly "
-                "referenced tables."
+                "Join rows deterministically across explicitly referenced "
+                "tables."
             ),
         ),
-    ] = False,
+    ] = True,
     run_id: Annotated[
         str | None,
         typer.Option(help="Optional immutable run identifier."),
