@@ -4,6 +4,7 @@ import platform
 import subprocess
 import sys
 from datetime import UTC, datetime
+from pathlib import Path
 
 from pydantic import BaseModel, ConfigDict
 
@@ -52,13 +53,57 @@ class RunManifest(BaseModel):
 
 def current_git_commit() -> str:
     """Return the exact checked-out commit or fail clearly outside Git."""
-    result = subprocess.run(
-        ["git", "rev-parse", "HEAD"],
-        check=True,
-        capture_output=True,
-        text=True,
-    )
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+    except (FileNotFoundError, subprocess.CalledProcessError) as error:
+        commit = _read_git_head(Path.cwd())
+        if commit is None:
+            raise RuntimeError("could not resolve the current Git commit") from error
+        return commit
     return result.stdout.strip()
+
+
+def _read_git_head(start: Path) -> str | None:
+    """Resolve HEAD directly when the platform Git executable is unavailable."""
+    for directory in (start, *start.parents):
+        marker = directory / ".git"
+        if marker.is_dir():
+            git_dir = marker
+        elif marker.is_file():
+            prefix = "gitdir:"
+            content = marker.read_text().strip()
+            if not content.lower().startswith(prefix):
+                continue
+            git_dir = Path(content[len(prefix) :].strip())
+            if not git_dir.is_absolute():
+                git_dir = directory / git_dir
+        else:
+            continue
+
+        head = (git_dir / "HEAD").read_text().strip()
+        if not head.startswith("ref:"):
+            return head or None
+
+        ref_name = head.removeprefix("ref:").strip()
+        loose_ref = git_dir / ref_name
+        if loose_ref.is_file():
+            return loose_ref.read_text().strip() or None
+
+        packed_refs = git_dir / "packed-refs"
+        if packed_refs.is_file():
+            for line in packed_refs.read_text().splitlines():
+                if not line or line.startswith(("#", "^")):
+                    continue
+                commit, name = line.split(" ", maxsplit=1)
+                if name == ref_name:
+                    return commit
+        return None
+    return None
 
 
 def utc_now() -> datetime:
