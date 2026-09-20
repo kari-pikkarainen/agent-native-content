@@ -24,7 +24,6 @@ class RetrievalConfig(BaseModel):
     sparse_k1: float = Field(default=1.5, gt=0)
     sparse_b: float = Field(default=0.75, ge=0, le=1)
     rrf_k: int = Field(default=60, ge=1)
-    rerank_rrf_k: int = Field(default=60, ge=1)
     candidate_limit: int = Field(default=40, ge=1)
     rerank_limit: int = Field(default=20, ge=1)
     candidate_token_multiplier: float = Field(default=3.0, ge=1)

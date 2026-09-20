@@ -15,17 +15,6 @@ from contextbench.retrieval import (
 )
 
 
-class ReverseOrderReranker:
-    """Prefer the end of the hybrid candidate list for a fusion test."""
-
-    name = "reverse-order"
-    version = "1"
-
-    def score(self, query, chunks):
-        del query
-        return [float(index) for index, _chunk in enumerate(chunks)]
-
-
 @pytest.fixture
 def retrieval_fixture(tmp_path: Path):
     document = source_document()
@@ -234,40 +223,6 @@ def test_duplicate_search_text_does_not_consume_rerank_capacity() -> None:
         "same repeated boilerplate",
         "unique evidence",
     }
-
-
-def test_final_ranking_fuses_hybrid_and_reranker_ranks() -> None:
-    chunks = tuple(
-        RetrievalChunk(
-            id=f"chunk-{index}",
-            arm=RetrievalArm.COMPILER,
-            document_id="doc",
-            text="query " * (index + 1),
-            token_count=index + 1,
-            source_node_ids=(f"node-{index}",),
-            source_item_ids=(f"item-{index}",),
-        )
-        for index in range(3)
-    )
-    config = RetrievalConfig(
-        candidate_limit=3,
-        rerank_limit=3,
-        max_candidate_limit=3,
-        max_rerank_limit=3,
-        rerank_rrf_k=10,
-    )
-    index = HybridIndex(
-        chunks,
-        config=config,
-        tokenizer=FixtureTokenCounter(),
-        reranker=ReverseOrderReranker(),
-    )
-
-    ranked = index.retrieve("query")
-    hybrid_first = max(ranked, key=lambda evidence: evidence.scores.fused)
-
-    assert hybrid_first.rank <= 2
-    assert all(0 < evidence.scores.reranked < 1 for evidence in ranked)
 
 
 def test_fixed_retrieval_capacity_keeps_budget_contexts_nested() -> None:

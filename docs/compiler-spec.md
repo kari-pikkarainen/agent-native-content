@@ -1,6 +1,6 @@
 # Context Compiler v0 Specification
 
-Status: implemented compiler version `0.1.0`.
+Status: implemented compiler version `0.2.0`.
 
 The context compiler is benchmark Arm D. It consumes canonical IR documents
 and produces a deterministic, citation-ready `ContextPacket` for one query. It
@@ -38,11 +38,10 @@ token count.
 
 ### 2. Shared hybrid retrieval
 
-Candidate nodes use the same BM25, dense cosine search, initial Reciprocal Rank
-Fusion, reranker, and post-reranker rank fusion as baseline Arms A and B. The
-second fusion keeps strong hybrid evidence recoverable when the reranker makes
-an isolated mistake. Candidate limits, model names, tokenizer, BM25 parameters,
-and RRF constants come from the nested `RetrievalConfig`.
+Candidate nodes use the same BM25, dense cosine search, Reciprocal Rank Fusion,
+and reranker implementations as baseline Arms A and B. Candidate limits, model
+names, tokenizer, BM25 parameters, and RRF constant come from the nested
+`RetrievalConfig`.
 
 ### 3. Structural expansion
 

@@ -195,34 +195,13 @@ class HybridIndex:
             )
         else:
             candidate_indices = candidate_indices[:rerank_limit]
-        raw_rerank_scores = self.reranker.score(
+        rerank_scores = self.reranker.score(
             query,
             [self.chunks[index] for index in candidate_indices],
         )
-        hybrid_ranks = {
-            index: rank for rank, index in enumerate(candidate_indices, 1)
-        }
-        reranker_order = sorted(
-            zip(candidate_indices, raw_rerank_scores, strict=True),
-            key=lambda pair: (-pair[1], self.chunks[pair[0]].id),
-        )
-        reranker_ranks = {
-            index: rank for rank, (index, _score) in enumerate(reranker_order, 1)
-        }
-        rerank_scores = {
-            index: 1 / (self.config.rerank_rrf_k + hybrid_ranks[index])
-            + 1 / (self.config.rerank_rrf_k + reranker_ranks[index])
-            for index in candidate_indices
-        }
-        raw_scores = dict(zip(candidate_indices, raw_rerank_scores, strict=True))
         ranked = sorted(
-            candidate_indices,
-            key=lambda index: (
-                -rerank_scores[index],
-                -raw_scores[index],
-                -fused[index],
-                self.chunks[index].id,
-            ),
+            zip(candidate_indices, rerank_scores, strict=True),
+            key=lambda pair: (-pair[1], -fused[pair[0]], self.chunks[pair[0]].id),
         )
         return tuple(
             RankedEvidence(
@@ -232,10 +211,10 @@ class HybridIndex:
                     dense=dense_scores.get(index, 0.0),
                     sparse=sparse_scores.get(index, 0.0),
                     fused=fused[index],
-                    reranked=rerank_scores[index],
+                    reranked=score,
                 ),
             )
-            for rank, index in enumerate(ranked, 1)
+            for rank, (index, score) in enumerate(ranked, 1)
         )
 
     def pack(
