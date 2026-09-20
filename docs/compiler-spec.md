@@ -1,6 +1,6 @@
 # Context Compiler v0 Specification
 
-Status: implemented compiler version `0.2.0`.
+Status: implemented compiler version `0.4.0`.
 
 The context compiler is benchmark Arm D. It consumes canonical IR documents
 and produces a deterministic, citation-ready `ContextPacket` for one query. It
@@ -45,6 +45,13 @@ Candidate nodes use the same BM25, dense cosine search, Reciprocal Rank Fusion,
 and reranker implementations as baseline Arms A and B. Candidate limits, model
 names, tokenizer, BM25 parameters, and RRF constant come from the nested
 `RetrievalConfig`.
+
+Optional deterministic query faceting splits complex questions at bounded
+punctuation and conjunction boundaries after removing common question
+scaffolding. Each facet uses the same sparse, dense, fusion, and cross-encoder
+stack as the full query. Weighted reciprocal-rank fusion combines the full and
+facet rankings back to the original ranking capacity; the full query receives
+the configurable `query_facet_full_weight`. No LLM or generated query is used.
 
 ### 3. Structural expansion
 

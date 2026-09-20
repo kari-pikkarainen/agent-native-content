@@ -14,7 +14,7 @@ from contextbench.retrieval.models import (
     RetrievalScores,
 )
 
-COMPILER_VERSION = "0.3.1"
+COMPILER_VERSION = "0.4.0"
 
 
 class CompilerConfig(BaseModel):
@@ -31,6 +31,10 @@ class CompilerConfig(BaseModel):
     group_adjacent_list_items: bool = True
     list_neighbor_limit: int = Field(default=1, ge=0)
     list_score_penalty: float = Field(default=0.9, gt=0, le=1)
+    query_faceting_enabled: bool = False
+    query_facet_limit: int = Field(default=3, ge=1)
+    query_facet_min_terms: int = Field(default=3, ge=1)
+    query_facet_full_weight: float = Field(default=2.0, gt=0)
     page_neighbor_radius: int = Field(default=3, ge=0)
     page_neighbor_min_budget: int = Field(default=16384, ge=1)
     page_neighbor_origin_limit: int = Field(default=20, ge=1)

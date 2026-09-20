@@ -7,6 +7,7 @@ from collections.abc import Sequence
 from contextbench.compiler.candidates import node_chunks
 from contextbench.compiler.dedupe import deduplicate_candidates
 from contextbench.compiler.expand import expand_candidates
+from contextbench.compiler.facets import retrieve_faceted
 from contextbench.compiler.models import (
     COMPILER_VERSION,
     CompilerConfig,
@@ -73,6 +74,18 @@ def compile_context(
                 else token_budget
             ),
             document_ids=set(document_ids),
+        )
+        ranked = retrieve_faceted(
+            index,
+            query,
+            ranked,
+            token_budget=(
+                retrieval_token_budget
+                if retrieval_token_budget is not None
+                else token_budget
+            ),
+            document_ids=set(document_ids),
+            config=my_config,
         )
     else:
         ranked = tuple(ranked_evidence)

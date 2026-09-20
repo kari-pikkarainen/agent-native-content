@@ -16,6 +16,7 @@ from docling_core.types.doc import DoclingDocument
 
 from contextbench.compiler import CompilerQueryCache, DocumentScope, compile_context
 from contextbench.compiler.candidates import node_chunks
+from contextbench.compiler.facets import retrieve_faceted
 from contextbench.datasets.base import BenchmarkQuestion
 from contextbench.evaluation.evidence import evaluate_context
 from contextbench.evaluation.models import (
@@ -263,6 +264,15 @@ def _evaluate_cells(
                 token_budget=max(config.budgets),
                 document_ids=ir_document_ids,
             )
+            if system == BenchmarkSystem.COMPILER:
+                ranked = retrieve_faceted(
+                    indexes[system],
+                    question.question,
+                    ranked,
+                    token_budget=max(config.budgets),
+                    document_ids=ir_document_ids,
+                    config=config.compiler,
+                )
             retrieval_elapsed_ms = (
                 time.perf_counter_ns() - retrieval_started
             ) / 1_000_000
