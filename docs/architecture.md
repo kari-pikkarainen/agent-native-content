@@ -51,6 +51,12 @@ The IR contains source truth only. Embeddings, lexical statistics, retrieval
 scores, generated annotations, and later experiment outputs are derived state
 and remain outside it. See [`ir-spec.md`](ir-spec.md) for the normative schema.
 
+An optional agent-document layer derives query-independent affordances without
+mutating the IR. Its outline, extractive section previews, key facts,
+definitions, and table schemas retain node/item/page provenance and are
+published as JSON-LD plus semantic HTML. This layer is versioned and
+replaceable; see [`agent-document-spec.md`](agent-document-spec.md).
+
 The first two retrieval arms consume that IR through a shared local hybrid
 stack. Fixed windows and Docling HybridChunker structural chunks are indexed
 separately under deterministic content/config hashes, while BM25, dense search,

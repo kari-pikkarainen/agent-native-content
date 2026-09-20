@@ -89,6 +89,64 @@ def ingest_document(
     typer.echo(json.dumps(value, ensure_ascii=False, sort_keys=True))
 
 
+@app.command("agentize")
+def agentize_document(
+    document: Annotated[Path, typer.Argument(help="Local PDF to encode.")],
+    output_dir: Annotated[
+        Path,
+        typer.Argument(help="New directory for the immutable agent-document bundle."),
+    ],
+    cache_dir: Annotated[
+        Path,
+        typer.Option(help="Content-addressed ingestion cache directory."),
+    ] = DEFAULT_INGEST_CACHE,
+    artifacts_dir: Annotated[
+        Path | None,
+        typer.Option(help="Optional directory of pre-downloaded Docling models."),
+    ] = None,
+    include_source: Annotated[
+        bool,
+        typer.Option(
+            "--include-source/--no-include-source",
+            help="Copy the hash-verified source PDF into the portable bundle.",
+        ),
+    ] = True,
+) -> None:
+    """Decode a PDF and create semantic HTML plus source-grounded JSON-LD."""
+    from contextbench.agentdoc import AgentBundleError, create_agent_bundle
+    from contextbench.ingest import DoclingParser, IngestionCache, IngestionError
+    from contextbench.ir import IRProjectionError, project_document
+
+    try:
+        ingested = IngestionCache(
+            cache_dir,
+            DoclingParser(artifacts_path=artifacts_dir),
+        ).ingest(document)
+        projected = project_document(ingested.document, ingested.metadata)
+        manifest = create_agent_bundle(
+            projected,
+            output_dir,
+            source_path=document,
+            include_source=include_source,
+        )
+    except (AgentBundleError, IngestionError, IRProjectionError, OSError) as exc:
+        _abort(str(exc))
+    typer.echo(
+        json.dumps(
+            {
+                "bundle_dir": str(output_dir),
+                "document_id": manifest.document_id,
+                "html": str(output_dir / "agent.html"),
+                "jsonld": str(output_dir / "enrichments.jsonld"),
+                "manifest": str(output_dir / "manifest.json"),
+                "source_included": manifest.source_file is not None,
+            },
+            ensure_ascii=False,
+            sort_keys=True,
+        )
+    )
+
+
 @app.command("eval-retrieval")
 def evaluate_retrieval(
     data_dir: Annotated[

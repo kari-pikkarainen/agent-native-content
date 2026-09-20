@@ -80,6 +80,22 @@ remains the serialized `DoclingDocument`; embeddings and other retrieval
 indexes are deliberately excluded. See [the IR specification](docs/ir-spec.md)
 for the full contract.
 
+## Agent-ready document bundle
+
+Decode a PDF once into a portable bundle containing canonical IR, semantic
+HTML, source-grounded JSON-LD enrichment, a hash manifest, and the verified
+source PDF:
+
+```shell
+uv run contextbench agentize path/to/document.pdf artifacts/agent-documents/example
+```
+
+The initial enrichment is deterministic and question-independent. It exposes
+the outline, extractive section previews, numeric/normative key facts,
+definitions, and table schemas with node/item/page provenance. It does not call
+an LLM or modify source truth. See
+[the agent-document specification](docs/agent-document-spec.md).
+
 The retrieval baselines are documented in
 [docs/retrieval-spec.md](docs/retrieval-spec.md). Arms A and B share BM25,
 dense retrieval, RRF, reranking, and token-budget packing; only their chunk
