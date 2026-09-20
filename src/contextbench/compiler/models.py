@@ -41,6 +41,7 @@ class CompilerConfig(BaseModel):
     page_neighbor_radius: int = Field(default=3, ge=0)
     page_neighbor_min_budget: int = Field(default=16384, ge=1)
     page_neighbor_origin_limit: int = Field(default=20, ge=1)
+    page_neighbor_prerank_limit: int = Field(default=64, ge=1)
     page_neighbor_candidate_limit: int = Field(default=64, ge=1)
     page_neighbor_score_penalty: float = Field(default=0.8, gt=0, le=1)
     preserve_tables: bool = True

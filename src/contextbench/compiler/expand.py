@@ -297,7 +297,17 @@ def _page_neighbor_candidates(
             ):
                 nearby[chunk.id] = (chunk, evidence, distance)
 
-    candidates = tuple(nearby.values())
+    candidates = tuple(
+        sorted(
+            nearby.values(),
+            key=lambda item: (
+                item[2],
+                item[1].rank,
+                -item[1].scores.reranked,
+                item[0].id,
+            ),
+        )[: config.page_neighbor_prerank_limit]
+    )
     if not candidates:
         return ()
     scores = reranker.score(

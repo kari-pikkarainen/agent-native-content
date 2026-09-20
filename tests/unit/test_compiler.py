@@ -547,6 +547,57 @@ def test_page_neighbor_expansion_adds_bounded_multiscale_context(
     assert expanded.token_count <= expanded.token_budget
 
 
+def test_page_neighbor_candidates_are_bounded_before_reranking(
+    compiler_fixture,
+) -> None:
+    _source, ir, scope, counter = compiler_fixture
+
+    class CountingReranker(LexicalOverlapReranker):
+        def __init__(self) -> None:
+            self.batch_sizes = []
+
+        def score(self, query, chunks):
+            self.batch_sizes.append(len(chunks))
+            return super().score(query, chunks)
+
+    reranker = CountingReranker()
+    config = compiler_config(
+        retrieval=RetrievalConfig(
+            fixed_chunk_tokens=4,
+            fixed_overlap_tokens=1,
+            candidate_limit=10,
+            rerank_limit=1,
+            max_candidate_limit=10,
+            max_rerank_limit=1,
+        ),
+        page_neighbor_radius=1,
+        page_neighbor_min_budget=50,
+        page_neighbor_origin_limit=1,
+        page_neighbor_prerank_limit=2,
+        page_neighbor_candidate_limit=2,
+    )
+    index = HybridIndex(
+        node_chunks([ir], tokenizer=counter),
+        config=config.retrieval,
+        tokenizer=counter,
+        reranker=reranker,
+    )
+    ranked = index.retrieve("target revenue increased", token_budget=100)
+    reranker.batch_sizes.clear()
+
+    compile_context(
+        "target revenue increased",
+        scope,
+        100,
+        config,
+        tokenizer=counter,
+        hybrid_index=index,
+        ranked_evidence=ranked,
+    )
+
+    assert reranker.batch_sizes == [2]
+
+
 def test_query_cache_reuses_page_neighbor_ranking_across_budgets(
     compiler_fixture,
     monkeypatch: pytest.MonkeyPatch,
