@@ -1,0 +1,46 @@
+{
+  "name": "xl10",
+  "dataset": "microsoft/XL-DocBench",
+  "release_version": "xldocbench_strict_1345_v1",
+  "release_revision": "72954bd70ffffe230f08b57c57fa9274ec14d7ea",
+  "selection_seed": 20260919,
+  "selection_method": "Deterministic smoke subset selected only from committed xl100 before benchmark results were inspected. It covers all six domains while minimizing unique source documents by grouping questions that share a document. IDs are stored explicitly and are never regenerated implicitly.",
+  "strata": {
+    "purpose": "smoke_benchmark_not_claims",
+    "domains": {
+      "finance_business": 2,
+      "legal_regulation": 1,
+      "medical_clinical": 1,
+      "narrative_literature": 2,
+      "scientific_academic": 2,
+      "technical_engineering": 2
+    },
+    "task_type": {
+      "single_doc": 10,
+      "cross_doc": 0
+    },
+    "answerability": {
+      "answerable": 9,
+      "unanswerable": 1
+    },
+    "source_documents": 6,
+    "source_pages": 619,
+    "source_bytes": 31269166,
+    "evidence_modality": {
+      "table_chart_or_image": 3,
+      "text_or_no_evidence": 7
+    }
+  },
+  "question_ids": [
+    "adubench_single_000572",
+    "adubench_single_001243",
+    "adubench_single_000005",
+    "adubench_single_000638",
+    "adubench_single_000198",
+    "adubench_single_000885",
+    "adubench_single_000321",
+    "adubench_single_000322",
+    "adubench_single_000114",
+    "adubench_single_000803"
+  ]
+}

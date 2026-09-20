@@ -132,11 +132,11 @@ def evaluate_retrieval(
         typer.Option(help="Optional immutable run identifier."),
     ] = None,
 ) -> None:
-    """Run the evidence-only A/B/D benchmark on the committed XL100 subset."""
+    """Run the evidence-only A/B/D benchmark on a committed XL subset."""
     # Keep evaluation and model imports off lightweight CLI paths.
     from contextbench.compiler import CompilerConfig
     from contextbench.evaluation import RetrievalBenchmarkConfig
-    from contextbench.evaluation.xl_docbench import run_xl100_retrieval
+    from contextbench.evaluation.xl_docbench import run_xl_retrieval
     from contextbench.ingest import IngestionError
     from contextbench.ir.project import IRProjectionError
     from contextbench.retrieval import RetrievalConfig
@@ -151,7 +151,7 @@ def evaluate_retrieval(
         compiler=CompilerConfig(retrieval=retrieval),
     )
     try:
-        result = run_xl100_retrieval(
+        result = run_xl_retrieval(
             data_dir=data_dir,
             subset_file=subset_file,
             source_cache_dir=source_cache_dir,

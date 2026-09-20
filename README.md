@@ -119,6 +119,19 @@ uv sync --extra retrieval
 uv run --extra retrieval contextbench eval-retrieval
 ```
 
+For a real-data smoke run covering all six domains with 10 questions over only
+6 PDFs (619 pages, about 30 MiB), use the committed `xl10` subset:
+
+```shell
+uv run --extra retrieval contextbench eval-retrieval \
+  --subset-file configs/subsets/xl10.json \
+  --run-id xl10-smoke
+```
+
+`xl10` deliberately contains only single-document questions and is suitable
+for pipeline validation, not research claims. XL100 remains the registered
+decision set.
+
 The first run downloads the pinned dataset metadata, the source PDFs referenced
 by XL100, Docling model artifacts when needed, and the configured local
 SentenceTransformers models. Later runs reuse verified caches. Pass

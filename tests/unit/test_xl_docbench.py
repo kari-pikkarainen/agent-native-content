@@ -75,3 +75,15 @@ def test_committed_xl100_is_unique_and_fixed_size() -> None:
     assert len(subset.question_ids) == 100
     assert len(set(subset.question_ids)) == 100
     assert sum(subset.strata["domains"].values()) == 100
+
+
+def test_committed_xl10_is_an_explicit_xl100_smoke_subset() -> None:
+    xl100 = load_subset(Path("configs/subsets/xl100.json"))
+    xl10 = load_subset(Path("configs/subsets/xl10.json"))
+
+    assert len(xl10.question_ids) == 10
+    assert len(set(xl10.question_ids)) == 10
+    assert set(xl10.question_ids).issubset(xl100.question_ids)
+    assert sum(xl10.strata["domains"].values()) == 10
+    assert xl10.strata["source_documents"] == 6
+    assert xl10.strata["source_pages"] == 619

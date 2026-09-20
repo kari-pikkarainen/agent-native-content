@@ -102,7 +102,7 @@ def test_eval_retrieval_runs_all_default_budgets_and_prints_artifacts(
 ) -> None:
     captured = {}
 
-    def fake_run_xl100_retrieval(**kwargs):
+    def fake_run_xl_retrieval(**kwargs):
         captured.update(kwargs)
         path = tmp_path / "artifacts" / "runs" / "run-1"
         return SimpleNamespace(
@@ -111,8 +111,8 @@ def test_eval_retrieval_runs_all_default_budgets_and_prints_artifacts(
         )
 
     monkeypatch.setattr(
-        "contextbench.evaluation.xl_docbench.run_xl100_retrieval",
-        fake_run_xl100_retrieval,
+        "contextbench.evaluation.xl_docbench.run_xl_retrieval",
+        fake_run_xl_retrieval,
     )
 
     result = runner.invoke(

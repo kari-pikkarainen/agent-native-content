@@ -25,7 +25,7 @@ from contextbench.ir.tokenizer import TiktokenTokenCounter
 ProgressCallback = Callable[[str], None]
 
 
-def run_xl100_retrieval(
+def run_xl_retrieval(
     *,
     data_dir: Path,
     subset_file: Path,
@@ -37,7 +37,7 @@ def run_xl100_retrieval(
     run_id: str | None = None,
     progress: ProgressCallback | None = None,
 ) -> BenchmarkRun:
-    """Download, ingest, project, and benchmark the committed XL100 subset."""
+    """Download, ingest, project, and benchmark a committed XL subset."""
     report = progress or (lambda _message: None)
     report("verifying pinned XL-DocBench release")
     download_release(data_dir)
@@ -96,6 +96,10 @@ def run_xl100_retrieval(
         run_id=run_id,
         tokenizer=tokenizer,
     )
+
+
+# Backward-compatible name retained for callers from the XL100 milestone.
+run_xl100_retrieval = run_xl_retrieval
 
 
 def _sha256(path: Path) -> str:
