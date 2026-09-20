@@ -238,7 +238,7 @@ def evaluate_retrieval(
     compiler_packing_strategy: Annotated[
         str,
         typer.Option(help="Compiler packing strategy: ranked or coverage."),
-    ] = "ranked",
+    ] = "coverage",
     run_id: Annotated[
         str | None,
         typer.Option(help="Optional immutable run identifier."),

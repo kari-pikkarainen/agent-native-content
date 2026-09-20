@@ -2,8 +2,8 @@
 
 Date: 2026-09-20
 
-Status: retain as an explicit candidate; do not promote or run a new holdout
-until complete balanced XLDev24 confirmation.
+Status: accepted as the selected compiler default after complete balanced
+XLDev24 confirmation.
 
 ## Treatment
 
@@ -44,10 +44,26 @@ Full coverage improves from 0.333 to 0.500 at 8K and is unchanged or better
 at every other budget. Mean redundancy falls from 0.133/0.188/0.212/0.278 to
 0.058/0.125/0.180/0.264.
 
+## Balanced XLDev24 confirmation
+
+Run `xldev24-coverage-packing-87df330` evaluates all 24 development questions
+over the fixed 11-document corpus.
+
+| Budget | Prior selected recall | Coverage recall | Delta | Coverage | Best baseline coverage |
+| ---: | ---: | ---: | ---: | ---: | ---: |
+| 2K | 0.651 | 0.727 | +0.076 | 0.417 | 0.292 |
+| 4K | 0.717 | 0.791 | +0.074 | 0.458 | 0.375 |
+| 8K | 0.795 | 0.864 | +0.069 | 0.583 | 0.458 |
+| 16K | 0.895 | 0.922 | +0.027 | 0.667 | 0.625 |
+
+The compiler beats both fixed and structural baselines on page recall and full
+coverage at every budget. Mean redundancy falls at every budget relative to
+the prior selected compiler. Exact quote recall is recorded as
+0.354/0.389/0.476/0.517.
+
 ## Decision
 
-Coverage packing passes the bounded directional gate and remains available as
-an explicit configuration. It does not yet authorize a new holdout: the next
-quality step is a complete XLDev24 comparison, which is intentionally deferred
-while development remains subset-first. Only a consistent balanced-set win
-should promote the default and trigger selection of a new untouched holdout.
+Promote coverage packing as compiler version 0.7.0's default. Retain ranked
+packing as a reversible control. The balanced-set result authorizes one new
+small, metadata-selected, precommitted directional holdout; it does not
+authorize the full XL100.

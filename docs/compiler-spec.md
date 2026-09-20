@@ -144,11 +144,11 @@ are recomputed from the final rendered content, including heading and table
 prefixes. An item is skipped if adding it would exceed the requested budget;
 later smaller items remain eligible.
 
-An explicit `coverage` ablation greedily rewards marginal query-term, query-
+The selected `coverage` strategy greedily rewards marginal query-term, query-
 facet, named-table, page, and heading coverage while retaining reranker rank as
 a relevance prior. It never exceeds the token budget and records the selected
-strategy in packet metadata. Ranked packing remains the default until the
-coverage candidate passes the complete balanced development gate.
+strategy in packet metadata. The prior `ranked` strategy remains available as
+an explicit control.
 
 `ContextPacket.token_count` is the sum of the returned evidence-content token
 counts and is validated to be no greater than `token_budget`. Prompt-template
