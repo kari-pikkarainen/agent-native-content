@@ -40,11 +40,6 @@ class RetrievalBenchmarkConfig(BaseModel):
             raise ValueError("compiler and baseline retrieval configs must match")
         if self.compiler_stage_audit and BenchmarkSystem.COMPILER not in self.systems:
             raise ValueError("compiler_stage_audit requires the compiler system")
-        if (
-            self.compiler.structural_fusion_enabled
-            and BenchmarkSystem.COMPILER not in self.systems
-        ):
-            raise ValueError("structural fusion requires the compiler system")
         return self
 
 
@@ -74,7 +69,6 @@ class CompilerStageAuditRecord(BaseModel):
     structural_retrieval: CandidateStageMetrics
     compiler_structural_union: CandidateStageMetrics
     structural_expansion: CandidateStageMetrics
-    representation_fusion: CandidateStageMetrics
     deduplication: CandidateStageMetrics
     packing: CandidateStageMetrics
 

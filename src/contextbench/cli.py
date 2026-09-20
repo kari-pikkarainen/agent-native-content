@@ -146,27 +146,6 @@ def evaluate_retrieval(
             ),
         ),
     ] = False,
-    compiler_reference_facets: Annotated[
-        bool,
-        typer.Option(
-            "--compiler-reference-facets",
-            help="Retrieve explicit table, figure, section, and appendix references.",
-        ),
-    ] = False,
-    compiler_structural_fusion: Annotated[
-        bool,
-        typer.Option(
-            "--compiler-structural-fusion",
-            help="Fuse structural chunks into the compiler candidate sequence.",
-        ),
-    ] = False,
-    compiler_facet_packing: Annotated[
-        bool,
-        typer.Option(
-            "--compiler-facet-packing",
-            help="Reserve packing capacity for high-overlap query-facet evidence.",
-        ),
-    ] = False,
     run_id: Annotated[
         str | None,
         typer.Option(help="Optional immutable run identifier."),
@@ -189,12 +168,7 @@ def evaluate_retrieval(
         seed=seed,
         compiler_stage_audit=compiler_stage_audit,
         retrieval=retrieval,
-        compiler=CompilerConfig(
-            retrieval=retrieval,
-            query_reference_facets_enabled=compiler_reference_facets,
-            structural_fusion_enabled=compiler_structural_fusion,
-            facet_coverage_packing_enabled=compiler_facet_packing,
-        ),
+        compiler=CompilerConfig(retrieval=retrieval),
     )
     try:
         result = run_xl_retrieval(
