@@ -231,6 +231,55 @@ def test_candidate_retrieval_defers_reranking() -> None:
     ]
 
 
+def test_rerank_many_batches_query_candidate_pairs() -> None:
+    class PairReranker:
+        name = "pair"
+        version = "1"
+
+        def __init__(self) -> None:
+            self.pair_calls = 0
+
+        def score(self, _query, _chunks):
+            raise AssertionError("individual scoring should not be used")
+
+        def score_pairs(self, pairs):
+            self.pair_calls += 1
+            return [
+                float(len(query) + index)
+                for index, (query, _chunk) in enumerate(pairs)
+            ]
+
+    chunks = tuple(
+        RetrievalChunk(
+            id=f"chunk-{index}",
+            arm=RetrievalArm.COMPILER,
+            document_id="doc",
+            text=f"evidence {index}",
+            token_count=1,
+            source_node_ids=(f"node-{index}",),
+            source_item_ids=(f"item-{index}",),
+        )
+        for index in range(3)
+    )
+    config = RetrievalConfig(candidate_limit=3, rerank_limit=3)
+    reranker = PairReranker()
+    index = HybridIndex(
+        chunks,
+        config=config,
+        tokenizer=FixtureTokenCounter(),
+        reranker=reranker,
+    )
+    candidates = index.retrieve_candidates("evidence")
+
+    first, second = index.rerank_many(
+        (("one", candidates[:2]), ("longer", candidates[2:])),
+    )
+
+    assert reranker.pair_calls == 1
+    assert len(first) == 2
+    assert len(second) == 1
+
+
 def test_duplicate_search_text_does_not_consume_rerank_capacity() -> None:
     chunks = tuple(
         RetrievalChunk(

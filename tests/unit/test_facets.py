@@ -44,6 +44,8 @@ def test_faceted_retrieval_promotes_evidence_from_separate_clauses() -> None:
     warming = evidence("warming", "lowest normalized warming emulator")
 
     class StubIndex:
+        batch_calls = 0
+
         def retrieve_candidates(self, query: str, **_kwargs):
             return (forcing,) if "forcing" in query else (warming,)
 
@@ -51,6 +53,16 @@ def test_faceted_retrieval_promotes_evidence_from_separate_clauses() -> None:
             return tuple(
                 candidate.model_copy(update={"rank": rank})
                 for rank, candidate in enumerate(candidates, 1)
+            )
+
+        def rerank_many(self, requests):
+            self.batch_calls += 1
+            return tuple(
+                tuple(
+                    candidate.model_copy(update={"rank": rank})
+                    for rank, candidate in enumerate(candidates, 1)
+                )
+                for _query, candidates in requests
             )
 
     retrieval = RetrievalConfig(
@@ -70,8 +82,9 @@ def test_faceted_retrieval_promotes_evidence_from_separate_clauses() -> None:
         "Using doubling CO2 forcing, which emulator has lowest normalized warming?"
     )
 
+    index = StubIndex()
     faceted = retrieve_faceted(
-        StubIndex(),  # type: ignore[arg-type]
+        index,  # type: ignore[arg-type]
         query,
         (full,),
         token_budget=10,
@@ -84,3 +97,4 @@ def test_faceted_retrieval_promotes_evidence_from_separate_clauses() -> None:
     assert [evidence.rank for evidence in faceted] == list(
         range(1, len(faceted) + 1)
     )
+    assert index.batch_calls == 1

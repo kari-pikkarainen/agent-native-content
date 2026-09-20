@@ -64,8 +64,8 @@ def retrieve_faceted(
     if not facets:
         return index.rerank(query, ranked)
 
-    rankings = [tuple(ranked)]
-    rankings.extend(
+    candidate_rankings = [tuple(ranked)]
+    candidate_rankings.extend(
         index.retrieve_candidates(
             facet,
             token_budget=token_budget,
@@ -73,6 +73,12 @@ def retrieve_faceted(
         )
         for facet in facets
     )
+    if config.query_facet_rerank_strategy == "batched":
+        rankings = index.rerank_many(
+            tuple(zip((query, *facets), candidate_rankings, strict=True))
+        )
+    else:
+        rankings = tuple(candidate_rankings)
     by_id: dict[str, RankedEvidence] = {}
     fused: dict[str, float] = {}
     best_rank: dict[str, int] = {}
@@ -107,4 +113,6 @@ def retrieve_faceted(
         )
         for rank, chunk_id in enumerate(ordered, 1)
     )
+    if config.query_facet_rerank_strategy == "batched":
+        return fused_candidates
     return index.rerank(query, fused_candidates)

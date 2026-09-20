@@ -365,6 +365,52 @@ class HybridIndex:
             for rank, (candidate, score) in enumerate(ranked, 1)
         )
 
+    def rerank_many(
+        self,
+        requests: Sequence[tuple[str, Sequence[RankedEvidence]]],
+    ) -> tuple[tuple[RankedEvidence, ...], ...]:
+        """Rerank independent candidate pools in one model invocation."""
+        pairs = [
+            (query, candidate.chunk)
+            for query, candidates in requests
+            for candidate in candidates
+        ]
+        score_pairs = getattr(self.reranker, "score_pairs", None)
+        if score_pairs is None:
+            return tuple(
+                self.rerank(query, candidates) for query, candidates in requests
+            )
+        pair_scores = score_pairs(pairs)
+        if len(pair_scores) != len(pairs):
+            raise ValueError(
+                "reranker score count does not match query-candidate pairs"
+            )
+        scores = iter(pair_scores)
+        results = []
+        for _query, candidates in requests:
+            ranking = sorted(
+                ((candidate, next(scores)) for candidate in candidates),
+                key=lambda pair: (
+                    -pair[1],
+                    -pair[0].scores.fused,
+                    pair[0].chunk.id,
+                ),
+            )
+            results.append(
+                tuple(
+                    candidate.model_copy(
+                        update={
+                            "rank": rank,
+                            "scores": candidate.scores.model_copy(
+                                update={"reranked": score}
+                            ),
+                        }
+                    )
+                    for rank, (candidate, score) in enumerate(ranking, 1)
+                )
+            )
+        return tuple(results)
+
     def pack(
         self,
         query: str,

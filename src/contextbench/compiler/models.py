@@ -3,6 +3,7 @@
 import time
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
+from typing import Literal
 
 from docling_core.types.doc import DoclingDocument
 from pydantic import BaseModel, ConfigDict, Field
@@ -36,6 +37,7 @@ class CompilerConfig(BaseModel):
     query_facet_limit: int = Field(default=3, ge=1)
     query_facet_min_terms: int = Field(default=3, ge=1)
     query_facet_full_weight: float = Field(default=2.0, gt=0)
+    query_facet_rerank_strategy: Literal["batched", "single_pass"] = "batched"
     page_neighbor_radius: int = Field(default=3, ge=0)
     page_neighbor_min_budget: int = Field(default=16384, ge=1)
     page_neighbor_origin_limit: int = Field(default=20, ge=1)

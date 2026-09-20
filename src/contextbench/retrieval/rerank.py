@@ -17,6 +17,11 @@ class Reranker(Protocol):
 
     def score(self, query: str, chunks: Sequence[RetrievalChunk]) -> list[float]: ...
 
+    def score_pairs(
+        self,
+        pairs: Sequence[tuple[str, RetrievalChunk]],
+    ) -> list[float]: ...
+
 
 class LexicalOverlapReranker:
     """Transparent fallback reranker that rewards query-term coverage."""
@@ -33,6 +38,15 @@ class LexicalOverlapReranker:
             len(query_terms.intersection(_terms(chunk.retrieval_text)))
             / max(len(query_terms), 1)
             for chunk in chunks
+        ]
+
+    def score_pairs(
+        self,
+        pairs: Sequence[tuple[str, RetrievalChunk]],
+    ) -> list[float]:
+        return [
+            self.score(query, (chunk,))[0]
+            for query, chunk in pairs
         ]
 
 
@@ -58,8 +72,14 @@ class SentenceTransformerCrossEncoderReranker:
         return version("sentence-transformers")
 
     def score(self, query: str, chunks: Sequence[RetrievalChunk]) -> list[float]:
+        return self.score_pairs([(query, chunk) for chunk in chunks])
+
+    def score_pairs(
+        self,
+        pairs: Sequence[tuple[str, RetrievalChunk]],
+    ) -> list[float]:
         values = self._model.predict(
-            [(query, chunk.retrieval_text) for chunk in chunks]
+            [(query, chunk.retrieval_text) for query, chunk in pairs]
         )
         return [float(value) for value in values]
 
