@@ -17,7 +17,6 @@ from contextbench.compiler import (
     compile_context,
     compile_context_with_trace,
 )
-from contextbench.compiler.anchors import anchor_node_evidence
 from contextbench.compiler.candidates import node_chunks
 from contextbench.compiler.expand import _penalize
 from contextbench.ir import project_document
@@ -319,56 +318,6 @@ def test_structural_anchor_input_requires_enabled_mode(compiler_fixture) -> None
             hybrid_index=index,
             structural_anchor_evidence=ranked,
         )
-
-
-def test_structural_anchor_limit_preserves_breadth_across_regions(
-    compiler_fixture,
-) -> None:
-    _source, ir, _scope, counter = compiler_fixture
-    nodes = [
-        node
-        for node in ir.nodes
-        if node.text
-        in {
-            "Context before target.",
-            "Target revenue increased.",
-            "Measurements were audited.",
-        }
-    ]
-
-    def region(identifier: str, node_ids: tuple[str, ...], rank: int):
-        return RankedEvidence(
-            rank=rank,
-            chunk=RetrievalChunk(
-                id=identifier,
-                arm=RetrievalArm.STRUCTURAL,
-                document_id=ir.id,
-                text=identifier,
-                token_count=1,
-                source_node_ids=node_ids,
-                source_item_ids=tuple(
-                    source_id
-                    for node_id in node_ids
-                    for source_id in ir.node_by_id[node_id].source_item_ids
-                ),
-            ),
-            scores=RetrievalScores(reranked=1 / rank),
-        )
-
-    anchored = anchor_node_evidence(
-        (
-            region("large", (nodes[0].id, nodes[1].id), 1),
-            region("small", (nodes[2].id,), 2),
-        ),
-        (ir,),
-        tokenizer=counter,
-        limit=2,
-    )
-
-    assert [item.chunk.source_node_ids for item in anchored] == [
-        (nodes[0].id,),
-        (nodes[2].id,),
-    ]
 
 
 def test_pre_ranked_evidence_rejects_documents_outside_scope(

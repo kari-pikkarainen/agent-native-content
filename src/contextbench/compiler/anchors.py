@@ -22,15 +22,8 @@ def anchor_node_evidence(
     }
     seen: set[tuple[str, str]] = set()
     anchored = []
-    depth = 0
-    while any(
-        depth < len(evidence.chunk.source_node_ids)
-        for evidence in structural_evidence
-    ):
-        for evidence in structural_evidence:
-            if depth >= len(evidence.chunk.source_node_ids):
-                continue
-            node_id = evidence.chunk.source_node_ids[depth]
+    for evidence in structural_evidence:
+        for node_id in evidence.chunk.source_node_ids:
             key = (evidence.chunk.document_id, node_id)
             chunk = chunks_by_node.get(node_id)
             if key in seen or chunk is None:
@@ -45,5 +38,4 @@ def anchor_node_evidence(
             )
             if len(anchored) == limit:
                 return tuple(anchored)
-        depth += 1
     return tuple(anchored)
