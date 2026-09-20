@@ -136,6 +136,16 @@ def evaluate_retrieval(
         int,
         typer.Option(help="Recorded benchmark seed."),
     ] = 20260919,
+    compiler_stage_audit: Annotated[
+        bool,
+        typer.Option(
+            "--compiler-stage-audit",
+            help=(
+                "Write candidate recall at retrieval, expansion, deduplication, "
+                "and packing boundaries."
+            ),
+        ),
+    ] = False,
     run_id: Annotated[
         str | None,
         typer.Option(help="Optional immutable run identifier."),
@@ -156,6 +166,7 @@ def evaluate_retrieval(
     )
     config = RetrievalBenchmarkConfig(
         seed=seed,
+        compiler_stage_audit=compiler_stage_audit,
         retrieval=retrieval,
         compiler=CompilerConfig(retrieval=retrieval),
     )
@@ -180,6 +191,11 @@ def evaluate_retrieval(
                 "report": str(result.path / "report.md"),
                 "run_dir": str(result.path),
                 "run_id": result.manifest.run_id,
+                "stage_audit": (
+                    str(result.path / "compiler-stages.jsonl")
+                    if compiler_stage_audit
+                    else None
+                ),
                 "summary": str(result.path / "summary.json"),
             },
             ensure_ascii=False,

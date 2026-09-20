@@ -14,18 +14,30 @@ from pathlib import Path
 
 from docling_core.types.doc import DoclingDocument
 
-from contextbench.compiler import CompilerQueryCache, DocumentScope, compile_context
+from contextbench.compiler import (
+    CompilerQueryCache,
+    DocumentScope,
+    compile_context,
+    compile_context_with_trace,
+)
 from contextbench.compiler.candidates import node_chunks
 from contextbench.compiler.facets import retrieve_faceted
 from contextbench.datasets.base import BenchmarkQuestion
 from contextbench.evaluation.evidence import evaluate_context
 from contextbench.evaluation.models import (
     BenchmarkSystem,
+    CompilerStageAuditRecord,
     RetrievalBenchmarkConfig,
     RetrievalBenchmarkSummary,
     RetrievalEvaluationRecord,
 )
 from contextbench.evaluation.reports import markdown_report, summarize
+from contextbench.evaluation.stages import (
+    evaluate_candidate_stage,
+    evaluate_compiler_candidates,
+    evaluate_packed_stage,
+    gold_pages,
+)
 from contextbench.experiments import (
     DocumentProvenance,
     RunManifest,
@@ -68,6 +80,7 @@ class BenchmarkRun:
     manifest: RunManifest
     summary: RetrievalBenchmarkSummary
     records: tuple[RetrievalEvaluationRecord, ...]
+    stage_audits: tuple[CompilerStageAuditRecord, ...] = ()
 
 
 def run_retrieval_benchmark(
@@ -133,7 +146,7 @@ def run_retrieval_benchmark(
         embedder=shared_embedder,
         reranker=shared_reranker,
     )
-    records, contexts = _evaluate_cells(
+    records, contexts, stage_audits = _evaluate_cells(
         corpus,
         config=config,
         indexes=indexes,
@@ -185,6 +198,7 @@ def run_retrieval_benchmark(
         manifest=manifest,
         records=records,
         contexts=contexts,
+        stage_audits=stage_audits,
         summary=summary,
     )
     return BenchmarkRun(
@@ -192,6 +206,7 @@ def run_retrieval_benchmark(
         manifest=manifest,
         summary=summary,
         records=records,
+        stage_audits=stage_audits,
     )
 
 
@@ -217,7 +232,7 @@ def _build_indexes(
             reranker=reranker,
             artifacts_root=artifacts_root,
         )
-    if BenchmarkSystem.STRUCTURAL in systems:
+    if BenchmarkSystem.STRUCTURAL in systems or config.compiler_stage_audit:
         indexes[BenchmarkSystem.STRUCTURAL] = HybridIndex.build(
             documents,
             arm=RetrievalArm.STRUCTURAL,
@@ -254,9 +269,14 @@ def _evaluate_cells(
     tokenizer: TokenCounter,
     embedder: EmbeddingModel,
     reranker: Reranker,
-) -> tuple[tuple[RetrievalEvaluationRecord, ...], tuple[dict[str, object], ...]]:
+) -> tuple[
+    tuple[RetrievalEvaluationRecord, ...],
+    tuple[dict[str, object], ...],
+    tuple[CompilerStageAuditRecord, ...],
+]:
     records: list[RetrievalEvaluationRecord] = []
     contexts: list[dict[str, object]] = []
+    stage_audits: list[CompilerStageAuditRecord] = []
     for question in corpus.questions:
         question_documents = {
             document_id: corpus.documents[document_id]
@@ -270,43 +290,74 @@ def _evaluate_cells(
                 for document_id, document in question_documents.items()
             },
         )
-        for system in config.systems:
-            compiler_cache = (
-                CompilerQueryCache() if system == BenchmarkSystem.COMPILER else None
-            )
+        retrieval_systems = list(config.systems)
+        if (
+            config.compiler_stage_audit
+            and BenchmarkSystem.STRUCTURAL not in retrieval_systems
+        ):
+            retrieval_systems.append(BenchmarkSystem.STRUCTURAL)
+        raw_rankings: dict[BenchmarkSystem, tuple[RankedEvidence, ...]] = {}
+        rankings: dict[BenchmarkSystem, tuple[RankedEvidence, ...]] = {}
+        retrieval_latencies: dict[BenchmarkSystem, float] = {}
+        for system in retrieval_systems:
             retrieval_started = time.perf_counter_ns()
-            ranked = indexes[system].retrieve(
+            raw_ranked = indexes[system].retrieve(
                 question.question,
                 token_budget=max(config.budgets),
                 document_ids=ir_document_ids,
             )
+            ranked = raw_ranked
             if system == BenchmarkSystem.COMPILER:
                 ranked = retrieve_faceted(
                     indexes[system],
                     question.question,
-                    ranked,
+                    raw_ranked,
                     token_budget=max(config.budgets),
                     document_ids=ir_document_ids,
                     config=config.compiler,
                 )
-            retrieval_elapsed_ms = (
+            raw_rankings[system] = raw_ranked
+            rankings[system] = ranked
+            retrieval_latencies[system] = (
                 time.perf_counter_ns() - retrieval_started
             ) / 1_000_000
+
+        for system in config.systems:
+            compiler_cache = (
+                CompilerQueryCache() if system == BenchmarkSystem.COMPILER else None
+            )
+            ranked = rankings[system]
+            retrieval_elapsed_ms = retrieval_latencies[system]
             for budget in config.budgets:
                 started = time.perf_counter_ns()
-                packet = _context_for_system(
-                    question.question,
-                    system=system,
-                    budget=budget,
-                    scope=scope,
-                    config=config,
-                    index=indexes[system],
-                    tokenizer=tokenizer,
-                    embedder=embedder,
-                    reranker=reranker,
-                    ranked_evidence=ranked,
-                    compiler_cache=compiler_cache,
-                )
+                trace = None
+                if system == BenchmarkSystem.COMPILER and config.compiler_stage_audit:
+                    packet, trace = compile_context_with_trace(
+                        question.question,
+                        scope,
+                        budget,
+                        config.compiler,
+                        tokenizer=tokenizer,
+                        embedder=embedder,
+                        reranker=reranker,
+                        hybrid_index=indexes[system],
+                        ranked_evidence=ranked,
+                        query_cache=compiler_cache,
+                    )
+                else:
+                    packet = _context_for_system(
+                        question.question,
+                        system=system,
+                        budget=budget,
+                        scope=scope,
+                        config=config,
+                        index=indexes[system],
+                        tokenizer=tokenizer,
+                        embedder=embedder,
+                        reranker=reranker,
+                        ranked_evidence=ranked,
+                        compiler_cache=compiler_cache,
+                    )
                 elapsed_ms = retrieval_elapsed_ms + (
                     time.perf_counter_ns() - started
                 ) / 1_000_000
@@ -338,7 +389,51 @@ def _evaluate_cells(
                         "context": packet.model_dump(mode="json"),
                     }
                 )
-    return tuple(records), tuple(contexts)
+                if trace is not None:
+                    raw_chunks = [
+                        evidence.chunk
+                        for evidence in raw_rankings[BenchmarkSystem.COMPILER]
+                    ]
+                    faceted_chunks = [evidence.chunk for evidence in ranked]
+                    structural_chunks = [
+                        evidence.chunk
+                        for evidence in rankings[BenchmarkSystem.STRUCTURAL]
+                    ]
+                    stage_audits.append(
+                        CompilerStageAuditRecord(
+                            question_id=question.id,
+                            token_budget=budget,
+                            gold_pages=gold_pages(question),
+                            raw_node_retrieval=evaluate_candidate_stage(
+                                question, raw_chunks, corpus.documents
+                            ),
+                            faceted_node_retrieval=evaluate_candidate_stage(
+                                question, faceted_chunks, corpus.documents
+                            ),
+                            structural_retrieval=evaluate_candidate_stage(
+                                question, structural_chunks, corpus.documents
+                            ),
+                            compiler_structural_union=evaluate_candidate_stage(
+                                question,
+                                [*faceted_chunks, *structural_chunks],
+                                corpus.documents,
+                            ),
+                            structural_expansion=evaluate_compiler_candidates(
+                                question,
+                                trace.expanded_candidates,
+                                corpus.documents,
+                            ),
+                            deduplication=evaluate_compiler_candidates(
+                                question,
+                                trace.deduplicated_candidates,
+                                corpus.documents,
+                            ),
+                            packing=evaluate_packed_stage(
+                                question, packet, corpus.documents
+                            ),
+                        )
+                    )
+    return tuple(records), tuple(contexts), tuple(stage_audits)
 
 
 def _context_for_system(
@@ -401,6 +496,7 @@ def _publish_run(
     manifest: RunManifest,
     records: Sequence[RetrievalEvaluationRecord],
     contexts: Sequence[dict[str, object]],
+    stage_audits: Sequence[CompilerStageAuditRecord],
     summary: RetrievalBenchmarkSummary,
 ) -> None:
     final_path.parent.mkdir(parents=True, exist_ok=True)
@@ -412,6 +508,11 @@ def _publish_run(
             [record.model_dump(mode="json") for record in records],
         )
         _write_jsonl(staging / "contexts.jsonl", contexts)
+        if stage_audits:
+            _write_jsonl(
+                staging / "compiler-stages.jsonl",
+                [record.model_dump(mode="json") for record in stage_audits],
+            )
         _write_json(staging / "summary.json", summary.model_dump(mode="json"))
         (staging / "report.md").write_text(
             markdown_report(summary),

@@ -273,3 +273,45 @@ def test_runner_reuses_compiler_page_ranking_across_budgets(
 
     assert calls == 1
     assert len(result.records) == 2
+
+
+def test_runner_writes_opt_in_compiler_stage_audit(tmp_path: Path) -> None:
+    base = _config()
+    config = base.model_copy(
+        update={
+            "systems": (BenchmarkSystem.COMPILER,),
+            "compiler_stage_audit": True,
+        }
+    )
+
+    result = _run(tmp_path, run_id="stage-audit", config=config)
+
+    assert len(result.stage_audits) == len(config.budgets)
+    assert (result.path / "compiler-stages.jsonl").is_file()
+    assert {path.name for path in result.path.iterdir()} == {
+        "compiler-stages.jsonl",
+        "contexts.jsonl",
+        "manifest.json",
+        "report.md",
+        "retrieval.jsonl",
+        "summary.json",
+    }
+    for record in result.stage_audits:
+        assert record.raw_node_retrieval.candidate_count > 0
+        assert record.faceted_node_retrieval.candidate_count > 0
+        assert record.structural_retrieval.candidate_count > 0
+        assert record.compiler_structural_union.evidence_page_recall >= (
+            record.faceted_node_retrieval.evidence_page_recall
+        )
+        assert record.compiler_structural_union.evidence_page_recall >= (
+            record.structural_retrieval.evidence_page_recall
+        )
+        assert record.packing.candidate_tokens <= record.token_budget
+
+
+def test_stage_audit_requires_compiler_system() -> None:
+    with pytest.raises(ValueError, match="requires the compiler system"):
+        RetrievalBenchmarkConfig(
+            systems=(BenchmarkSystem.STRUCTURAL,),
+            compiler_stage_audit=True,
+        )

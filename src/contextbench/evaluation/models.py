@@ -24,6 +24,7 @@ class RetrievalBenchmarkConfig(BaseModel):
     budgets: tuple[int, ...] = DEFAULT_TOKEN_BUDGETS
     systems: tuple[BenchmarkSystem, ...] = tuple(BenchmarkSystem)
     seed: int = 20260919
+    compiler_stage_audit: bool = False
     retrieval: RetrievalConfig = Field(default_factory=RetrievalConfig)
     compiler: CompilerConfig = Field(default_factory=CompilerConfig)
 
@@ -37,7 +38,39 @@ class RetrievalBenchmarkConfig(BaseModel):
             raise ValueError("systems must be non-empty and unique")
         if self.compiler.retrieval != self.retrieval:
             raise ValueError("compiler and baseline retrieval configs must match")
+        if self.compiler_stage_audit and BenchmarkSystem.COMPILER not in self.systems:
+            raise ValueError("compiler_stage_audit requires the compiler system")
         return self
+
+
+class CandidateStageMetrics(BaseModel):
+    """Evidence coverage within one bounded candidate pool."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    candidate_count: int = Field(ge=0)
+    candidate_tokens: int = Field(ge=0)
+    selected_pages: dict[str, tuple[int, ...]]
+    matched_pages: dict[str, tuple[int, ...]]
+    evidence_page_recall: float = Field(ge=0, le=1)
+    full_evidence_coverage: bool
+
+
+class CompilerStageAuditRecord(BaseModel):
+    """Candidate recall through each compiler boundary for one budget."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    question_id: str
+    token_budget: int = Field(ge=1)
+    gold_pages: dict[str, tuple[int, ...]]
+    raw_node_retrieval: CandidateStageMetrics
+    faceted_node_retrieval: CandidateStageMetrics
+    structural_retrieval: CandidateStageMetrics
+    compiler_structural_union: CandidateStageMetrics
+    structural_expansion: CandidateStageMetrics
+    deduplication: CandidateStageMetrics
+    packing: CandidateStageMetrics
 
 
 class RetrievalEvaluationRecord(BaseModel):
