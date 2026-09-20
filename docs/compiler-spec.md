@@ -67,6 +67,9 @@ path. Their fused and reranked scores receive the configured penalty.
 
 For a selected list item, adjacent items under the same list parent are included
 up to `list_neighbor_limit`. Distance compounds the configured list penalty.
+Because cross-encoder logits may be negative, penalties scale positive scores
+toward zero and negative scores away from zero so expansion can never outrank
+the direct hit merely because its score has a negative sign.
 
 ### 4. Tables
 

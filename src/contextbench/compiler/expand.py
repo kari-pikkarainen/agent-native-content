@@ -357,9 +357,18 @@ def _penalize(scores: RetrievalScores, penalty: float) -> RetrievalScores:
     return scores.model_copy(
         update={
             "fused": scores.fused * penalty,
-            "reranked": scores.reranked * penalty,
+            "reranked": _penalized_reranker_score(scores.reranked, penalty),
         }
     )
+
+
+def _penalized_reranker_score(score: float, penalty: float) -> float:
+    """Lower a signed reranker score without reversing negative logits."""
+    if score > 0:
+        return score * penalty
+    if score < 0:
+        return score / penalty
+    return penalty - 1
 
 
 def _expanded_id(base_id: str, relation: str, value: str) -> str:

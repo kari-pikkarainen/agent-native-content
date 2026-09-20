@@ -11,9 +11,10 @@ from test_ir import FixtureTokenCounter, ingest_metadata, provenance
 
 from contextbench.compiler import CompilerConfig, DocumentScope, compile_context
 from contextbench.compiler.candidates import node_chunks
+from contextbench.compiler.expand import _penalize
 from contextbench.ir import project_document
 from contextbench.ir.models import IRNodeKind
-from contextbench.retrieval import RetrievalConfig
+from contextbench.retrieval import RetrievalConfig, RetrievalScores
 from contextbench.retrieval.index import HybridIndex
 
 
@@ -367,6 +368,21 @@ def test_paragraph_neighbor_penalty_increases_with_distance(
     )
     assert immediate.scores.reranked == pytest.approx(target.scores.reranked * 0.5)
     assert distant.scores.reranked == pytest.approx(target.scores.reranked * 0.25)
+
+
+@pytest.mark.parametrize(
+    ("score", "expected"),
+    ((2.0, 1.0), (-2.0, -4.0), (0.0, -0.5)),
+)
+def test_penalty_always_lowers_signed_reranker_score(
+    score: float,
+    expected: float,
+) -> None:
+    penalized = _penalize(RetrievalScores(fused=1.0, reranked=score), 0.5)
+
+    assert penalized.fused == 0.5
+    assert penalized.reranked == expected
+    assert penalized.reranked < score
 
 
 def test_adjacent_list_items_stay_together(compiler_fixture) -> None:
