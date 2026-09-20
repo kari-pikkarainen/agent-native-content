@@ -215,23 +215,41 @@ def test_runner_rejects_questions_outside_declared_retrieval_corpus(
         )
 
 
-def test_runner_retrieves_once_per_question_and_system(
+def test_runner_reranks_once_per_question_and_system(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    calls = 0
-    original = HybridIndex.retrieve
+    retrieve_calls = 0
+    candidate_calls = 0
+    rerank_calls = 0
+    original_retrieve = HybridIndex.retrieve
+    original_candidates = HybridIndex.retrieve_candidates
+    original_rerank = HybridIndex.rerank
 
     def counted_retrieve(self, *args, **kwargs):
-        nonlocal calls
-        calls += 1
-        return original(self, *args, **kwargs)
+        nonlocal retrieve_calls
+        retrieve_calls += 1
+        return original_retrieve(self, *args, **kwargs)
+
+    def counted_candidates(self, *args, **kwargs):
+        nonlocal candidate_calls
+        candidate_calls += 1
+        return original_candidates(self, *args, **kwargs)
+
+    def counted_rerank(self, *args, **kwargs):
+        nonlocal rerank_calls
+        rerank_calls += 1
+        return original_rerank(self, *args, **kwargs)
 
     monkeypatch.setattr(HybridIndex, "retrieve", counted_retrieve)
+    monkeypatch.setattr(HybridIndex, "retrieve_candidates", counted_candidates)
+    monkeypatch.setattr(HybridIndex, "rerank", counted_rerank)
 
     _run(tmp_path, run_id="single-retrieval")
 
-    assert calls == len(BenchmarkSystem)
+    assert retrieve_calls == len(BenchmarkSystem) - 1
+    assert candidate_calls == len(BenchmarkSystem)
+    assert rerank_calls == len(BenchmarkSystem)
 
 
 def test_runner_reuses_compiler_page_ranking_across_budgets(

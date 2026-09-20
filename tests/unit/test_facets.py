@@ -44,8 +44,14 @@ def test_faceted_retrieval_promotes_evidence_from_separate_clauses() -> None:
     warming = evidence("warming", "lowest normalized warming emulator")
 
     class StubIndex:
-        def retrieve(self, query: str, **_kwargs):
+        def retrieve_candidates(self, query: str, **_kwargs):
             return (forcing,) if "forcing" in query else (warming,)
+
+        def rerank(self, _query: str, candidates):
+            return tuple(
+                candidate.model_copy(update={"rank": rank})
+                for rank, candidate in enumerate(candidates, 1)
+            )
 
     retrieval = RetrievalConfig(
         candidate_limit=1,

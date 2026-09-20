@@ -98,7 +98,7 @@ def compile_context_with_trace(
             reranker=reranker,
         )
     if ranked_evidence is None:
-        ranked = index.retrieve(
+        ranked = index.retrieve_candidates(
             query,
             token_budget=(
                 retrieval_token_budget

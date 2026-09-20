@@ -183,6 +183,54 @@ def test_token_budget_expands_rerank_pool_by_candidate_token_mass() -> None:
     assert sum(item.chunk.token_count for item in token_aware) >= 10
 
 
+def test_candidate_retrieval_defers_reranking() -> None:
+    class CountingReranker:
+        name = "counting"
+        version = "1"
+
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def score(self, _query, chunks):
+            self.calls += 1
+            return [float(index) for index, _chunk in enumerate(chunks)]
+
+    chunks = tuple(
+        RetrievalChunk(
+            id=f"chunk-{index}",
+            arm=RetrievalArm.COMPILER,
+            document_id="doc",
+            text=f"shared evidence {index}",
+            token_count=1,
+            source_node_ids=(f"node-{index}",),
+            source_item_ids=(f"item-{index}",),
+        )
+        for index in range(3)
+    )
+    config = RetrievalConfig(candidate_limit=3, rerank_limit=3)
+    reranker = CountingReranker()
+    index = HybridIndex(
+        chunks,
+        config=config,
+        tokenizer=FixtureTokenCounter(),
+        reranker=reranker,
+    )
+
+    candidates = index.retrieve_candidates("shared evidence")
+
+    assert reranker.calls == 0
+    assert [candidate.scores.reranked for candidate in candidates] == [
+        candidate.scores.fused for candidate in candidates
+    ]
+    ranked = index.rerank("shared evidence", candidates)
+    assert reranker.calls == 1
+    assert [evidence.chunk.id for evidence in ranked] == [
+        "chunk-2",
+        "chunk-1",
+        "chunk-0",
+    ]
+
+
 def test_duplicate_search_text_does_not_consume_rerank_capacity() -> None:
     chunks = tuple(
         RetrievalChunk(

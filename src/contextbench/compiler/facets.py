@@ -51,20 +51,22 @@ def retrieve_faceted(
     document_ids: set[str],
     config: CompilerConfig,
 ) -> tuple[RankedEvidence, ...]:
-    """Fuse full-query and lexical-facet rankings at fixed output capacity."""
-    if not config.query_faceting_enabled or not ranked:
-        return tuple(ranked)
+    """Fuse cheap facet candidates, then rerank the bounded pool once."""
+    if not ranked:
+        return ()
+    if not config.query_faceting_enabled:
+        return index.rerank(query, ranked)
     facets = query_facets(
         query,
         limit=config.query_facet_limit,
         min_terms=config.query_facet_min_terms,
     )
     if not facets:
-        return tuple(ranked)
+        return index.rerank(query, ranked)
 
     rankings = [tuple(ranked)]
     rankings.extend(
-        index.retrieve(
+        index.retrieve_candidates(
             facet,
             token_budget=token_budget,
             document_ids=document_ids,
@@ -91,7 +93,7 @@ def retrieve_faceted(
         by_id,
         key=lambda chunk_id: (-fused[chunk_id], best_rank[chunk_id], chunk_id),
     )[: len(ranked)]
-    return tuple(
+    fused_candidates = tuple(
         by_id[chunk_id].model_copy(
             update={
                 "rank": rank,
@@ -105,3 +107,4 @@ def retrieve_faceted(
         )
         for rank, chunk_id in enumerate(ordered, 1)
     )
+    return index.rerank(query, fused_candidates)

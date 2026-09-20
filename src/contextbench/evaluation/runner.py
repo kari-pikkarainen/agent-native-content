@@ -301,13 +301,12 @@ def _evaluate_cells(
         retrieval_latencies: dict[BenchmarkSystem, float] = {}
         for system in retrieval_systems:
             retrieval_started = time.perf_counter_ns()
-            raw_ranked = indexes[system].retrieve(
-                question.question,
-                token_budget=max(config.budgets),
-                document_ids=ir_document_ids,
-            )
-            ranked = raw_ranked
             if system == BenchmarkSystem.COMPILER:
+                raw_ranked = indexes[system].retrieve_candidates(
+                    question.question,
+                    token_budget=max(config.budgets),
+                    document_ids=ir_document_ids,
+                )
                 ranked = retrieve_faceted(
                     indexes[system],
                     question.question,
@@ -316,6 +315,13 @@ def _evaluate_cells(
                     document_ids=ir_document_ids,
                     config=config.compiler,
                 )
+            else:
+                raw_ranked = indexes[system].retrieve(
+                    question.question,
+                    token_budget=max(config.budgets),
+                    document_ids=ir_document_ids,
+                )
+                ranked = raw_ranked
             raw_rankings[system] = raw_ranked
             rankings[system] = ranked
             retrieval_latencies[system] = (

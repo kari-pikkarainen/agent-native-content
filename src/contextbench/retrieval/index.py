@@ -114,6 +114,23 @@ class HybridIndex:
         document_ids: set[str] | None = None,
     ) -> tuple[RankedEvidence, ...]:
         """Run sparse, dense, RRF, and reranking stages."""
+        candidates = self.retrieve_candidates(
+            query,
+            limit=limit,
+            token_budget=token_budget,
+            document_ids=document_ids,
+        )
+        return self.rerank(query, candidates)
+
+    def retrieve_candidates(
+        self,
+        query: str,
+        *,
+        limit: int | None = None,
+        token_budget: int | None = None,
+        document_ids: set[str] | None = None,
+    ) -> tuple[RankedEvidence, ...]:
+        """Run sparse, dense, and RRF stages without the cross-encoder."""
         if token_budget is not None and token_budget < 0:
             raise ValueError("token_budget must not be negative")
         minimum_candidate_limit = limit or self.config.candidate_limit
@@ -195,14 +212,6 @@ class HybridIndex:
             )
         else:
             candidate_indices = candidate_indices[:rerank_limit]
-        rerank_scores = self.reranker.score(
-            query,
-            [self.chunks[index] for index in candidate_indices],
-        )
-        ranked = sorted(
-            zip(candidate_indices, rerank_scores, strict=True),
-            key=lambda pair: (-pair[1], -fused[pair[0]], self.chunks[pair[0]].id),
-        )
         return tuple(
             RankedEvidence(
                 rank=rank,
@@ -211,10 +220,40 @@ class HybridIndex:
                     dense=dense_scores.get(index, 0.0),
                     sparse=sparse_scores.get(index, 0.0),
                     fused=fused[index],
-                    reranked=score,
+                    reranked=fused[index],
                 ),
             )
-            for rank, (index, score) in enumerate(ranked, 1)
+            for rank, index in enumerate(candidate_indices, 1)
+        )
+
+    def rerank(
+        self,
+        query: str,
+        candidates: Sequence[RankedEvidence],
+    ) -> tuple[RankedEvidence, ...]:
+        """Apply the configured reranker once to an existing candidate pool."""
+        scores = self.reranker.score(
+            query,
+            [candidate.chunk for candidate in candidates],
+        )
+        ranked = sorted(
+            zip(candidates, scores, strict=True),
+            key=lambda pair: (
+                -pair[1],
+                -pair[0].scores.fused,
+                pair[0].chunk.id,
+            ),
+        )
+        return tuple(
+            candidate.model_copy(
+                update={
+                    "rank": rank,
+                    "scores": candidate.scores.model_copy(
+                        update={"reranked": score}
+                    ),
+                }
+            )
+            for rank, (candidate, score) in enumerate(ranked, 1)
         )
 
     def pack(
