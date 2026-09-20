@@ -106,6 +106,7 @@ def expand_candidates(
                     node,
                     chunk.text,
                     include_headings=config.include_heading_context,
+                    heading_depth=config.heading_context_depth,
                 )
                 expanded.append(
                     CompilerCandidate(
@@ -416,7 +417,11 @@ def _candidate_for_node(
     tokenizer: TokenCounter,
     expansion_order: int,
 ) -> CompilerCandidate:
-    rendered = _render_node(node, include_headings=config.include_heading_context)
+    rendered = _render_node(
+        node,
+        include_headings=config.include_heading_context,
+        heading_depth=config.heading_context_depth,
+    )
     return CompilerCandidate(
         chunk=evidence.chunk.model_copy(
             update={
@@ -441,7 +446,11 @@ def _candidate_for_related_node(
     tokenizer: TokenCounter,
     expansion_order: int,
 ) -> CompilerCandidate:
-    rendered = _render_node(node, include_headings=config.include_heading_context)
+    rendered = _render_node(
+        node,
+        include_headings=config.include_heading_context,
+        heading_depth=config.heading_context_depth,
+    )
     chunk = RetrievalChunk(
         id=_expanded_id(evidence.chunk.id, relation, node.id),
         arm=RetrievalArm.COMPILER,
@@ -522,11 +531,21 @@ def _siblings(
     return [candidate for candidate in document.nodes if candidate.parent_id is None]
 
 
-def _render_node(node: IRNode, *, include_headings: bool) -> str:
+def _render_node(
+    node: IRNode,
+    *,
+    include_headings: bool,
+    heading_depth: int | None = None,
+) -> str:
     headings = node.heading_path
     if headings and headings[-1].strip().casefold() == node.text.strip().casefold():
         headings = headings[:-1]
-    return _render_content(node.text, headings, include_headings=include_headings)
+    return _render_content(
+        node.text,
+        headings,
+        include_headings=include_headings,
+        heading_depth=heading_depth,
+    )
 
 
 def _minimum_table_context_tokens(
@@ -546,6 +565,7 @@ def _minimum_table_context_tokens(
         minimum,
         node.heading_path,
         include_headings=config.include_heading_context,
+        heading_depth=config.heading_context_depth,
     )
     return tokenizer.count(rendered)
 
@@ -568,6 +588,7 @@ def _minimum_table_fragment_tokens(
                 node,
                 " | ".join(row),
                 include_headings=config.include_heading_context,
+                heading_depth=config.heading_context_depth,
             )
         )
         for row in rows
@@ -580,12 +601,14 @@ def _render_table_chunk(
     text: str,
     *,
     include_headings: bool,
+    heading_depth: int | None = None,
 ) -> str:
     if node.table is None:
         return _render_content(
             text,
             node.heading_path,
             include_headings=include_headings,
+            heading_depth=heading_depth,
         )
     prefixes = []
     normalized_text = " ".join(text.split()).casefold()
@@ -600,6 +623,7 @@ def _render_table_chunk(
         table_text,
         node.heading_path,
         include_headings=include_headings,
+        heading_depth=heading_depth,
     )
 
 
@@ -608,12 +632,16 @@ def _render_content(
     heading_path: tuple[str, ...],
     *,
     include_headings: bool,
+    heading_depth: int | None = None,
 ) -> str:
     if not include_headings or not heading_path:
         return text
+    selected_headings = (
+        heading_path[-heading_depth:] if heading_depth is not None else heading_path
+    )
     heading_text = "\n".join(
         heading if index == 0 else f"> {heading}"
-        for index, heading in enumerate(heading_path)
+        for index, heading in enumerate(selected_headings)
     )
     return f"{heading_text}\n\n{text}"
 

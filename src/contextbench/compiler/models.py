@@ -26,6 +26,7 @@ class CompilerConfig(BaseModel):
 
     retrieval: RetrievalConfig = Field(default_factory=RetrievalConfig)
     include_heading_context: bool = True
+    heading_context_depth: int | None = Field(default=None, ge=1)
     include_previous_sibling: bool = False
     include_next_sibling: bool = False
     sibling_neighbor_limit: int = Field(default=1, ge=0)

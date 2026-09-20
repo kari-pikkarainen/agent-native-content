@@ -330,6 +330,25 @@ def test_precomputed_compiler_corpus_index_preserves_output(
     assert precomputed == direct
 
 
+def test_heading_context_can_be_compacted_to_trailing_levels(
+    compiler_fixture,
+) -> None:
+    _source, _ir, scope, counter = compiler_fixture
+    packet = compile_context(
+        "target revenue increased",
+        scope,
+        40,
+        compiler_config(heading_context_depth=1),
+        tokenizer=counter,
+    )
+
+    target = next(
+        item for item in packet.items if "Target revenue increased." in item.content
+    )
+    assert target.content.startswith("Results\n\n")
+    assert "Annual Report" not in target.content
+
+
 def test_compiler_trace_preserves_output_and_candidate_boundaries(
     compiler_fixture,
 ) -> None:

@@ -163,6 +163,13 @@ def evaluate_retrieval(
             help="Maximum compiler node candidates reranked per query or facet.",
         ),
     ] = 250,
+    compiler_heading_context_depth: Annotated[
+        int | None,
+        typer.Option(
+            min=1,
+            help="Optional number of trailing headings rendered with evidence.",
+        ),
+    ] = None,
     compiler_query_facet_rerank_candidate_limit: Annotated[
         int,
         typer.Option(
@@ -196,6 +203,7 @@ def evaluate_retrieval(
             retrieval=retrieval,
             keyed_table_join_enabled=compiler_keyed_table_joins,
             node_rerank_candidate_limit=compiler_node_rerank_candidate_limit,
+            heading_context_depth=compiler_heading_context_depth,
             query_facet_rerank_candidate_limit=(
                 compiler_query_facet_rerank_candidate_limit
             ),
