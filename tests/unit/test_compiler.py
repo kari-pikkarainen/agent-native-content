@@ -365,6 +365,42 @@ def test_compiler_packs_retrieved_table_row_instead_of_whole_table(
     assert "Region | Revenue\nNorth | 42" not in packet.items[0].content
 
 
+def test_table_row_candidates_group_adjacent_rows(compiler_fixture) -> None:
+    _source, ir, _scope, counter = compiler_fixture
+    table_node = next(node for node in ir.nodes if node.kind == IRNodeKind.TABLE)
+    assert table_node.table is not None
+    table = table_node.table.model_copy(
+        update={
+            "rows": (
+                table_node.table.rows[0],
+                ("North", "42"),
+                ("South", "37"),
+            )
+        }
+    )
+    replacement = table_node.model_copy(update={"table": table})
+    document = ir.model_copy(
+        update={
+            "nodes": tuple(
+                replacement if node.id == table_node.id else node
+                for node in ir.nodes
+            )
+        }
+    )
+
+    chunks = node_chunks(
+        [document],
+        tokenizer=counter,
+        table_rows=True,
+        table_row_group_size=2,
+    )
+    rows = [chunk for chunk in chunks if table_node.id in chunk.source_node_ids]
+
+    assert len(rows) == 1
+    assert "Region: North | Revenue: 42" in rows[0].text
+    assert "Region: South | Revenue: 37" in rows[0].text
+
+
 def test_prebuilt_index_must_share_compiler_retrieval_config(
     compiler_fixture,
 ) -> None:
