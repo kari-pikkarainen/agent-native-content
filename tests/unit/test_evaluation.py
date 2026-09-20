@@ -125,6 +125,9 @@ def test_runner_writes_complete_immutable_evidence_artifacts(tmp_path: Path) -> 
     assert manifest["git_commit"] == "a" * 40
     assert manifest["dataset_revision"] == "revision-1"
     assert manifest["question_ids"] == ["question-1"]
+    assert manifest["retrieval_corpus_name"] == "fixture-one"
+    assert manifest["retrieval_corpus_sha256"] == "1" * 64
+    assert manifest["retrieval_corpus_question_ids"] == ["question-1"]
     assert manifest["token_budgets"] == [12, 24]
     assert manifest["embedding_model"] == "hash-256-v1"
     report = (result.path / "report.md").read_text()
@@ -185,6 +188,31 @@ def test_invalid_run_id_is_rejected_before_artifacts_are_written(
         _run(tmp_path, run_id="../escape")
 
     assert not (tmp_path / "escape").exists()
+
+
+def test_runner_rejects_questions_outside_declared_retrieval_corpus(
+    tmp_path: Path,
+) -> None:
+    with pytest.raises(EvaluationError, match="included in the retrieval corpus"):
+        run_retrieval_benchmark(
+            _corpus(tmp_path),
+            config=_config(),
+            artifacts_root=tmp_path / "artifacts",
+            dataset="fixture",
+            dataset_version="v1",
+            dataset_revision="revision-1",
+            subset_name="fixture-one",
+            subset_sha256="1" * 64,
+            retrieval_corpus_name="different",
+            retrieval_corpus_sha256="2" * 64,
+            retrieval_corpus_question_ids=("other-question",),
+            run_id="invalid-corpus",
+            tokenizer=FixtureTokenCounter(),
+            embedder=HashEmbeddingModel(),
+            reranker=LexicalOverlapReranker(),
+            git_commit="a" * 40,
+            clock=lambda: datetime(2026, 9, 19, tzinfo=UTC),
+        )
 
 
 def test_runner_retrieves_once_per_question_and_system(

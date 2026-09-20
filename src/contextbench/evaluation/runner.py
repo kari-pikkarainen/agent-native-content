@@ -80,6 +80,9 @@ def run_retrieval_benchmark(
     dataset_revision: str,
     subset_name: str,
     subset_sha256: str,
+    retrieval_corpus_name: str | None = None,
+    retrieval_corpus_sha256: str | None = None,
+    retrieval_corpus_question_ids: Sequence[str] | None = None,
     run_id: str | None = None,
     tokenizer: TokenCounter | None = None,
     embedder: EmbeddingModel | None = None,
@@ -89,6 +92,16 @@ def run_retrieval_benchmark(
 ) -> BenchmarkRun:
     """Run all configured evidence-only cells and publish immutable artifacts."""
     _validate_corpus(corpus)
+    evaluated_question_ids = tuple(question.id for question in corpus.questions)
+    corpus_question_ids = (
+        tuple(retrieval_corpus_question_ids)
+        if retrieval_corpus_question_ids is not None
+        else evaluated_question_ids
+    )
+    if not set(evaluated_question_ids).issubset(corpus_question_ids):
+        raise EvaluationError(
+            "evaluated questions must be included in the retrieval corpus"
+        )
     counter = tokenizer or TiktokenTokenCounter(config.retrieval.tokenizer_name)
     shared_embedder = embedder or embedding_model_from_config(config.retrieval)
     shared_reranker = reranker or reranker_from_config(config.retrieval)
@@ -139,7 +152,10 @@ def run_retrieval_benchmark(
         dataset_revision=dataset_revision,
         subset_name=subset_name,
         subset_sha256=subset_sha256,
-        question_ids=tuple(question.id for question in corpus.questions),
+        question_ids=evaluated_question_ids,
+        retrieval_corpus_name=retrieval_corpus_name or subset_name,
+        retrieval_corpus_sha256=retrieval_corpus_sha256 or subset_sha256,
+        retrieval_corpus_question_ids=corpus_question_ids,
         documents={
             document_id: DocumentProvenance(
                 ir_document_id=document.id,

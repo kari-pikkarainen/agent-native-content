@@ -135,3 +135,38 @@ def test_eval_retrieval_runs_all_default_budgets_and_prints_artifacts(
     assert set(config.systems) == set(BenchmarkSystem)
     assert config.retrieval.embedding_model == "BAAI/bge-small-en-v1.5"
     assert config.retrieval.reranker_model == ("cross-encoder/ms-marco-MiniLM-L-6-v2")
+    assert captured["retrieval_corpus_subset_file"] is None
+
+
+def test_eval_retrieval_accepts_fixed_retrieval_corpus(
+    tmp_path: Path, monkeypatch
+) -> None:
+    captured = {}
+
+    def fake_run_xl_retrieval(**kwargs):
+        captured.update(kwargs)
+        path = tmp_path / "artifacts" / "runs" / "run-fixed-corpus"
+        return SimpleNamespace(
+            path=path,
+            manifest=SimpleNamespace(run_id="run-fixed-corpus"),
+        )
+
+    monkeypatch.setattr(
+        "contextbench.evaluation.xl_docbench.run_xl_retrieval",
+        fake_run_xl_retrieval,
+    )
+    corpus = tmp_path / "parent.json"
+
+    result = runner.invoke(
+        app,
+        [
+            "eval-retrieval",
+            "--retrieval-corpus-subset-file",
+            str(corpus),
+            "--run-id",
+            "run-fixed-corpus",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert captured["retrieval_corpus_subset_file"] == corpus

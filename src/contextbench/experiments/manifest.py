@@ -35,6 +35,9 @@ class RunManifest(BaseModel):
     subset_name: str
     subset_sha256: str
     question_ids: tuple[str, ...]
+    retrieval_corpus_name: str
+    retrieval_corpus_sha256: str
+    retrieval_corpus_question_ids: tuple[str, ...]
     documents: dict[str, DocumentProvenance]
     systems: tuple[str, ...]
     token_budgets: tuple[int, ...]

@@ -99,6 +99,15 @@ def evaluate_retrieval(
         Path,
         typer.Option(help="Committed benchmark subset manifest."),
     ] = DEFAULT_XL100,
+    retrieval_corpus_subset_file: Annotated[
+        Path | None,
+        typer.Option(
+            help=(
+                "Optional parent subset whose documents define retrieval index "
+                "statistics while only --subset-file questions are evaluated."
+            )
+        ),
+    ] = None,
     source_cache_dir: Annotated[
         Path,
         typer.Option(help="Content-addressed source PDF cache."),
@@ -154,6 +163,7 @@ def evaluate_retrieval(
         result = run_xl_retrieval(
             data_dir=data_dir,
             subset_file=subset_file,
+            retrieval_corpus_subset_file=retrieval_corpus_subset_file,
             source_cache_dir=source_cache_dir,
             ingest_cache_dir=ingest_cache_dir,
             artifacts_root=artifacts_root,

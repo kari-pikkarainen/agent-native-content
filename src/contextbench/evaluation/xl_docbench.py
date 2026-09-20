@@ -16,6 +16,7 @@ from contextbench.evaluation.models import RetrievalBenchmarkConfig
 from contextbench.evaluation.runner import (
     BenchmarkRun,
     EvaluationCorpus,
+    EvaluationError,
     run_retrieval_benchmark,
 )
 from contextbench.ingest import DoclingParser, IngestionCache
@@ -29,6 +30,7 @@ def run_xl_retrieval(
     *,
     data_dir: Path,
     subset_file: Path,
+    retrieval_corpus_subset_file: Path | None = None,
     source_cache_dir: Path,
     ingest_cache_dir: Path,
     artifacts_root: Path,
@@ -37,25 +39,41 @@ def run_xl_retrieval(
     run_id: str | None = None,
     progress: ProgressCallback | None = None,
 ) -> BenchmarkRun:
-    """Download, ingest, project, and benchmark a committed XL subset."""
+    """Benchmark an XL question subset against an optional fixed retrieval corpus."""
     report = progress or (lambda _message: None)
     report("verifying pinned XL-DocBench release")
     download_release(data_dir)
     dataset = XLDocBenchDataset(data_dir)
     subset = load_subset(subset_file)
     questions = tuple(dataset.iter_subset(subset))
+    retrieval_corpus_file = retrieval_corpus_subset_file or subset_file
+    retrieval_corpus_subset = load_subset(retrieval_corpus_file)
+    retrieval_corpus_questions = tuple(
+        dataset.iter_subset(retrieval_corpus_subset)
+    )
+    evaluation_ids = {question.id for question in questions}
+    retrieval_corpus_ids = {
+        question.id for question in retrieval_corpus_questions
+    }
+    if not evaluation_ids.issubset(retrieval_corpus_ids):
+        missing = sorted(evaluation_ids.difference(retrieval_corpus_ids))
+        raise EvaluationError(
+            "evaluation subset is not contained in retrieval corpus subset: "
+            f"{missing}"
+        )
 
     document_ids = tuple(
         sorted(
             {
                 document_id
-                for question in questions
+                for question in retrieval_corpus_questions
                 for document_id in question.document_ids
             }
         )
     )
     report(
-        f"preparing {len(document_ids)} source documents for {len(questions)} questions"
+        f"preparing {len(document_ids)} retrieval-corpus source documents "
+        f"for {len(questions)} evaluated questions"
     )
     source_cache = SourceDocumentCache(source_cache_dir)
     ingestion_cache = IngestionCache(
@@ -94,6 +112,11 @@ def run_xl_retrieval(
         dataset_revision=RELEASE_REVISION,
         subset_name=subset.name,
         subset_sha256=_sha256(subset_file),
+        retrieval_corpus_name=retrieval_corpus_subset.name,
+        retrieval_corpus_sha256=_sha256(retrieval_corpus_file),
+        retrieval_corpus_question_ids=tuple(
+            question.id for question in retrieval_corpus_questions
+        ),
         run_id=run_id,
         tokenizer=tokenizer,
     )
