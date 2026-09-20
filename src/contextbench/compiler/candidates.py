@@ -3,7 +3,7 @@
 import hashlib
 from collections.abc import Sequence
 
-from contextbench.ir.models import IRDocument, IRNodeKind
+from contextbench.ir.models import IRDocument, IRNode, IRNodeKind
 from contextbench.ir.tokenizer import TokenCounter
 from contextbench.retrieval.models import RetrievalArm, RetrievalChunk
 
@@ -14,6 +14,9 @@ def node_chunks(
     documents: Sequence[IRDocument],
     *,
     tokenizer: TokenCounter,
+    table_rows: bool = False,
+    table_row_group_size: int = 1,
+    table_empty_cell_marker: str = "[blank]",
 ) -> tuple[RetrievalChunk, ...]:
     """Represent each content-bearing IR node as a retrieval candidate."""
     chunks: list[RetrievalChunk] = []
@@ -25,6 +28,17 @@ def node_chunks(
                 or node.kind in _NON_EVIDENCE_GROUPS
             ):
                 continue
+            if table_rows and node.kind == IRNodeKind.TABLE:
+                row_chunks = _table_row_chunks(
+                    document,
+                    node,
+                    tokenizer=tokenizer,
+                    group_size=table_row_group_size,
+                    empty_marker=table_empty_cell_marker,
+                )
+                if row_chunks:
+                    chunks.extend(row_chunks)
+                    continue
             search_text = _contextual_search_text(node.text, node.heading_path)
             payload = (
                 f"compiler-node-v2\0{document.id}\0{node.id}\0{search_text}"
@@ -45,6 +59,75 @@ def node_chunks(
                 )
             )
     return tuple(chunks)
+
+
+def _table_row_chunks(
+    document: IRDocument,
+    node: IRNode,
+    *,
+    tokenizer: TokenCounter,
+    group_size: int,
+    empty_marker: str,
+) -> tuple[RetrievalChunk, ...]:
+    if node.table is None or not node.table.rows:
+        return ()
+    rows = node.table.rows
+    if node.table.column_headers and rows[0] == node.table.column_headers:
+        rows = rows[1:]
+    chunks = []
+    for start in range(0, len(rows), group_size):
+        group = rows[start : start + group_size]
+        text = _render_table_rows(
+            group,
+            caption=node.table.caption,
+            headers=node.table.column_headers,
+            empty_marker=empty_marker,
+        )
+        if not text.strip():
+            continue
+        search_text = _contextual_search_text(text, node.heading_path)
+        payload = (
+            f"compiler-table-row-v1\0{document.id}\0{node.id}\0{start}\0"
+            f"{search_text}"
+        ).encode()
+        chunks.append(
+            RetrievalChunk(
+                id=f"chunk_{hashlib.sha256(payload).hexdigest()}",
+                arm=RetrievalArm.COMPILER,
+                document_id=document.id,
+                text=text,
+                search_text=search_text,
+                token_count=tokenizer.count(text),
+                heading_path=node.heading_path,
+                page_start=node.page_start,
+                page_end=node.page_end,
+                source_node_ids=(node.id,),
+                source_item_ids=node.source_item_ids,
+            )
+        )
+    return tuple(chunks)
+
+
+def _render_table_rows(
+    rows: Sequence[tuple[str, ...]],
+    *,
+    caption: str | None,
+    headers: tuple[str, ...],
+    empty_marker: str,
+) -> str:
+    lines = [caption] if caption else []
+    for row in rows:
+        values = tuple(value.strip() or empty_marker for value in row)
+        if headers and len(headers) == len(values):
+            lines.append(
+                " | ".join(
+                    f"{header}: {value}" if header else value
+                    for header, value in zip(headers, values, strict=True)
+                )
+            )
+        else:
+            lines.append(" | ".join(values))
+    return "\n".join(lines)
 
 
 def _contextual_search_text(text: str, heading_path: tuple[str, ...]) -> str:

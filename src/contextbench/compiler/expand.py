@@ -336,7 +336,17 @@ def _candidate_for_node(
     tokenizer: TokenCounter,
     expansion_order: int,
 ) -> CompilerCandidate:
-    rendered = _render_node(node, include_headings=config.include_heading_context)
+    if config.table_row_retrieval_enabled and node.kind == IRNodeKind.TABLE:
+        rendered = _render_content(
+            evidence.chunk.text,
+            node.heading_path,
+            include_headings=config.include_heading_context,
+        )
+    else:
+        rendered = _render_node(
+            node,
+            include_headings=config.include_heading_context,
+        )
     return CompilerCandidate(
         chunk=evidence.chunk.model_copy(
             update={
@@ -348,6 +358,9 @@ def _candidate_for_node(
         scores=evidence.scores,
         origin_rank=evidence.rank,
         expansion_order=expansion_order,
+        allow_shared_source=(
+            config.table_row_retrieval_enabled and node.kind == IRNodeKind.TABLE
+        ),
     )
 
 

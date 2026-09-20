@@ -297,6 +297,72 @@ def test_node_candidates_exclude_furniture_and_search_with_headings(
     assert all(furniture.id not in chunk.source_node_ids for chunk in chunks)
 
 
+def test_table_row_candidates_repeat_headers_and_mark_blank_cells(
+    compiler_fixture,
+) -> None:
+    _source, ir, _scope, counter = compiler_fixture
+    table_node = next(node for node in ir.nodes if node.kind == IRNodeKind.TABLE)
+    assert table_node.table is not None
+    table = table_node.table.model_copy(
+        update={
+            "rows": (
+                table_node.table.rows[0],
+                table_node.table.rows[1],
+                ("South", ""),
+            )
+        }
+    )
+    replacement = table_node.model_copy(update={"table": table})
+    document = ir.model_copy(
+        update={
+            "nodes": tuple(
+                replacement if node.id == table_node.id else node
+                for node in ir.nodes
+            )
+        }
+    )
+
+    chunks = node_chunks(
+        [document],
+        tokenizer=counter,
+        table_rows=True,
+    )
+    rows = [chunk for chunk in chunks if table_node.id in chunk.source_node_ids]
+
+    assert [chunk.text for chunk in rows] == [
+        "Revenue table\nRegion: North | Revenue: 42",
+        "Revenue table\nRegion: South | Revenue: [blank]",
+    ]
+    assert all(chunk.source_item_ids == table_node.source_item_ids for chunk in rows)
+
+
+def test_compiler_packs_retrieved_table_row_instead_of_whole_table(
+    compiler_fixture,
+) -> None:
+    _source, ir, scope, counter = compiler_fixture
+    config = compiler_config(
+        retrieval=RetrievalConfig(candidate_limit=10, rerank_limit=1),
+        table_row_retrieval_enabled=True,
+    )
+    index = HybridIndex(
+        node_chunks([ir], tokenizer=counter, table_rows=True),
+        config=config.retrieval,
+        tokenizer=counter,
+    )
+
+    packet = compile_context(
+        "north revenue 42",
+        scope,
+        40,
+        config,
+        tokenizer=counter,
+        hybrid_index=index,
+    )
+
+    assert "Region: North | Revenue: 42" in packet.items[0].content
+    assert "Region | Revenue\nNorth | 42" not in packet.items[0].content
+
+
 def test_prebuilt_index_must_share_compiler_retrieval_config(
     compiler_fixture,
 ) -> None:

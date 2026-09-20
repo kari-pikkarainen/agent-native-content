@@ -89,7 +89,13 @@ def compile_context_with_trace(
         raise ValueError("hybrid_index configuration differs from compiler config")
     index = hybrid_index
     if index is None:
-        chunks = node_chunks(scope.documents, tokenizer=counter)
+        chunks = node_chunks(
+            scope.documents,
+            tokenizer=counter,
+            table_rows=my_config.table_row_retrieval_enabled,
+            table_row_group_size=my_config.table_row_group_size,
+            table_empty_cell_marker=my_config.table_empty_cell_marker,
+        )
         index = HybridIndex(
             chunks,
             config=my_config.retrieval,
