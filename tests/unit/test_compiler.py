@@ -670,6 +670,44 @@ def test_large_table_is_fragmented_even_when_full_node_fits_budget(
     )
 
 
+def test_table_fragments_count_toward_capacity_before_page_backfill(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = oversized_table_source()
+    counter = FixtureTokenCounter()
+    ir = project_document(source, ingest_metadata(tmp_path), tokenizer=counter)
+    scope = DocumentScope.from_documents(
+        [ir],
+        source_documents={ir.id: source},
+    )
+    config = compiler_config(
+        retrieval=RetrievalConfig(candidate_limit=5, rerank_limit=1),
+        include_heading_context=False,
+        table_chunk_tokens=12,
+        page_neighbor_min_budget=17,
+        page_neighbor_radius=1,
+    )
+    calls = 0
+
+    def counted(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        return ()
+
+    monkeypatch.setattr(compiler_expand, "_page_neighbor_candidates", counted)
+
+    compile_context(
+        "District9 109",
+        scope,
+        17,
+        config,
+        tokenizer=counter,
+    )
+
+    assert calls == 0
+
+
 @pytest.mark.parametrize("budget", range(0, 21))
 def test_compiler_never_exceeds_token_boundary(compiler_fixture, budget: int) -> None:
     _source, _ir, scope, counter = compiler_fixture
