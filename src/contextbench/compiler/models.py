@@ -43,9 +43,6 @@ class CompilerConfig(BaseModel):
     page_neighbor_score_penalty: float = Field(default=0.8, gt=0, le=1)
     preserve_tables: bool = True
     table_chunk_tokens: int = Field(default=512, ge=1)
-    table_row_retrieval_enabled: bool = False
-    table_row_group_size: int = Field(default=1, ge=1)
-    table_empty_cell_marker: str = Field(default="[blank]", min_length=1)
     max_expanded_candidates: int = Field(default=500, ge=1)
 
 

@@ -244,13 +244,7 @@ def _build_indexes(
             artifacts_root=artifacts_root,
         )
     if BenchmarkSystem.COMPILER in systems:
-        chunks = node_chunks(
-            documents,
-            tokenizer=tokenizer,
-            table_rows=config.compiler.table_row_retrieval_enabled,
-            table_row_group_size=config.compiler.table_row_group_size,
-            table_empty_cell_marker=config.compiler.table_empty_cell_marker,
-        )
+        chunks = node_chunks(documents, tokenizer=tokenizer)
         index = HybridIndex(
             chunks,
             config=config.retrieval,

@@ -17,10 +17,6 @@ _LEADING_SCAFFOLD = re.compile(
     flags=re.IGNORECASE,
 )
 _TERM = re.compile(r"[\w][\w.-]*", flags=re.UNICODE)
-_TABLE_REFERENCE = re.compile(
-    r"\bTable\s+[A-Z0-9]+(?:[.\-][A-Z0-9]+)+",
-    flags=re.IGNORECASE,
-)
 
 
 def query_facets(
@@ -28,28 +24,12 @@ def query_facets(
     *,
     limit: int,
     min_terms: int,
-    include_table_references: bool = False,
 ) -> tuple[str, ...]:
     """Extract bounded, source-order lexical clauses from a complex query."""
     normalized = " ".join(query.split())
     candidates = _CLAUSE_BOUNDARY.split(normalized)
     facets = []
     seen = {normalized.casefold().rstrip("?.!")}
-    if include_table_references:
-        previous_end = 0
-        for match in _TABLE_REFERENCE.finditer(normalized):
-            local_context = normalized[previous_end : match.start()]
-            local_context = _LEADING_SCAFFOLD.sub("", local_context).strip(
-                " .?!,:;-"
-            )
-            reference = match.group()
-            facet = f"{local_context} {reference}".strip()
-            key = facet.casefold()
-            if key not in seen:
-                seen.add(key)
-                facets.append(facet)
-            previous_end = match.end()
-    clause_count = 0
     for candidate in candidates:
         facet = _LEADING_SCAFFOLD.sub("", candidate).strip(" .?!,:;-")
         key = facet.casefold()
@@ -57,8 +37,7 @@ def query_facets(
             continue
         seen.add(key)
         facets.append(facet)
-        clause_count += 1
-        if clause_count == limit:
+        if len(facets) == limit:
             break
     return tuple(facets)
 
@@ -79,7 +58,6 @@ def retrieve_faceted(
         query,
         limit=config.query_facet_limit,
         min_terms=config.query_facet_min_terms,
-        include_table_references=config.table_row_retrieval_enabled,
     )
     if not facets:
         return tuple(ranked)

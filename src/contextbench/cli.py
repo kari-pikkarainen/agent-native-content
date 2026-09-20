@@ -146,24 +146,6 @@ def evaluate_retrieval(
             ),
         ),
     ] = False,
-    compiler_table_rows: Annotated[
-        bool,
-        typer.Option(
-            "--compiler-table-rows",
-            help=(
-                "Index provenance-preserving table rows with repeated headers "
-                "and explicit blank cells."
-            ),
-        ),
-    ] = False,
-    compiler_table_row_group_size: Annotated[
-        int,
-        typer.Option(
-            "--compiler-table-row-group-size",
-            min=1,
-            help="Number of adjacent logical rows per table retrieval candidate.",
-        ),
-    ] = 1,
     run_id: Annotated[
         str | None,
         typer.Option(help="Optional immutable run identifier."),
@@ -186,11 +168,7 @@ def evaluate_retrieval(
         seed=seed,
         compiler_stage_audit=compiler_stage_audit,
         retrieval=retrieval,
-        compiler=CompilerConfig(
-            retrieval=retrieval,
-            table_row_retrieval_enabled=compiler_table_rows,
-            table_row_group_size=compiler_table_row_group_size,
-        ),
+        compiler=CompilerConfig(retrieval=retrieval),
     )
     try:
         result = run_xl_retrieval(
