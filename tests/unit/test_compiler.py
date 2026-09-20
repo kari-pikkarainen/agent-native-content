@@ -305,9 +305,10 @@ def test_table_row_candidates_repeat_headers_and_mark_blank_cells(
     assert table_node.table is not None
     table = table_node.table.model_copy(
         update={
+            "column_headers": ("Region", "Main References"),
             "rows": (
-                table_node.table.rows[0],
-                table_node.table.rows[1],
+                ("Region", "Main References"),
+                ("North", "42"),
                 ("South", ""),
             )
         }
@@ -330,9 +331,10 @@ def test_table_row_candidates_repeat_headers_and_mark_blank_cells(
     rows = [chunk for chunk in chunks if table_node.id in chunk.source_node_ids]
 
     assert [chunk.text for chunk in rows] == [
-        "Revenue table\nRegion: North | Revenue: 42",
-        "Revenue table\nRegion: South | Revenue: [blank]",
+        "Revenue table\nRegion: North | Main References: 42",
+        "Revenue table\nRegion: South | Main References: [blank]",
     ]
+    assert all("MainReferences" in chunk.search_text for chunk in rows)
     assert all(chunk.source_item_ids == table_node.source_item_ids for chunk in rows)
 
 

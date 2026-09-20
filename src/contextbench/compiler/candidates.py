@@ -1,6 +1,7 @@
 """IR-node candidate construction for compiler retrieval."""
 
 import hashlib
+import re
 from collections.abc import Sequence
 
 from contextbench.ir.models import IRDocument, IRNode, IRNodeKind
@@ -85,7 +86,11 @@ def _table_row_chunks(
         )
         if not text.strip():
             continue
-        search_text = _contextual_search_text(text, node.heading_path)
+        aliases = _compact_header_aliases(node.table.column_headers)
+        search_text = _contextual_search_text(
+            "\n".join((*aliases, text)),
+            node.heading_path,
+        )
         payload = (
             f"compiler-table-row-v1\0{document.id}\0{node.id}\0{start}\0"
             f"{search_text}"
@@ -128,6 +133,15 @@ def _render_table_rows(
         else:
             lines.append(" | ".join(values))
     return "\n".join(lines)
+
+
+def _compact_header_aliases(headers: tuple[str, ...]) -> tuple[str, ...]:
+    aliases = []
+    for header in headers:
+        compact = re.sub(r"[^\w]+", "", header, flags=re.UNICODE)
+        if compact and compact.casefold() != header.casefold():
+            aliases.append(compact)
+    return tuple(dict.fromkeys(aliases))
 
 
 def _contextual_search_text(text: str, heading_path: tuple[str, ...]) -> str:
