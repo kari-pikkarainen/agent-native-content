@@ -199,6 +199,7 @@ def joined_table_source() -> DoclingDocument:
         ("Institute: Model", "Dataset citation and DOI"),
         ("ORG:ALPHA-1", "Alpha dataset DOI"),
         ("ORG:BETA-2", "Beta dataset DOI"),
+        ("ORG:BETA-2", "Beta scenario DOI"),
     )
     second_cells = [
         TableCell(
@@ -213,7 +214,7 @@ def joined_table_source() -> DoclingDocument:
         for column, text in enumerate(values)
     ]
     document.add_table(
-        data=TableData(table_cells=second_cells, num_rows=3, num_cols=2),
+        data=TableData(table_cells=second_cells, num_rows=4, num_cols=2),
         caption=second_caption,
         prov=provenance(2, "model datasets", 700),
     )
@@ -755,7 +756,7 @@ def test_keyed_table_join_selects_constraint_row_and_preserves_provenance(
     best = candidates[0]
     assert "Joined table key: beta-2" in best.chunk.text
     assert "Table A.2" in best.chunk.text
-    assert "Dataset citation and DOI: Beta dataset DOI" in best.chunk.text
+    assert "Dataset citation and DOI: Beta" in best.chunk.text
     assert "Table A.1" in best.chunk.text
     assert "Main References: [blank]" in best.chunk.text
     table_nodes = tuple(node for node in ir.nodes if node.kind == IRNodeKind.TABLE)

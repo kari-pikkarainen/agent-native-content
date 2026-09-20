@@ -50,7 +50,7 @@ def keyed_table_join_candidates(
     if len(references) < 2:
         return ()
 
-    chunks: list[tuple[RetrievalChunk, float]] = []
+    chunks: list[tuple[RetrievalChunk, float, tuple[str, str, str, str]]] = []
     seen_pairs: set[tuple[str, int, str, int]] = set()
     for document in documents:
         rows_by_reference = _rows_by_reference(document, references)
@@ -94,18 +94,37 @@ def keyed_table_join_candidates(
                         text=text,
                         tokenizer=tokenizer,
                     )
-                    chunks.append((chunk, _lexical_score(query, text)))
+                    group_key = (
+                        document.id,
+                        _reference_key(left.reference),
+                        _reference_key(right.reference),
+                        shared_keys[0],
+                    )
+                    chunks.append((chunk, _lexical_score(query, text), group_key))
 
     if not chunks:
         return ()
     prelimit = candidate_limit * 8
     chunks.sort(key=lambda item: (-item[1], item[0].id))
     bounded = chunks[:prelimit]
-    reranker_scores = reranker.score(query, [chunk for chunk, _score in bounded])
+    reranker_scores = reranker.score(
+        query,
+        [chunk for chunk, _score, _group_key in bounded],
+    )
     scored = sorted(
         zip(bounded, reranker_scores, strict=True),
         key=lambda item: (-item[1], -item[0][1], item[0][0].id),
-    )[:candidate_limit]
+    )
+    selected = []
+    seen_groups = set()
+    for item in scored:
+        group_key = item[0][2]
+        if group_key in seen_groups:
+            continue
+        seen_groups.add(group_key)
+        selected.append(item)
+        if len(selected) == candidate_limit:
+            break
     return tuple(
         CompilerCandidate(
             chunk=chunk,
@@ -114,7 +133,10 @@ def keyed_table_join_candidates(
             expansion_order=rank - 1,
             allow_shared_source=True,
         )
-        for rank, ((chunk, lexical_score), reranker_score) in enumerate(scored, 1)
+        for rank, (
+            (chunk, lexical_score, _group_key),
+            reranker_score,
+        ) in enumerate(selected, 1)
     )
 
 
