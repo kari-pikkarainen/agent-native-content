@@ -70,7 +70,7 @@ def retrieve_faceted(
             facet,
             token_budget=token_budget,
             document_ids=document_ids,
-            maximum_rerank_limit=config.node_rerank_candidate_limit,
+            maximum_rerank_limit=config.query_facet_rerank_candidate_limit,
         )
         for facet in facets
     )

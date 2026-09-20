@@ -162,7 +162,14 @@ def evaluate_retrieval(
             min=1,
             help="Maximum compiler node candidates reranked per query or facet.",
         ),
-    ] = 128,
+    ] = 250,
+    compiler_query_facet_rerank_candidate_limit: Annotated[
+        int,
+        typer.Option(
+            min=1,
+            help="Maximum candidates reranked for each supplemental query facet.",
+        ),
+    ] = 96,
     run_id: Annotated[
         str | None,
         typer.Option(help="Optional immutable run identifier."),
@@ -189,6 +196,9 @@ def evaluate_retrieval(
             retrieval=retrieval,
             keyed_table_join_enabled=compiler_keyed_table_joins,
             node_rerank_candidate_limit=compiler_node_rerank_candidate_limit,
+            query_facet_rerank_candidate_limit=(
+                compiler_query_facet_rerank_candidate_limit
+            ),
         ),
     )
     try:
