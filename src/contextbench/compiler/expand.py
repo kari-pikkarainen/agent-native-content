@@ -229,10 +229,9 @@ def _unique_candidate_capacity(
         if chunk.token_count > token_budget:
             continue
         source_key = (chunk.document_id, *sorted(chunk.source_item_ids))
-        if not candidate.allow_shared_source and source_key in seen_sources:
+        if source_key in seen_sources:
             continue
-        if not candidate.allow_shared_source:
-            seen_sources.add(source_key)
+        seen_sources.add(source_key)
         total += chunk.token_count
     return total
 
