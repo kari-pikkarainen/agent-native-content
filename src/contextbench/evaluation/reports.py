@@ -96,7 +96,10 @@ def markdown_report(summary: RetrievalBenchmarkSummary) -> str:
             continue
         best_baseline = max(
             (row for row in (fixed, structural) if row is not None),
-            key=lambda row: row.full_evidence_coverage_rate,
+            key=lambda row: (
+                row.full_evidence_coverage_rate,
+                row.mean_evidence_page_recall,
+            ),
             default=None,
         )
         if best_baseline is None:

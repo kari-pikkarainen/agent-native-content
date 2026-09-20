@@ -16,8 +16,11 @@ from contextbench.evaluation import (
     EvaluationCorpus,
     EvaluationError,
     RetrievalBenchmarkConfig,
+    RetrievalBenchmarkSummary,
     run_retrieval_benchmark,
 )
+from contextbench.evaluation.models import RetrievalSummaryRow
+from contextbench.evaluation.reports import markdown_report
 from contextbench.ir import project_document
 from contextbench.retrieval import (
     HashEmbeddingModel,
@@ -127,6 +130,33 @@ def test_runner_writes_complete_immutable_evidence_artifacts(tmp_path: Path) -> 
     report = (result.path / "report.md").read_text()
     assert "No answer-generation model was used" in report
     assert "Evidence-only decision gate" in report
+
+
+def test_report_breaks_baseline_coverage_ties_with_recall() -> None:
+    def row(system: BenchmarkSystem, recall: float) -> RetrievalSummaryRow:
+        return RetrievalSummaryRow(
+            system=system,
+            token_budget=2048,
+            question_count=2,
+            mean_evidence_page_recall=recall,
+            full_evidence_coverage_rate=0.0,
+            mean_context_tokens=2048.0,
+            median_context_tokens=2048.0,
+            median_tokens_to_full_evidence=None,
+            mean_redundancy=0.0,
+            mean_retrieval_latency_ms=1.0,
+        )
+
+    summary = RetrievalBenchmarkSummary(
+        run_id="baseline-tie",
+        rows=(
+            row(BenchmarkSystem.FIXED, 0.5),
+            row(BenchmarkSystem.STRUCTURAL, 0.7),
+            row(BenchmarkSystem.COMPILER, 0.6),
+        ),
+    )
+
+    assert "-0.100 recall" in markdown_report(summary)
 
 
 def test_repeated_fixture_runs_reproduce_selection_and_refuse_overwrite(
