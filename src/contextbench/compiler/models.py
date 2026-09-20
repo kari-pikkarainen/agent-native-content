@@ -36,8 +36,6 @@ class CompilerConfig(BaseModel):
     query_facet_limit: int = Field(default=3, ge=1)
     query_facet_min_terms: int = Field(default=3, ge=1)
     query_facet_full_weight: float = Field(default=2.0, gt=0)
-    structural_anchor_enabled: bool = False
-    structural_anchor_candidate_limit: int = Field(default=250, ge=1)
     page_neighbor_radius: int = Field(default=3, ge=0)
     page_neighbor_min_budget: int = Field(default=16384, ge=1)
     page_neighbor_origin_limit: int = Field(default=20, ge=1)

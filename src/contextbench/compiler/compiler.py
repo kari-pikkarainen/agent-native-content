@@ -4,7 +4,6 @@ import hashlib
 import json
 from collections.abc import Sequence
 
-from contextbench.compiler.anchors import anchor_node_evidence
 from contextbench.compiler.candidates import node_chunks
 from contextbench.compiler.dedupe import deduplicate_candidates
 from contextbench.compiler.expand import expand_candidates
@@ -21,7 +20,7 @@ from contextbench.ir.models import IRDocument
 from contextbench.ir.tokenizer import TiktokenTokenCounter, TokenCounter
 from contextbench.retrieval.embeddings import EmbeddingModel
 from contextbench.retrieval.index import HybridIndex
-from contextbench.retrieval.models import ContextPacket, RankedEvidence, RetrievalArm
+from contextbench.retrieval.models import ContextPacket, RankedEvidence
 from contextbench.retrieval.rerank import Reranker
 
 
@@ -37,7 +36,6 @@ def compile_context(
     hybrid_index: HybridIndex | None = None,
     retrieval_token_budget: int | None = None,
     ranked_evidence: Sequence[RankedEvidence] | None = None,
-    structural_anchor_evidence: Sequence[RankedEvidence] | None = None,
     query_cache: CompilerQueryCache | None = None,
 ) -> ContextPacket:
     """Compile query-specific evidence without an LLM or budget overflow."""
@@ -52,7 +50,6 @@ def compile_context(
         hybrid_index=hybrid_index,
         retrieval_token_budget=retrieval_token_budget,
         ranked_evidence=ranked_evidence,
-        structural_anchor_evidence=structural_anchor_evidence,
         query_cache=query_cache,
     )
     return packet
@@ -70,7 +67,6 @@ def compile_context_with_trace(
     hybrid_index: HybridIndex | None = None,
     retrieval_token_budget: int | None = None,
     ranked_evidence: Sequence[RankedEvidence] | None = None,
-    structural_anchor_evidence: Sequence[RankedEvidence] | None = None,
     query_cache: CompilerQueryCache | None = None,
 ) -> tuple[ContextPacket, CompilerTrace]:
     """Compile context and expose immutable candidate stages for diagnostics."""
@@ -101,44 +97,7 @@ def compile_context_with_trace(
             embedder=embedder,
             reranker=reranker,
         )
-    if my_config.structural_anchor_enabled:
-        if ranked_evidence is not None:
-            raise ValueError(
-                "ranked_evidence cannot be supplied in structural-anchor mode"
-            )
-        structural_ranked = (
-            tuple(structural_anchor_evidence)
-            if structural_anchor_evidence is not None
-            else _retrieve_structural_anchors(
-                query,
-                scope,
-                token_budget=(
-                    retrieval_token_budget
-                    if retrieval_token_budget is not None
-                    else token_budget
-                ),
-                config=my_config,
-                tokenizer=counter,
-                embedder=index.embedder,
-                reranker=index.reranker,
-            )
-        )
-        _validate_ranked_scope(
-            structural_ranked,
-            document_ids,
-            name="structural_anchor_evidence",
-        )
-        ranked = anchor_node_evidence(
-            structural_ranked,
-            scope.documents,
-            tokenizer=counter,
-            limit=my_config.structural_anchor_candidate_limit,
-        )
-    elif structural_anchor_evidence is not None:
-        raise ValueError(
-            "structural_anchor_evidence requires structural_anchor_enabled"
-        )
-    elif ranked_evidence is None:
+    if ranked_evidence is None:
         ranked = index.retrieve(
             query,
             token_budget=(
@@ -162,7 +121,14 @@ def compile_context_with_trace(
         )
     else:
         ranked = tuple(ranked_evidence)
-        _validate_ranked_scope(ranked, document_ids, name="ranked_evidence")
+        unexpected_documents = {
+            evidence.chunk.document_id for evidence in ranked
+        }.difference(document_ids)
+        if unexpected_documents:
+            raise ValueError(
+                "ranked_evidence contains documents outside document_scope: "
+                f"{sorted(unexpected_documents)}"
+            )
     if query_cache is not None:
         query_cache.begin_compilation()
     expanded = expand_candidates(
@@ -198,54 +164,6 @@ def compile_context_with_trace(
         expanded_candidates=tuple(expanded),
         deduplicated_candidates=tuple(unique),
     )
-
-
-def _retrieve_structural_anchors(
-    query: str,
-    scope: DocumentScope,
-    *,
-    token_budget: int,
-    config: CompilerConfig,
-    tokenizer: TokenCounter,
-    embedder: EmbeddingModel,
-    reranker: Reranker,
-) -> tuple[RankedEvidence, ...]:
-    document_ids = {document.id for document in scope.documents}
-    missing_sources = document_ids.difference(scope.source_documents)
-    if missing_sources:
-        raise ValueError(
-            "structural-anchor mode requires source documents for every IR document"
-        )
-    index = HybridIndex.build(
-        scope.documents,
-        arm=RetrievalArm.STRUCTURAL,
-        config=config.retrieval,
-        source_documents=scope.source_documents,
-        tokenizer=tokenizer,
-        embedder=embedder,
-        reranker=reranker,
-    )
-    return index.retrieve(
-        query,
-        token_budget=token_budget,
-        document_ids=document_ids,
-    )
-
-
-def _validate_ranked_scope(
-    ranked: Sequence[RankedEvidence],
-    document_ids: Sequence[str],
-    *,
-    name: str,
-) -> None:
-    unexpected_documents = {
-        evidence.chunk.document_id for evidence in ranked
-    }.difference(document_ids)
-    if unexpected_documents:
-        raise ValueError(
-            f"{name} contains documents outside document_scope: "
-            f"{sorted(unexpected_documents)}"
-        )
 
 
 def _config_hash(config: CompilerConfig) -> str:

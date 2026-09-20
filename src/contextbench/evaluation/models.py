@@ -40,11 +40,6 @@ class RetrievalBenchmarkConfig(BaseModel):
             raise ValueError("compiler and baseline retrieval configs must match")
         if self.compiler_stage_audit and BenchmarkSystem.COMPILER not in self.systems:
             raise ValueError("compiler_stage_audit requires the compiler system")
-        if (
-            self.compiler.structural_anchor_enabled
-            and BenchmarkSystem.COMPILER not in self.systems
-        ):
-            raise ValueError("structural-anchor mode requires the compiler system")
         return self
 
 
@@ -73,7 +68,6 @@ class CompilerStageAuditRecord(BaseModel):
     faceted_node_retrieval: CandidateStageMetrics
     structural_retrieval: CandidateStageMetrics
     compiler_structural_union: CandidateStageMetrics
-    compiler_input: CandidateStageMetrics
     structural_expansion: CandidateStageMetrics
     deduplication: CandidateStageMetrics
     packing: CandidateStageMetrics
