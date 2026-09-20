@@ -36,6 +36,11 @@ class CompilerConfig(BaseModel):
     query_facet_limit: int = Field(default=3, ge=1)
     query_facet_min_terms: int = Field(default=3, ge=1)
     query_facet_full_weight: float = Field(default=2.0, gt=0)
+    query_reference_facets_enabled: bool = False
+    query_reference_facet_limit: int = Field(default=4, ge=1)
+    structural_fusion_enabled: bool = False
+    facet_coverage_packing_enabled: bool = False
+    facet_coverage_limit: int = Field(default=4, ge=1)
     page_neighbor_radius: int = Field(default=3, ge=0)
     page_neighbor_min_budget: int = Field(default=16384, ge=1)
     page_neighbor_origin_limit: int = Field(default=20, ge=1)
@@ -82,6 +87,7 @@ class CompilerTrace:
 
     ranked_evidence: tuple[RankedEvidence, ...]
     expanded_candidates: tuple[CompilerCandidate, ...]
+    fused_candidates: tuple[CompilerCandidate, ...]
     deduplicated_candidates: tuple[CompilerCandidate, ...]
 
 

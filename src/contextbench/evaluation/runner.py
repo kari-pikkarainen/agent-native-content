@@ -232,7 +232,11 @@ def _build_indexes(
             reranker=reranker,
             artifacts_root=artifacts_root,
         )
-    if BenchmarkSystem.STRUCTURAL in systems or config.compiler_stage_audit:
+    if (
+        BenchmarkSystem.STRUCTURAL in systems
+        or config.compiler_stage_audit
+        or config.compiler.structural_fusion_enabled
+    ):
         indexes[BenchmarkSystem.STRUCTURAL] = HybridIndex.build(
             documents,
             arm=RetrievalArm.STRUCTURAL,
@@ -292,7 +296,10 @@ def _evaluate_cells(
         )
         retrieval_systems = list(config.systems)
         if (
-            config.compiler_stage_audit
+            (
+                config.compiler_stage_audit
+                or config.compiler.structural_fusion_enabled
+            )
             and BenchmarkSystem.STRUCTURAL not in retrieval_systems
         ):
             retrieval_systems.append(BenchmarkSystem.STRUCTURAL)
@@ -322,6 +329,22 @@ def _evaluate_cells(
                 time.perf_counter_ns() - retrieval_started
             ) / 1_000_000
 
+        structural_for_compiler: tuple[RankedEvidence, ...] | None = None
+        if config.compiler.structural_fusion_enabled:
+            structural_facet_started = time.perf_counter_ns()
+            structural_for_compiler = retrieve_faceted(
+                indexes[BenchmarkSystem.STRUCTURAL],
+                question.question,
+                raw_rankings[BenchmarkSystem.STRUCTURAL],
+                token_budget=max(config.budgets),
+                document_ids=ir_document_ids,
+                config=config.compiler,
+            )
+            retrieval_latencies[BenchmarkSystem.COMPILER] += (
+                retrieval_latencies[BenchmarkSystem.STRUCTURAL]
+                + (time.perf_counter_ns() - structural_facet_started) / 1_000_000
+            )
+
         for system in config.systems:
             compiler_cache = (
                 CompilerQueryCache() if system == BenchmarkSystem.COMPILER else None
@@ -342,6 +365,7 @@ def _evaluate_cells(
                         reranker=reranker,
                         hybrid_index=indexes[system],
                         ranked_evidence=ranked,
+                        structural_evidence=structural_for_compiler,
                         query_cache=compiler_cache,
                     )
                 else:
@@ -356,6 +380,7 @@ def _evaluate_cells(
                         embedder=embedder,
                         reranker=reranker,
                         ranked_evidence=ranked,
+                        structural_evidence=structural_for_compiler,
                         compiler_cache=compiler_cache,
                     )
                 elapsed_ms = retrieval_elapsed_ms + (
@@ -423,6 +448,11 @@ def _evaluate_cells(
                                 trace.expanded_candidates,
                                 corpus.documents,
                             ),
+                            representation_fusion=evaluate_compiler_candidates(
+                                question,
+                                trace.fused_candidates,
+                                corpus.documents,
+                            ),
                             deduplication=evaluate_compiler_candidates(
                                 question,
                                 trace.deduplicated_candidates,
@@ -448,6 +478,7 @@ def _context_for_system(
     embedder: EmbeddingModel,
     reranker: Reranker,
     ranked_evidence: Sequence[RankedEvidence],
+    structural_evidence: Sequence[RankedEvidence] | None,
     compiler_cache: CompilerQueryCache | None,
 ) -> ContextPacket:
     if system == BenchmarkSystem.COMPILER:
@@ -461,6 +492,7 @@ def _context_for_system(
             reranker=reranker,
             hybrid_index=index,
             ranked_evidence=ranked_evidence,
+            structural_evidence=structural_evidence,
             query_cache=compiler_cache,
         )
     return index.pack_ranked(

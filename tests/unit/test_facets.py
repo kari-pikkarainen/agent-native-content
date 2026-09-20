@@ -23,6 +23,24 @@ def test_query_facets_extract_bounded_meaningful_clauses() -> None:
     )
 
 
+def test_query_facets_extract_explicit_document_references() -> None:
+    query = (
+        "Which dataset listed in Table AII.10 has a blank entry in Table AII.5?"
+    )
+
+    facets = query_facets(
+        query,
+        limit=3,
+        min_terms=3,
+        include_references=True,
+        reference_limit=4,
+    )
+
+    assert facets[:2] == ("Table AII.10", "Table AII.5")
+    assert facets[2:] == (
+        "dataset listed in Table AII.10 has a blank entry in Table AII.5",
+    )
+
 def test_faceted_retrieval_promotes_evidence_from_separate_clauses() -> None:
     def evidence(chunk_id: str, text: str) -> RankedEvidence:
         return RankedEvidence(

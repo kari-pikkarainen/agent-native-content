@@ -19,9 +19,17 @@ from contextbench.compiler import (
 )
 from contextbench.compiler.candidates import node_chunks
 from contextbench.compiler.expand import _penalize
+from contextbench.compiler.models import CompilerCandidate
+from contextbench.compiler.pack import pack_candidates
 from contextbench.ir import project_document
 from contextbench.ir.models import IRNodeKind
-from contextbench.retrieval import RetrievalConfig, RetrievalScores
+from contextbench.retrieval import (
+    RankedEvidence,
+    RetrievalArm,
+    RetrievalChunk,
+    RetrievalConfig,
+    RetrievalScores,
+)
 from contextbench.retrieval.index import HybridIndex
 
 
@@ -241,7 +249,98 @@ def test_compiler_trace_preserves_output_and_candidate_boundaries(
     )
     assert trace.ranked_evidence
     assert len(trace.expanded_candidates) >= len(trace.ranked_evidence)
+    assert trace.fused_candidates == trace.expanded_candidates
     assert len(trace.deduplicated_candidates) <= len(trace.expanded_candidates)
+
+
+def test_structural_candidates_are_interleaved_before_deduplication(
+    compiler_fixture,
+) -> None:
+    _source, ir, scope, counter = compiler_fixture
+    config = compiler_config(structural_fusion_enabled=True)
+    index = HybridIndex(
+        node_chunks([ir], tokenizer=counter),
+        config=config.retrieval,
+        tokenizer=counter,
+    )
+    ranked = index.retrieve("target revenue increased", token_budget=50)
+    node = next(node for node in ir.nodes if node.text == "Measurements were audited.")
+    complement = RankedEvidence(
+        rank=1,
+        chunk=RetrievalChunk(
+            id="structural-complement",
+            arm=RetrievalArm.STRUCTURAL,
+            document_id=ir.id,
+            text="Structural complement evidence.",
+            token_count=counter.count("Structural complement evidence."),
+            page_start=2,
+            page_end=2,
+            source_node_ids=(node.id,),
+            source_item_ids=node.source_item_ids,
+        ),
+        scores=RetrievalScores(reranked=1),
+    )
+
+    packet, trace = compile_context_with_trace(
+        "target revenue increased",
+        scope,
+        50,
+        config,
+        tokenizer=counter,
+        hybrid_index=index,
+        ranked_evidence=ranked,
+        structural_evidence=(complement,),
+    )
+
+    assert trace.fused_candidates[1].chunk.id == "structural-complement"
+    assert any(
+        "Structural complement evidence" in item.content for item in packet.items
+    )
+
+
+def test_facet_coverage_packing_reserves_room_for_matching_evidence() -> None:
+    counter = FixtureTokenCounter()
+
+    def candidate(identifier: str, text: str, rank: int) -> CompilerCandidate:
+        return CompilerCandidate(
+            chunk=RetrievalChunk(
+                id=identifier,
+                arm=RetrievalArm.COMPILER,
+                document_id="doc",
+                text=text,
+                token_count=counter.count(text),
+                source_node_ids=(f"node-{identifier}",),
+                source_item_ids=(f"item-{identifier}",),
+            ),
+            scores=RetrievalScores(reranked=1 / rank),
+            origin_rank=rank,
+            expansion_order=rank - 1,
+        )
+
+    general = candidate("general", "general background", 1)
+    table = candidate("table", "Table AII.5 target evidence", 2)
+    budget = counter.count(table.chunk.text)
+
+    greedy = pack_candidates(
+        "query",
+        (general, table),
+        token_budget=budget,
+        tokenizer=counter,
+        metadata={},
+    )
+    covered = pack_candidates(
+        "query",
+        (general, table),
+        token_budget=budget,
+        tokenizer=counter,
+        metadata={},
+        coverage_facets=("Table AII.5",),
+    )
+
+    assert [item.content for item in greedy.items] == ["general background"]
+    assert [item.content for item in covered.items] == [
+        "Table AII.5 target evidence"
+    ]
 
 
 def test_pre_ranked_evidence_rejects_documents_outside_scope(
