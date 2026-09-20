@@ -23,12 +23,12 @@ class CompilerConfig(BaseModel):
 
     retrieval: RetrievalConfig = Field(default_factory=RetrievalConfig)
     include_heading_context: bool = True
-    include_previous_sibling: bool = True
-    include_next_sibling: bool = True
-    sibling_neighbor_limit: int = Field(default=2, ge=0)
+    include_previous_sibling: bool = False
+    include_next_sibling: bool = False
+    sibling_neighbor_limit: int = Field(default=1, ge=0)
     sibling_score_penalty: float = Field(default=0.85, gt=0, le=1)
     group_adjacent_list_items: bool = True
-    list_neighbor_limit: int = Field(default=2, ge=0)
+    list_neighbor_limit: int = Field(default=1, ge=0)
     list_score_penalty: float = Field(default=0.9, gt=0, le=1)
     preserve_tables: bool = True
     table_chunk_tokens: int = Field(default=512, ge=1)
