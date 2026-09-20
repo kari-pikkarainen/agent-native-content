@@ -9,6 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from contextbench.ir.models import IRDocument
 from contextbench.retrieval.models import (
+    RankedEvidence,
     RetrievalChunk,
     RetrievalConfig,
     RetrievalScores,

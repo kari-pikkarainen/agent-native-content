@@ -81,6 +81,13 @@ Each selected item is mapped from IR document and node IDs back to dataset
 document IDs and exact PDF pages before page recall, coverage, tokens-to-full,
 and redundancy are calculated.
 
+An opt-in compiler-stage audit snapshots immutable candidate pools at raw node
+retrieval, faceted fusion, structural expansion, and deduplication, then
+compares them with final packing and structural retrieval. It also records the
+union of faceted compiler and structural candidates. This diagnostic path uses
+the same indexes, document filters, maximum retrieval budget, and compiler
+implementation as the scored run; it does not alter selected evidence.
+
 Runs are assembled in a temporary sibling directory and atomically renamed to
 their final immutable `artifacts/runs/<run-id>` location. The manifest binds the
 results to the Git commit, pinned dataset, evaluation and retrieval-corpus

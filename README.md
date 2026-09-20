@@ -136,12 +136,20 @@ a separate retrieval-corpus manifest:
 uv run --extra retrieval contextbench eval-retrieval \
   --subset-file configs/subsets/xldev2-tables.json \
   --retrieval-corpus-subset-file configs/subsets/xldev24.json \
+  --compiler-stage-audit \
   --run-id xldev2-fixed-corpus
 ```
 
 The evaluation subset must be contained in the retrieval-corpus subset. The
 run manifest records both names, hashes, ordered question lists, and every
 indexed document.
+
+`--compiler-stage-audit` adds `compiler-stages.jsonl`, with candidate counts,
+candidate-token volume, page recall, and coverage at raw node retrieval,
+faceted retrieval, structural retrieval, the compiler/structural union,
+structural expansion, deduplication, and final packing. Candidate-stage token
+counts describe the whole bounded pool and are not context budgets; only the
+packing stage is budget constrained.
 
 `xl10` deliberately contains only single-document questions and is suitable
 for pipeline validation, not research claims. XL100 remains the registered

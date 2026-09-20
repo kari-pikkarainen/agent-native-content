@@ -114,6 +114,9 @@ manifest.json       dataset, evaluation and retrieval-corpus identities,
                     model/tokenizer identities, seed, budgets, question IDs
 retrieval.jsonl     one metric record per question/system/budget cell
 contexts.jsonl      the corresponding complete context packets
+compiler-stages.jsonl
+                    optional candidate recall at each compiler boundary and
+                    against structural retrieval
 summary.json        aggregate rows by system and budget
 report.md           human-readable table and evidence-only decision deltas
 ```
@@ -135,6 +138,15 @@ models, `--retrieval-corpus-subset-file` to hold parent-corpus index statistics
 fixed during a smaller diagnostic, and the model options to override the
 registered defaults. Progress is written to stderr; stdout contains a final
 JSON object naming the run directory, Markdown report, and JSON summary.
+
+Use `--compiler-stage-audit` for failure analysis. Each question and budget
+then records candidate counts, aggregate candidate tokens, selected and matched
+pages, recall, and full coverage for raw node retrieval, faceted node
+retrieval, structural retrieval, their candidate union, structural expansion,
+deduplication, and packing. Retrieval stages use the bounded ranking produced
+at the run's largest declared budget; expansion and later stages remain
+budget-specific. Aggregate candidate tokens before packing quantify search
+space volume and may exceed the context budget.
 
 ## First decision gate
 
