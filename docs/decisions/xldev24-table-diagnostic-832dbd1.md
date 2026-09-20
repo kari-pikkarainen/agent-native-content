@@ -57,8 +57,11 @@ Comparing a two-question diagnostic run directly with a 24-question run can
 attribute corpus-composition effects to a compiler change.
 
 Future fast diagnostics must keep the retrieval corpus fixed while narrowing
-only the evaluated questions. Until the runner supports that separation,
-feature comparisons must use the same subset manifest on both sides or rerun
-the entire parent development set.
+only the evaluated questions. Commit `f258ade` adds that separation through
+`--retrieval-corpus-subset-file` and records both subsets in the run manifest.
+Acceptance run `xldev2-fixed-corpus-control-f258ade` evaluates the two
+diagnostic questions against all 11 XLDev24 documents. Its eight compiler
+contexts and evidence records match the corresponding full XLDev24 cells
+exactly, excluding measured latency.
 
 No XLHoldout6 or additional XL100 result was inspected during these experiments.

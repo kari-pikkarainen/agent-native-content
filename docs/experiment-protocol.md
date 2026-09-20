@@ -31,10 +31,14 @@ informed implementation decisions and is therefore only a regression set, not
 a final evaluation set. Benchmark commands load every committed list exactly
 as stored and never regenerate one implicitly.
 
-The command downloads only the pinned metadata release and the source PDFs
-referenced by the selected subset. Each PDF is size-checked against the release record,
-content-addressed, parsed through the local Docling pipeline, and projected to
-the deterministic IR. A manifest records the subset hash and each source and
+By default, the command downloads only the pinned metadata release and source
+PDFs referenced by the selected evaluation subset. A diagnostic may instead
+declare a parent retrieval-corpus subset while evaluating fewer contained
+questions. In that mode, all parent-corpus documents are indexed so BM25
+statistics and dense candidate competition match the parent run. Each PDF is
+size-checked against the release record, content-addressed, parsed through the
+local Docling pipeline, and projected to the deterministic IR. A manifest
+records both subset hashes and ordered question lists plus each source and
 parser identity.
 
 ## Systems and controlled variables
@@ -105,7 +109,8 @@ One run is atomically published under `artifacts/runs/<run-id>/` only after all
 cells and files are complete. An existing run ID is never overwritten.
 
 ```text
-manifest.json       dataset, source/parser provenance, git SHA, full configs,
+manifest.json       dataset, evaluation and retrieval-corpus identities,
+                    source/parser provenance, git SHA, full configs,
                     model/tokenizer identities, seed, budgets, question IDs
 retrieval.jsonl     one metric record per question/system/budget cell
 contexts.jsonl      the corresponding complete context packets
@@ -126,9 +131,10 @@ uv run --extra retrieval contextbench eval-retrieval
 
 The command reuses verified source and ingestion caches. Use `--run-id` for an
 explicit immutable identifier, `--docling-artifacts-dir` for pre-fetched parser
-models, and the model options to override the registered defaults. Progress is
-written to stderr; stdout contains a final JSON object naming the run directory,
-Markdown report, and JSON summary.
+models, `--retrieval-corpus-subset-file` to hold parent-corpus index statistics
+fixed during a smaller diagnostic, and the model options to override the
+registered defaults. Progress is written to stderr; stdout contains a final
+JSON object naming the run directory, Markdown report, and JSON summary.
 
 ## First decision gate
 

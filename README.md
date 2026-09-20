@@ -128,6 +128,21 @@ uv run --extra retrieval contextbench eval-retrieval \
   --run-id xl10-smoke
 ```
 
+For a fast diagnostic that evaluates only a small question slice while keeping
+the parent development set's BM25 statistics and index composition fixed, pass
+a separate retrieval-corpus manifest:
+
+```shell
+uv run --extra retrieval contextbench eval-retrieval \
+  --subset-file configs/subsets/xldev2-tables.json \
+  --retrieval-corpus-subset-file configs/subsets/xldev24.json \
+  --run-id xldev2-fixed-corpus
+```
+
+The evaluation subset must be contained in the retrieval-corpus subset. The
+run manifest records both names, hashes, ordered question lists, and every
+indexed document.
+
 `xl10` deliberately contains only single-document questions and is suitable
 for pipeline validation, not research claims. XL100 remains the registered
 decision set.
