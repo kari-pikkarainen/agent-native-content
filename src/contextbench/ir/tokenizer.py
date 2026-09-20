@@ -43,3 +43,11 @@ class TiktokenTokenCounter:
 
     def count(self, text: str) -> int:
         return len(self._encoding.encode(text, disallowed_special=()))
+
+    def encode(self, text: str) -> list[int]:
+        """Expose exact token IDs for token-window chunkers."""
+        return self._encoding.encode(text, disallowed_special=())
+
+    def decode(self, tokens: list[int]) -> str:
+        """Decode token windows without model-specific special-token rules."""
+        return self._encoding.decode(tokens)

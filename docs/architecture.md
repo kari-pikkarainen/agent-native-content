@@ -50,3 +50,9 @@ round-trips through the same validation rules.
 The IR contains source truth only. Embeddings, lexical statistics, retrieval
 scores, generated annotations, and later experiment outputs are derived state
 and remain outside it. See [`ir-spec.md`](ir-spec.md) for the normative schema.
+
+The first two retrieval arms consume that IR through a shared local hybrid
+stack. Fixed windows and Docling HybridChunker structural chunks are indexed
+separately under deterministic content/config hashes, while BM25, dense search,
+RRF, reranking, and budget packing remain identical. See
+[`retrieval-spec.md`](retrieval-spec.md) for the baseline contract.

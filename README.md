@@ -79,3 +79,8 @@ heading paths, tables, page provenance, and source hashes, and uses the fixed
 remains the serialized `DoclingDocument`; embeddings and other retrieval
 indexes are deliberately excluded. See [the IR specification](docs/ir-spec.md)
 for the full contract.
+
+The retrieval baselines are documented in
+[docs/retrieval-spec.md](docs/retrieval-spec.md). Arms A and B share BM25,
+dense retrieval, RRF, reranking, and token-budget packing; only their chunk
+construction differs.
