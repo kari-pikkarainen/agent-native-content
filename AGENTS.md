@@ -1,16 +1,17 @@
 # Repository purpose
 
-This repository tests whether structure-aware context compilation outperforms
-conventional RAG. It is a research benchmark, not a production platform.
+This repository develops and tests an open, structure-preserving Content IR and
+deterministic context compilation against conventional RAG. The current code is
+a research reference implementation, not a production platform.
 
 # Source of truth
 
 Read before changing architecture:
 
-- `docs/benchmark-spec.md`
+- `docs/specs/benchmark.md`
 - `docs/architecture.md`
-- `docs/ir-spec.md`
-- `docs/experiment-protocol.md`
+- `docs/specs/content-ir.md`
+- `docs/specs/evaluation.md`
 
 # Critical research constraints
 

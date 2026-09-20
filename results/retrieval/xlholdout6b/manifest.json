@@ -1,0 +1,177 @@
+{
+  "config": {
+    "budgets": [
+      2048,
+      4096,
+      8192,
+      16384
+    ],
+    "compiler": {
+      "group_adjacent_list_items": true,
+      "heading_context_depth": null,
+      "include_heading_context": true,
+      "include_next_sibling": false,
+      "include_previous_sibling": false,
+      "keyed_table_join_candidate_limit": 16,
+      "keyed_table_join_empty_marker": "[blank]",
+      "keyed_table_join_enabled": true,
+      "list_neighbor_limit": 1,
+      "list_score_penalty": 0.9,
+      "max_expanded_candidates": 500,
+      "node_rerank_candidate_limit": 250,
+      "packing_strategy": "coverage",
+      "page_neighbor_candidate_limit": 64,
+      "page_neighbor_min_budget": 16384,
+      "page_neighbor_origin_limit": 20,
+      "page_neighbor_prerank_limit": 64,
+      "page_neighbor_radius": 3,
+      "page_neighbor_score_penalty": 0.8,
+      "preserve_tables": true,
+      "query_facet_full_weight": 2.0,
+      "query_facet_limit": 3,
+      "query_facet_min_terms": 3,
+      "query_facet_rerank_candidate_limit": 250,
+      "query_facet_rerank_strategy": "batched",
+      "query_faceting_enabled": true,
+      "retrieval": {
+        "candidate_limit": 40,
+        "candidate_token_multiplier": 3.0,
+        "embedding_dimensions": 256,
+        "embedding_model": "BAAI/bge-small-en-v1.5",
+        "fixed_chunk_tokens": 512,
+        "fixed_overlap_tokens": 64,
+        "max_candidate_limit": 500,
+        "max_rerank_limit": 250,
+        "rerank_limit": 20,
+        "rerank_token_multiplier": 2.0,
+        "reranker_model": "cross-encoder/ms-marco-MiniLM-L-6-v2",
+        "rrf_k": 60,
+        "sparse_b": 0.75,
+        "sparse_k1": 1.5,
+        "structural_chunk_tokens": 512,
+        "tokenizer_name": "o200k_base"
+      },
+      "sibling_neighbor_limit": 1,
+      "sibling_score_penalty": 0.85,
+      "table_chunk_tokens": 512
+    },
+    "compiler_stage_audit": true,
+    "retrieval": {
+      "candidate_limit": 40,
+      "candidate_token_multiplier": 3.0,
+      "embedding_dimensions": 256,
+      "embedding_model": "BAAI/bge-small-en-v1.5",
+      "fixed_chunk_tokens": 512,
+      "fixed_overlap_tokens": 64,
+      "max_candidate_limit": 500,
+      "max_rerank_limit": 250,
+      "rerank_limit": 20,
+      "rerank_token_multiplier": 2.0,
+      "reranker_model": "cross-encoder/ms-marco-MiniLM-L-6-v2",
+      "rrf_k": 60,
+      "sparse_b": 0.75,
+      "sparse_k1": 1.5,
+      "structural_chunk_tokens": 512,
+      "tokenizer_name": "o200k_base"
+    },
+    "seed": 20260919,
+    "systems": [
+      "fixed",
+      "structural",
+      "long_context",
+      "compiler"
+    ]
+  },
+  "config_sha256": "27da3b3975b59561c62e0c5c4782a77d8e48cd2c16ac39e0aa4e5f6db19f63e2",
+  "created_at": "2026-09-20T22:54:40.195061+00:00",
+  "dataset": "microsoft/XL-DocBench",
+  "dataset_revision": "72954bd70ffffe230f08b57c57fa9274ec14d7ea",
+  "dataset_version": "xldocbench_strict_1345_v1",
+  "documents": {
+    "doc_000025": {
+      "ir_document_id": "doc_f14564891d3bb2933b6533b5db25245ac2e9143f19c9b69e2903e4fc28adfc30",
+      "parser_core_version": "2.97.1",
+      "parser_name": "docling",
+      "parser_version": "2.129.0",
+      "source_sha256": "f14564891d3bb2933b6533b5db25245ac2e9143f19c9b69e2903e4fc28adfc30"
+    },
+    "doc_000040": {
+      "ir_document_id": "doc_0f56c59cf16a4fcf079a7af3f4d7695f85a3b379d16efe2a94daec455b249c33",
+      "parser_core_version": "2.97.1",
+      "parser_name": "docling",
+      "parser_version": "2.129.0",
+      "source_sha256": "0f56c59cf16a4fcf079a7af3f4d7695f85a3b379d16efe2a94daec455b249c33"
+    },
+    "doc_000089": {
+      "ir_document_id": "doc_bf0fcc219977b0bd93ef34723745f10c589e00df830105ab8ae28496d86f3cb2",
+      "parser_core_version": "2.97.1",
+      "parser_name": "docling",
+      "parser_version": "2.129.0",
+      "source_sha256": "bf0fcc219977b0bd93ef34723745f10c589e00df830105ab8ae28496d86f3cb2"
+    },
+    "doc_000147": {
+      "ir_document_id": "doc_9a6df12839627b58d5f93ddff0606ff8ef1707757fb499b996c862ac7d1bcb6b",
+      "parser_core_version": "2.97.1",
+      "parser_name": "docling",
+      "parser_version": "2.129.0",
+      "source_sha256": "9a6df12839627b58d5f93ddff0606ff8ef1707757fb499b996c862ac7d1bcb6b"
+    },
+    "doc_000310": {
+      "ir_document_id": "doc_e58392a3dd0a4be91333a58139796e6378e3df4925da71e22c43a19b9bc5d1b6",
+      "parser_core_version": "2.97.1",
+      "parser_name": "docling",
+      "parser_version": "2.129.0",
+      "source_sha256": "e58392a3dd0a4be91333a58139796e6378e3df4925da71e22c43a19b9bc5d1b6"
+    },
+    "doc_000330": {
+      "ir_document_id": "doc_8e4b94a6fe09ffd32dc2e427de85740992478f63d761165386f2538eaa7d1699",
+      "parser_core_version": "2.97.1",
+      "parser_name": "docling",
+      "parser_version": "2.129.0",
+      "source_sha256": "8e4b94a6fe09ffd32dc2e427de85740992478f63d761165386f2538eaa7d1699"
+    }
+  },
+  "embedding_model": "BAAI/bge-small-en-v1.5",
+  "embedding_version": "5.7.0",
+  "git_commit": "c8066d61b45fda70c6a62324b84096c05ea7c68a",
+  "platform": "macOS-26.6.2-arm64-arm-64bit-Mach-O",
+  "python_version": "3.14.7",
+  "question_ids": [
+    "adubench_single_000761",
+    "adubench_single_000618",
+    "adubench_single_000740",
+    "adubench_single_000288",
+    "adubench_single_001315",
+    "adubench_single_000857"
+  ],
+  "reranker_model": "cross-encoder/ms-marco-MiniLM-L-6-v2",
+  "reranker_version": "5.7.0",
+  "retrieval_corpus_name": "xlholdout6b",
+  "retrieval_corpus_question_ids": [
+    "adubench_single_000761",
+    "adubench_single_000618",
+    "adubench_single_000740",
+    "adubench_single_000288",
+    "adubench_single_001315",
+    "adubench_single_000857"
+  ],
+  "retrieval_corpus_sha256": "0c7eaf94e845c493f89e7935835789f47ec55d50096af98a7b87f68dc1ba6621",
+  "run_id": "xlholdout6b-coverage-c8066d6",
+  "seed": 20260919,
+  "subset_name": "xlholdout6b",
+  "subset_sha256": "0c7eaf94e845c493f89e7935835789f47ec55d50096af98a7b87f68dc1ba6621",
+  "systems": [
+    "fixed",
+    "structural",
+    "long_context",
+    "compiler"
+  ],
+  "token_budgets": [
+    2048,
+    4096,
+    8192,
+    16384
+  ],
+  "tokenizer": "o200k_base",
+  "tokenizer_version": "0.14.0"
+}

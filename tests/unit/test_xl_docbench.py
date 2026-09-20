@@ -70,7 +70,7 @@ def test_subset_rejects_unknown_question(dataset: XLDocBenchDataset) -> None:
 
 
 def test_committed_xl100_is_unique_and_fixed_size() -> None:
-    subset = load_subset(Path("configs/subsets/xl100.json"))
+    subset = load_subset(Path("benchmarks/xl-docbench/subsets/xl100.json"))
 
     assert len(subset.question_ids) == 100
     assert len(set(subset.question_ids)) == 100
@@ -78,8 +78,8 @@ def test_committed_xl100_is_unique_and_fixed_size() -> None:
 
 
 def test_committed_xl10_is_an_explicit_xl100_smoke_subset() -> None:
-    xl100 = load_subset(Path("configs/subsets/xl100.json"))
-    xl10 = load_subset(Path("configs/subsets/xl10.json"))
+    xl100 = load_subset(Path("benchmarks/xl-docbench/subsets/xl100.json"))
+    xl10 = load_subset(Path("benchmarks/xl-docbench/subsets/xl10.json"))
 
     assert len(xl10.question_ids) == 10
     assert len(set(xl10.question_ids)) == 10
@@ -90,8 +90,8 @@ def test_committed_xl10_is_an_explicit_xl100_smoke_subset() -> None:
 
 
 def test_committed_xldev24_is_balanced_and_disjoint_from_xl100() -> None:
-    xl100 = load_subset(Path("configs/subsets/xl100.json"))
-    xldev24 = load_subset(Path("configs/subsets/xldev24.json"))
+    xl100 = load_subset(Path("benchmarks/xl-docbench/subsets/xl100.json"))
+    xldev24 = load_subset(Path("benchmarks/xl-docbench/subsets/xldev24.json"))
 
     assert len(xldev24.question_ids) == 24
     assert len(set(xldev24.question_ids)) == 24
@@ -120,10 +120,10 @@ def test_committed_xldev24_is_balanced_and_disjoint_from_xl100() -> None:
 
 
 def test_committed_xlholdout6_is_balanced_fresh_xl100_slice() -> None:
-    xl100 = load_subset(Path("configs/subsets/xl100.json"))
-    xl10 = load_subset(Path("configs/subsets/xl10.json"))
-    xldev24 = load_subset(Path("configs/subsets/xldev24.json"))
-    holdout = load_subset(Path("configs/subsets/xlholdout6.json"))
+    xl100 = load_subset(Path("benchmarks/xl-docbench/subsets/xl100.json"))
+    xl10 = load_subset(Path("benchmarks/xl-docbench/subsets/xl10.json"))
+    xldev24 = load_subset(Path("benchmarks/xl-docbench/subsets/xldev24.json"))
+    holdout = load_subset(Path("benchmarks/xl-docbench/subsets/xlholdout6.json"))
 
     assert len(holdout.question_ids) == 6
     assert set(holdout.question_ids).issubset(xl100.question_ids)
@@ -181,12 +181,12 @@ def test_committed_xlholdout6_is_balanced_fresh_xl100_slice() -> None:
 
 def test_second_holdout_is_balanced_and_document_fresh() -> None:
     dataset = XLDocBenchDataset(Path("data/raw/xl-docbench"))
-    xl100 = load_subset(Path("configs/subsets/xl100.json"))
-    second = load_subset(Path("configs/subsets/xlholdout6b.json"))
+    xl100 = load_subset(Path("benchmarks/xl-docbench/subsets/xl100.json"))
+    second = load_subset(Path("benchmarks/xl-docbench/subsets/xlholdout6b.json"))
     prior = [
-        load_subset(Path("configs/subsets/xl10.json")),
-        load_subset(Path("configs/subsets/xldev24.json")),
-        load_subset(Path("configs/subsets/xlholdout6.json")),
+        load_subset(Path("benchmarks/xl-docbench/subsets/xl10.json")),
+        load_subset(Path("benchmarks/xl-docbench/subsets/xldev24.json")),
+        load_subset(Path("benchmarks/xl-docbench/subsets/xlholdout6.json")),
     ]
     prior_documents = {
         document_id

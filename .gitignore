@@ -6,16 +6,18 @@
 __pycache__/
 *.py[cod]
 
-# Downloaded datasets, parser caches, indexes, and benchmark outputs are local.
+# Downloaded data, caches, indexes, and complete generated runs stay local.
+# Compact canonical evidence is published separately under results/.
 data/cache/**
 data/processed/**
 data/raw/**
-artifacts/indexes/**
-artifacts/runs/**
+artifacts/**
 
 # Keep the expected directory layout in fresh clones.
 !data/cache/.gitkeep
 !data/processed/.gitkeep
 !data/raw/.gitkeep
+!artifacts/indexes/
 !artifacts/indexes/.gitkeep
+!artifacts/runs/
 !artifacts/runs/.gitkeep

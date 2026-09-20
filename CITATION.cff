@@ -1,0 +1,17 @@
+cff-version: 1.2.0
+message: "If you use this software or its benchmark design, please cite it as below."
+title: "Open Content IR"
+type: software
+version: 0.1.0
+date-released: 2026-09-20
+authors:
+  - name: "Open Content IR contributors"
+abstract: >-
+  A structure-preserving intermediate representation, context compilation
+  reference implementation, and benchmark for agent-ready content.
+keywords:
+  - information retrieval
+  - retrieval-augmented generation
+  - document understanding
+  - intermediate representation
+  - AI agents

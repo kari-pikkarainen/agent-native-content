@@ -2,7 +2,7 @@
 
 This document will describe the implemented system boundaries and data flow.
 The authoritative target architecture is currently defined in
-[`benchmark-spec.md`](benchmark-spec.md).
+[benchmark specification](specs/benchmark.md).
 
 The benchmark will compare four independent arms while sharing retrieval
 models, token accounting, and evaluation machinery wherever fairness requires
@@ -49,19 +49,21 @@ round-trips through the same validation rules.
 
 The IR contains source truth only. Embeddings, lexical statistics, retrieval
 scores, generated annotations, and later experiment outputs are derived state
-and remain outside it. See [`ir-spec.md`](ir-spec.md) for the normative schema.
+and remain outside it. See the [Content IR specification](specs/content-ir.md)
+for the normative schema.
 
 An optional agent-document layer derives query-independent affordances without
 mutating the IR. Its outline, extractive section previews, key facts,
 definitions, and table schemas retain node/item/page provenance and are
 published as JSON-LD plus semantic HTML. This layer is versioned and
-replaceable; see [`agent-document-spec.md`](agent-document-spec.md).
+replaceable; see the
+[agent-ready content specification](specs/agent-document.md).
 
 The first two retrieval arms consume that IR through a shared local hybrid
 stack. Fixed windows and Docling HybridChunker structural chunks are indexed
 separately under deterministic content/config hashes, while BM25, dense search,
-RRF, reranking, and budget packing remain identical. See
-[`retrieval-spec.md`](retrieval-spec.md) for the baseline contract.
+RRF, reranking, and budget packing remain identical. See the
+[retrieval specification](specs/retrieval.md) for the baseline contract.
 
 ## Compiler boundary
 
@@ -83,7 +85,8 @@ configuration, model versions, tokenizer version, and vector shape validate.
 Deduplication uses normalized content plus exact source IDs and bounding boxes.
 Final rendered evidence is recounted and greedily packed under a hard token
 budget. Every output maps back to IR nodes and authoritative Docling item IDs.
-See [`compiler-spec.md`](compiler-spec.md) for the normative behavior.
+See the [context compiler specification](specs/context-compiler.md) for the
+normative behavior.
 
 ## Evaluation boundary
 
@@ -115,7 +118,7 @@ subsets, source hashes, parser versions, complete configuration,
 model/tokenizer versions, seed, and ordered question IDs. Raw contexts remain
 available for failure analysis; the JSON and Markdown summaries are derived
 from the per-cell records. See
-[`experiment-protocol.md`](experiment-protocol.md) for metric definitions and
+[evaluation protocol](specs/evaluation.md) for metric definitions and
 the first decision gate.
 
 ## Generation boundary

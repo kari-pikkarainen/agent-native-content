@@ -1,16 +1,17 @@
-# Context Compiler
+# Open Content IR
 
-Context Compiler is a research benchmark for a simple question:
+Open Content IR is an open research project built around a simple question:
 
 > Can a persistent, structure-preserving document representation plus
 > deterministic query-time compilation select better evidence—or use fewer
 > context tokens—than strong RAG baselines?
 
-The project parses PDFs once, preserves their document structure and
-provenance, and compiles a query-specific evidence packet under a hard token
-budget. It also explores a complementary idea: packaging documents with
-source-grounded, agent-usable features that can be prepared once and reused by
-many queries.
+The current reference implementation parses PDFs once, preserves their
+structure and provenance, and compiles a query-specific evidence packet under
+a hard token budget. The broader goal is a reusable content layer that can
+eventually support documents, web pages, spreadsheets, presentations,
+transcripts, and multimodal sources. It also explores packaging content with
+source-grounded, agent-usable features prepared once and reused by many queries.
 
 This is a **falsification-oriented research prototype**, not a production RAG
 platform. The current evidence is promising at low token budgets, but it does
@@ -45,10 +46,10 @@ the advantage at 2K and 4K tokens, but fixed RAG wins at 8K and 16K:
 Values are mean gold-evidence page recall at the stated context budget. The
 development set has 24 questions over 11 documents; the directional holdout
 has six questions over six previously unused documents. No answer model was
-used for these results. See the
-[coverage-packing decision](docs/decisions/xldev-coverage-packing-candidate.md)
-and [holdout decision](docs/decisions/xlholdout6b-coverage-c8066d6.md) for the
-full results and caveats.
+used for these results. See the canonical
+[development report](results/retrieval/xldev24-coverage/report.md),
+[holdout report](results/retrieval/xlholdout6b/report.md), and
+[results index](results/README.md) for the full evidence and caveats.
 
 **Decision:** keep the compiler as a credible low-budget treatment, do not
 claim that it replaces RAG, and postpone the full XL100 run until answer-quality
@@ -127,8 +128,8 @@ Start with two questions while retaining the 24-question development corpus's
 
 ```shell
 uv run --extra retrieval contextbench eval-retrieval \
-  --subset-file configs/subsets/xldev2-tables.json \
-  --retrieval-corpus-subset-file configs/subsets/xldev24.json \
+  --subset-file benchmarks/xl-docbench/subsets/xldev2-tables.json \
+  --retrieval-corpus-subset-file benchmarks/xl-docbench/subsets/xldev24.json \
   --compiler-stage-audit \
   --run-id xldev2-local
 ```
@@ -143,8 +144,8 @@ After the models and indexes are warm, they can be forced offline:
 ```shell
 HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 \
   uv run --extra retrieval contextbench eval-retrieval \
-  --subset-file configs/subsets/xldev2-tables.json \
-  --retrieval-corpus-subset-file configs/subsets/xldev24.json \
+  --subset-file benchmarks/xl-docbench/subsets/xldev2-tables.json \
+  --retrieval-corpus-subset-file benchmarks/xl-docbench/subsets/xldev24.json \
   --run-id xldev2-offline
 ```
 
@@ -160,7 +161,7 @@ The adapter is pinned to Microsoft's conservative
 ```shell
 uv run contextbench dataset download xl-docbench
 uv run contextbench dataset list xl-docbench \
-  --subset-file configs/subsets/xldev24.json
+  --subset-file benchmarks/xl-docbench/subsets/xldev24.json
 uv run contextbench dataset inspect xl-docbench <question-id>
 ```
 
@@ -206,7 +207,7 @@ provenance; source truth remains in the canonical IR.
 This is a portable companion bundle, not a new PDF or DOCX standard. Existing
 document formats can carry some metadata, but HTML plus JSON-LD provides a
 practical, inspectable encoding without requiring reader-specific extensions.
-See the [agent-document specification](docs/agent-document-spec.md).
+See the [agent-ready content specification](docs/specs/agent-document.md).
 
 ### Run a larger retrieval subset
 
@@ -215,12 +216,12 @@ iteration:
 
 ```shell
 uv run --extra retrieval contextbench eval-retrieval \
-  --subset-file configs/subsets/xldev24.json \
+  --subset-file benchmarks/xl-docbench/subsets/xldev24.json \
   --compiler-stage-audit \
   --run-id xldev24-local
 ```
 
-`configs/subsets/xl100.json` remains the registered full evaluation set, but
+`benchmarks/xl-docbench/subsets/xl100.json` remains the registered full evaluation set, but
 the current holdout result does not justify spending the time to run it yet.
 Subset intent and contamination status are recorded inside every manifest.
 
@@ -234,7 +235,7 @@ compilation:
 uv sync --extra generation
 uv run --extra generation contextbench eval-generation \
   artifacts/runs/<retrieval-run-id> \
-  --subset-file configs/subsets/xldev2-tables.json \
+  --subset-file benchmarks/xl-docbench/subsets/xldev2-tables.json \
   --model <model-id> \
   --input-usd-per-million <price> \
   --cached-input-usd-per-million <price> \
@@ -259,7 +260,7 @@ condition the same annotated source pages:
 
 ```shell
 uv run --extra generation contextbench eval-representation \
-  --subset-file configs/subsets/xldev2-tables.json \
+  --subset-file benchmarks/xl-docbench/subsets/xldev2-tables.json \
   --model <model-id> \
   --input-usd-per-million <price> \
   --cached-input-usd-per-million <price> \
@@ -282,7 +283,7 @@ The indexed view is 16.5% smaller than bounded enriched, but still 7.1% larger
 than IR. This only measures representation volume; it is not evidence of an
 answer-quality improvement. Preparation took about 81 ms for two cached
 documents on one development machine and is reusable across queries. See the
-[representation decision](docs/decisions/xldev2-agent-document-no-call.md).
+canonical [representation result](results/representation/xldev2-no-call/README.md).
 
 ## Reproducibility and artifacts
 
@@ -296,6 +297,7 @@ artifacts/indexes/<sha256>/           verified derived retrieval indexes
 artifacts/runs/<run-id>/              evidence-only retrieval runs
 artifacts/generation-runs/<run-id>/   answer-generation runs
 artifacts/representation-runs/<id>/   representation runs
+results/                              compact canonical evidence committed to Git
 ```
 
 Retrieval runs are assembled in a temporary directory and published atomically;
@@ -331,7 +333,7 @@ token budget**. Runs also record:
 Latency excludes dataset loading, PDF parsing, model loading, IR projection,
 and index construction. The exact conventions, including treatment of missing
 gold pages or quotes, are defined in the
-[experiment protocol](docs/experiment-protocol.md).
+[experiment protocol](docs/specs/evaluation.md).
 
 ## Known limitations
 
@@ -371,14 +373,17 @@ src/contextbench/
   ir/              canonical models, projection, serialization, tokenization
   representation/  controlled document-encoding experiment
   retrieval/       chunks, BM25, dense search, fusion, and reranking
-configs/subsets/   committed experiment populations
-docs/              specifications, architecture, protocol, and decisions
-tests/unit/        offline unit and fixture-based integration tests
+benchmarks/        committed benchmark definitions and subsets
+docs/              vision, architecture, specifications, ADRs, and research log
+results/           compact canonical reports, summaries, and manifests
+artifacts/         ignored local indexes and complete experiment outputs
+tests/             offline unit tests and fixtures
 ```
 
-Start with the [benchmark specification](docs/benchmark-spec.md) for the
-research questions and kill conditions. The
-[architecture](docs/architecture.md), [IR specification](docs/ir-spec.md),
-[retrieval specification](docs/retrieval-spec.md), and
-[compiler specification](docs/compiler-spec.md) define the implemented
+Start with the [project vision](docs/vision.md), then read the
+[benchmark specification](docs/specs/benchmark.md) for the research questions
+and kill conditions. The
+[architecture](docs/architecture.md), [IR specification](docs/specs/content-ir.md),
+[retrieval specification](docs/specs/retrieval.md), and
+[compiler specification](docs/specs/context-compiler.md) define the implemented
 boundaries in more detail.
