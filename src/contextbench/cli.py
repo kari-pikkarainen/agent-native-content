@@ -169,7 +169,7 @@ def evaluate_retrieval(
             min=1,
             help="Maximum candidates reranked for each supplemental query facet.",
         ),
-    ] = 96,
+    ] = 250,
     run_id: Annotated[
         str | None,
         typer.Option(help="Optional immutable run identifier."),

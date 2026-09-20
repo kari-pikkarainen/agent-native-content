@@ -7,6 +7,7 @@ import tempfile
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 
+import numpy as np
 from docling_core.types.doc import DoclingDocument
 
 from contextbench.ir.models import IRDocument
@@ -55,9 +56,11 @@ class HybridIndex:
             k1=config.sparse_k1,
             b=config.sparse_b,
         )
-        self._vectors = self.embedder.embed(
-            [chunk.retrieval_text for chunk in self.chunks]
+        self._vectors = np.asarray(
+            self.embedder.embed([chunk.retrieval_text for chunk in self.chunks]),
+            dtype=np.float64,
         )
+        self._document_indices = _document_indices(self.chunks)
 
     @classmethod
     def build(
@@ -211,7 +214,8 @@ class HybridIndex:
             k1=config.sparse_k1,
             b=config.sparse_b,
         )
-        index._vectors = vectors
+        index._vectors = np.asarray(vectors, dtype=np.float64)
+        index._document_indices = _document_indices(loaded_chunks)
         return index
 
     def retrieve(
@@ -253,15 +257,7 @@ class HybridIndex:
             if token_budget is not None
             else minimum_candidate_limit
         )
-        allowed_indices = (
-            {
-                index
-                for index, chunk in enumerate(self.chunks)
-                if chunk.document_id in document_ids
-            }
-            if document_ids is not None
-            else None
-        )
+        allowed_indices = self._allowed_indices(document_ids)
         sparse_hits = self.sparse.search(
             query,
             search_limit,
@@ -488,7 +484,7 @@ class HybridIndex:
             "arm": arm.value,
             "config": self.config.model_dump(mode="json"),
             "chunks": [chunk.model_dump(mode="json") for chunk in self.chunks],
-            "vectors": self._vectors,
+            "vectors": self._vectors.tolist(),
             "sparse_parameters": {
                 "k1": self.config.sparse_k1,
                 "b": self.config.sparse_b,
@@ -510,14 +506,30 @@ class HybridIndex:
         *,
         allowed_indices: set[int] | None = None,
     ) -> list[tuple[int, float]]:
-        query_vector = self.embedder.embed([query])[0]
+        query_vector = np.asarray(self.embedder.embed([query])[0], dtype=np.float64)
+        indices = (
+            np.arange(len(self.chunks), dtype=np.int64)
+            if allowed_indices is None
+            else np.asarray(sorted(allowed_indices), dtype=np.int64)
+        )
+        if not len(indices):
+            return []
+        similarities = self._vectors[indices] @ query_vector
         scores = [
-            (_cosine(query_vector, vector), index)
-            for index, vector in enumerate(self._vectors)
-            if allowed_indices is None or index in allowed_indices
+            (float(score), int(index))
+            for score, index in zip(similarities, indices, strict=True)
         ]
         scores.sort(key=lambda pair: (-pair[0], self.chunks[pair[1]].id))
         return [(index, score) for score, index in scores[:limit]]
+
+    def _allowed_indices(self, document_ids: set[str] | None) -> set[int] | None:
+        if document_ids is None:
+            return None
+        return {
+            index
+            for document_id in document_ids
+            for index in self._document_indices.get(document_id, ())
+        }
 
     def _trim_hits(
         self,
@@ -612,8 +624,13 @@ def pack_evidence(
     )
 
 
-def _cosine(left: Sequence[float], right: Sequence[float]) -> float:
-    return sum(a * b for a, b in zip(left, right, strict=True))
+def _document_indices(
+    chunks: Sequence[RetrievalChunk],
+) -> dict[str, tuple[int, ...]]:
+    mutable: dict[str, list[int]] = {}
+    for index, chunk in enumerate(chunks):
+        mutable.setdefault(chunk.document_id, []).append(index)
+    return {document_id: tuple(indices) for document_id, indices in mutable.items()}
 
 
 def embedding_model_from_config(config: RetrievalConfig) -> EmbeddingModel:
