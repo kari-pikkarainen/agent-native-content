@@ -55,10 +55,16 @@ loading is lazy; importing the retrieval package does not make network calls.
 artifacts/indexes/<content-and-config-sha256>/index.json
 ```
 
-The key includes the arm, IR document IDs, chunk IDs, and retrieval
-configuration. The serialized artifact includes canonical chunks, vectors,
-model names/versions, and configuration, so an existing completed index is
-never silently overwritten by a different build.
+The key includes the arm, IR document IDs, chunk IDs, retrieval configuration,
+and resolved embedding, reranker, and tokenizer identities and implementation
+versions. The serialized artifact includes the same provenance plus canonical
+chunks and vectors, so a changed implementation selects a different derived
+index path.
+
+Benchmark evaluation may build a single index per arm over all subset source
+documents. `retrieve(..., document_ids=...)` and `pack(..., document_ids=...)`
+filter both sparse and dense candidates before fusion and reranking, preventing
+evidence from outside a question's declared document scope.
 
 ## API
 

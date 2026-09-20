@@ -108,3 +108,26 @@ The compiler performs shared hybrid retrieval, heading and configurable sibling
 expansion, adjacent-list grouping, table preservation, provenance-aware
 deduplication, and exact-token packing without an LLM call. See
 [docs/compiler-spec.md](docs/compiler-spec.md) for the full contract.
+
+## Evidence-only retrieval benchmark
+
+Run the registered XL100 comparison for fixed RAG, structural RAG, and the
+context compiler at 2K, 4K, 8K, and 16K token budgets with one command:
+
+```shell
+uv sync --extra retrieval
+uv run --extra retrieval contextbench eval-retrieval
+```
+
+The first run downloads the pinned dataset metadata, the source PDFs referenced
+by XL100, Docling model artifacts when needed, and the configured local
+SentenceTransformers models. Later runs reuse verified caches. Pass
+`--docling-artifacts-dir` to use pre-downloaded Docling models or override
+`--embedding-model`, `--reranker-model`, and `--run-id` as needed.
+
+Completed runs are atomically written beneath `artifacts/runs/<run-id>` and are
+never overwritten. Each contains raw evidence metrics and contexts, a complete
+reproducibility manifest, `summary.json`, and `report.md`. The milestone stops
+before answer generation so the evidence-recall/token curve can be reviewed
+first. Metric conventions and the decision gate are defined in
+[the experiment protocol](docs/experiment-protocol.md).

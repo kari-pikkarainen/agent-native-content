@@ -69,3 +69,21 @@ Deduplication uses normalized content plus exact source IDs and bounding boxes.
 Final rendered evidence is recounted and greedily packed under a hard token
 budget. Every output maps back to IR nodes and authoritative Docling item IDs.
 See [`compiler-spec.md`](compiler-spec.md) for the normative behavior.
+
+## Evaluation boundary
+
+The evidence-only evaluator builds one index per A/B/D arm over the complete
+subset corpus, then filters every retrieval call to the document IDs authorized
+by that question. Index creation and model loading remain outside query latency.
+Each selected item is mapped from IR document and node IDs back to dataset
+document IDs and exact PDF pages before page recall, coverage, tokens-to-full,
+and redundancy are calculated.
+
+Runs are assembled in a temporary sibling directory and atomically renamed to
+their final immutable `artifacts/runs/<run-id>` location. The manifest binds the
+results to the Git commit, pinned dataset/subset, source hashes, parser
+versions, complete configuration, model/tokenizer versions, seed, and ordered
+question IDs. Raw contexts remain available for failure analysis; the JSON and
+Markdown summaries are derived from the per-cell records. See
+[`experiment-protocol.md`](experiment-protocol.md) for metric definitions and
+the first decision gate.
