@@ -24,12 +24,19 @@ Mean local `o200k_base` tokens across the two questions were:
 | ENRICHED, naïvely including all features | 119,732.0 |
 | ENRICHED, excluding calculation rows inline | 73,675.5 |
 | ENRICHED, excluding rows and capped at 128 inline features | 64,092.0 |
+| INDEXED, 32 selected features within a 2K feature budget | 53,493.5 |
 
 Calculation-ready table rows remain in the reusable JSON-LD bundle, where an
 agent or tool can address them, but are not duplicated into the default answer
 prompt. Inline features are selected by their fixed importance, page, and ID
 order without using the question. The 128-feature cap reduces the naïve
 enriched prompt by 46.5%.
+
+The later two-stage `indexed` treatment cuts another 16.5% from the bounded
+enriched prompt and is 7.1% larger than IR. It retains the same canonical source
+evidence, but selects a small query-matching feature view from the reusable
+document enrichment. This is a retrieval treatment rather than a pure encoding
+comparison and must remain a separately reported condition.
 
 ## Decision
 

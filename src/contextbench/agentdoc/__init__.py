@@ -16,6 +16,12 @@ from contextbench.agentdoc.models import (
     AgentFeature,
     AgentFeatureKind,
 )
+from contextbench.agentdoc.select import (
+    SelectedAgentFeature,
+    compact_feature_text,
+    feature_type_counts,
+    select_agent_features,
+)
 
 __all__ = [
     "AGENT_DOCUMENT_GENERATOR_VERSION",
@@ -26,9 +32,13 @@ __all__ = [
     "AgentEnrichmentConfig",
     "AgentFeature",
     "AgentFeatureKind",
+    "SelectedAgentFeature",
     "agent_document_jsonld",
     "create_agent_bundle",
+    "compact_feature_text",
     "enrich_document",
     "features_for_nodes",
+    "feature_type_counts",
     "render_agent_html",
+    "select_agent_features",
 ]

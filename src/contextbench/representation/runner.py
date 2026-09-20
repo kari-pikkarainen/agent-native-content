@@ -18,7 +18,9 @@ from contextbench.agentdoc import (
     AgentDocument,
     AgentFeatureKind,
     enrich_document,
+    feature_type_counts,
     features_for_nodes,
+    select_agent_features,
 )
 from contextbench.datasets.base import BenchmarkQuestion
 from contextbench.evaluation.runner import EvaluationCorpus
@@ -147,9 +149,13 @@ def run_gold_representation_benchmark(
             representation, feature_count = render_representation(
                 condition,
                 evidence_nodes,
+                query=question.question,
                 enrichments=enrichments,
                 inline_feature_kinds=set(config.inline_feature_kinds),
                 max_inline_features=config.max_inline_features,
+                indexed_max_features=config.indexed_max_features,
+                indexed_feature_token_budget=config.indexed_feature_token_budget,
+                tokenizer=counter,
             )
             prompt = render_grounded_prompt(question.question, representation)
             evidence_ids = tuple(item.evidence_id for item in evidence_nodes)
@@ -278,9 +284,13 @@ def render_representation(
     condition: RepresentationCondition,
     evidence_nodes: Sequence[_EvidenceNode],
     *,
+    query: str,
     enrichments: Mapping[str, AgentDocument],
     inline_feature_kinds: set[AgentFeatureKind],
     max_inline_features: int,
+    indexed_max_features: int,
+    indexed_feature_token_budget: int,
+    tokenizer: TokenCounter,
 ) -> tuple[str, int]:
     """Render one condition while keeping the underlying source nodes fixed."""
     if condition == RepresentationCondition.RAW:
@@ -288,13 +298,48 @@ def render_representation(
     source = "\n\n".join(_ir_block(item) for item in evidence_nodes)
     if condition == RepresentationCondition.IR:
         return source, 0
-    if condition != RepresentationCondition.ENRICHED:
+    if condition not in {
+        RepresentationCondition.ENRICHED,
+        RepresentationCondition.INDEXED,
+    }:
         raise RepresentationError(f"unsupported condition: {condition}")
 
     ids_by_node = {item.node.id: item.evidence_id for item in evidence_nodes}
     nodes_by_document: dict[str, set[str]] = defaultdict(set)
     for item in evidence_nodes:
         nodes_by_document[item.node.document_id].add(item.node.id)
+    if condition == RepresentationCondition.INDEXED:
+        selected = select_agent_features(
+            query,
+            enrichments,
+            nodes_by_document,
+            tokenizer=tokenizer,
+            kinds=inline_feature_kinds | {AgentFeatureKind.TABLE_ROW},
+            max_features=indexed_max_features,
+            token_budget=indexed_feature_token_budget,
+        )
+        counts = feature_type_counts(
+            enrichments,
+            nodes_by_document,
+            kinds=inline_feature_kinds | {AgentFeatureKind.TABLE_ROW},
+        )
+        count_value = ",".join(f"{kind}:{count}" for kind, count in counts.items())
+        blocks = []
+        for item in selected:
+            feature = item.feature
+            source_ids = [ids_by_node[node_id] for node_id in feature.source_node_ids]
+            blocks.append(
+                f'<feature ref="{feature.id[-12:]}" type="{feature.kind.value}" '
+                f'src="{",".join(source_ids)}">'
+                f"{html.escape(item.feature.text)}</feature>"
+            )
+        rendered_index = "\n".join(blocks)
+        return (
+            f'<agent_map available="{html.escape(count_value)}" '
+            f'selected="{len(selected)}">\n{rendered_index}\n</agent_map>\n\n'
+            f"<source_evidence>\n{source}\n</source_evidence>",
+            len(selected),
+        )
     selected_features = []
     for document_id, node_ids in nodes_by_document.items():
         selected_features.extend(

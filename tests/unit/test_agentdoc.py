@@ -22,6 +22,7 @@ from contextbench.agentdoc import (
     create_agent_bundle,
     enrich_document,
     features_for_nodes,
+    select_agent_features,
 )
 from contextbench.ir import project_document
 
@@ -175,6 +176,32 @@ def test_features_can_be_restricted_to_authorized_gold_nodes(tmp_path: Path) -> 
     assert selected
     assert all(set(feature.source_node_ids) <= page_one_nodes for feature in selected)
     assert all(feature.page_start == feature.page_end == 1 for feature in selected)
+
+
+def test_feature_selection_is_query_aware_bounded_and_source_authorized(
+    tmp_path: Path,
+) -> None:
+    document = _document(tmp_path)
+    enrichment = enrich_document(document)
+    table_node = next(node for node in document.nodes if node.table is not None)
+
+    selected = select_agent_features(
+        "What was North revenue?",
+        {document.id: enrichment},
+        {document.id: {table_node.id}},
+        tokenizer=FixtureTokenCounter(),
+        kinds=set(AgentFeatureKind),
+        max_features=2,
+        token_budget=12,
+    )
+
+    assert selected
+    assert len(selected) <= 2
+    assert sum(item.token_count for item in selected) <= 12
+    assert all(
+        set(item.feature.source_node_ids) == {table_node.id} for item in selected
+    )
+    assert any("North" in item.feature.text for item in selected)
 
 
 def test_bundle_writes_verified_jsonld_html_and_optional_source(tmp_path: Path) -> None:

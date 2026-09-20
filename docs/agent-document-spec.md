@@ -76,7 +76,9 @@ stable evidence IDs, then renders:
 1. `raw`: minimal source text;
 2. `ir`: source text plus structural and provenance fields;
 3. `enriched`: IR plus features whose complete node provenance is inside the
-   same gold-page scope.
+   same gold-page scope;
+4. `indexed`: a compact feature inventory and bounded lexical feature selection
+   followed by the same canonical source evidence.
 
 Enrichment is built once per document before question cells execute. Features
 are ordered by their query-independent importance signal, but no query is used
@@ -89,3 +91,10 @@ Calculation-ready rows remain available in the bundle but are excluded from
 the default inline prompt to avoid duplicating complete tables. The inline
 agent index is capped at 128 features after deterministic importance/page/ID
 ordering. Both policies are explicit experiment configuration.
+
+The `indexed` condition tests two-stage access: enrichment remains a reusable,
+query-independent document asset, while a deterministic query-time selector
+chooses at most 32 features and 2,048 rendered feature tokens. Compact local
+references avoid repeating full IDs, attributes, and provenance. Because this
+condition includes feature retrieval, it is reported separately from the
+encoding-only `enriched` condition.

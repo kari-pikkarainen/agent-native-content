@@ -18,6 +18,7 @@ class RepresentationCondition(StrEnum):
     RAW = "raw"
     IR = "ir"
     ENRICHED = "enriched"
+    INDEXED = "indexed"
 
 
 class RepresentationExperimentConfig(AnswerModelConfig):
@@ -35,6 +36,8 @@ class RepresentationExperimentConfig(AnswerModelConfig):
         AgentFeatureKind.TABLE_SCHEMA,
     )
     max_inline_features: int = Field(default=128, ge=1)
+    indexed_max_features: int = Field(default=32, ge=1)
+    indexed_feature_token_budget: int = Field(default=2048, ge=1)
     tokenizer_name: str = "o200k_base"
 
     @model_validator(mode="after")

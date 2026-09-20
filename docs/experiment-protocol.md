@@ -194,8 +194,8 @@ manifest and contexts.
 
 ## Gold-evidence representation experiment
 
-The representation experiment removes retrieval from the comparison. It
-selects the same released gold-page IR nodes for `raw`, `ir`, and `enriched`.
+The representation experiment fixes source-evidence retrieval. It selects the
+same released gold-page IR nodes for `raw`, `ir`, `enriched`, and `indexed`.
 Stable citation IDs and source content are held fixed; only the rendering
 changes. Enrichment is computed once per document without access to questions
 or answers, and a feature is eligible only when all its supporting nodes occur
@@ -205,7 +205,7 @@ The run records deterministic enrichment preparation once per referenced
 document, plus total and amortized milliseconds per evaluated question. This
 keeps reusable document-conversion cost separate from per-query model latency.
 
-All three conditions share the answer prompt, provider, requested model,
+All four conditions share the answer prompt, provider, requested model,
 reasoning setting, output limit, deterministic scoring, and pricing. Record the
 exact representation, local representation tokens, provider usage, accuracy,
 token F1, ANLS, citation validity/support, latency, and cost. Questions without
@@ -225,6 +225,12 @@ index at 128 features using fixed importance/page/ID ordering. The rows remain
 available in the reusable bundle for addressable tool access. Treat the cap and
 inline feature vocabulary as declared representation parameters, not hidden
 retrieval.
+
+The separate `indexed` condition intentionally adds bounded deterministic
+feature retrieval over the already-authorized source nodes. It emits a compact
+inventory, selects query-matching features, and includes the same canonical
+source evidence. Its feature count and token ceiling are frozen in the run
+configuration so it is not confused with the encoding-only comparison.
 
 ## First decision gate
 

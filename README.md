@@ -209,12 +209,14 @@ paid model call.
 ## Gold-evidence representation experiment
 
 To test whether the encoding itself helps an answer model independently of
-retrieval, compare the same annotated source pages in three conditions:
+retrieval, compare the same annotated source pages in four conditions:
 
 - `raw`: minimal source text with citation IDs;
 - `ir`: the same nodes with document, page, kind, heading, and source identity;
 - `enriched`: IR plus query-independent agent features grounded wholly in the
-  same nodes.
+  same nodes;
+- `indexed`: a compact document map plus a bounded query-selected feature view
+  over the same reusable enrichment and canonical source nodes.
 
 ```shell
 uv run --extra generation contextbench eval-representation \
@@ -223,7 +225,7 @@ uv run --extra generation contextbench eval-representation \
   --input-usd-per-million <price> \
   --cached-input-usd-per-million <price> \
   --output-usd-per-million <price> \
-  --max-calls 6
+  --max-calls 8
 ```
 
 The command requires explicit current pricing and a hard provider-call ceiling.

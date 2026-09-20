@@ -101,10 +101,14 @@ def test_gold_representation_runner_varies_encoding_not_source_nodes(
     assert by_condition[RepresentationCondition.RAW].feature_count == 0
     assert by_condition[RepresentationCondition.IR].feature_count == 0
     assert by_condition[RepresentationCondition.ENRICHED].feature_count > 0
+    assert by_condition[RepresentationCondition.INDEXED].feature_count > 0
     assert by_condition[RepresentationCondition.RAW].representation_tokens < (
         by_condition[RepresentationCondition.IR].representation_tokens
     )
     assert by_condition[RepresentationCondition.IR].representation_tokens < (
+        by_condition[RepresentationCondition.ENRICHED].representation_tokens
+    )
+    assert by_condition[RepresentationCondition.INDEXED].representation_tokens < (
         by_condition[RepresentationCondition.ENRICHED].representation_tokens
     )
 
@@ -117,6 +121,8 @@ def test_gold_representation_runner_varies_encoding_not_source_nodes(
     assert 'kind="paragraph"' not in rendered["raw"]
     assert 'kind="paragraph"' in rendered["ir"]
     assert "<agent_features>" in rendered["enriched"]
+    assert "<agent_map" in rendered["indexed"]
+    assert "<source_evidence>" in rendered["indexed"]
     assert rendered["enriched"].index('type="table_schema"') < rendered[
         "enriched"
     ].index('type="key_fact"')
