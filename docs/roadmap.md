@@ -39,6 +39,8 @@ at this gate and points to selection policy as the stronger mechanism. See the
 
 ## Gate 2: Audit retrieval metrics
 
+**Status:** complete on the six-question XLHoldout6b diagnostic.
+
 Before paid generation:
 
 - report answerable-only metrics alongside the registered aggregate;
@@ -50,6 +52,14 @@ Before paid generation:
 
 Preserve the existing page metrics for continuity, but do not use them alone
 for the next decision.
+
+The audit added answerable-only and quote-eligible summaries, conservative
+content-verified page coverage, and paired source-cluster bootstrap intervals.
+The low-budget page effect survives, but manual inspection found both false
+positive and false negative retrieval signals. See the
+[metric-audit decision note](research-log/xlholdout6b-metric-audit.md). This
+meets the gate for a small guarded answer-generation run, not for a broader
+retrieval claim.
 
 ## Gate 3: Test whether selected evidence improves answers
 
