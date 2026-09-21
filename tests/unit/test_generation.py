@@ -16,6 +16,7 @@ from contextbench.generation import (
     PricingMetadata,
     ProviderAnswer,
     parse_answer_response,
+    parse_citation_entailment_response,
     run_generation_benchmark,
 )
 from contextbench.generation.models import AnswerRequest
@@ -31,6 +32,22 @@ class FixtureProvider:
 
     def generate(self, request: AnswerRequest, *, config: GenerationConfig):
         self.requests.append(request)
+        if request.system.endswith(":citation_entailment_judge"):
+            return ProviderAnswer(
+                text=json.dumps(
+                    {
+                        "entailed": True,
+                        "reason": "The cited passage states the answer.",
+                    }
+                ),
+                model_id=config.model,
+                response_id=f"response-{len(self.requests)}",
+                input_tokens=100,
+                cached_input_tokens=20,
+                output_tokens=10,
+                reasoning_tokens=2,
+                provider_usage={"total_tokens": 110},
+            )
         return ProviderAnswer(
             text=json.dumps(
                 {
@@ -121,6 +138,50 @@ def test_answer_parser_is_strict_but_accepts_json_fences() -> None:
         (),
         False,
     )
+
+
+def test_optional_same_model_citation_entailment_is_costed(tmp_path: Path) -> None:
+    retrieval = _run(tmp_path, run_id="retrieval-entailment")
+    provider = FixtureProvider()
+    config = _generation_config().model_copy(
+        update={
+            "systems": (BenchmarkSystem.COMPILER,),
+            "citation_entailment_judge": True,
+        }
+    )
+
+    result = run_generation_benchmark(
+        retrieval.path,
+        _corpus(tmp_path).questions,
+        config=config,
+        provider=provider,
+        artifacts_root=tmp_path / "artifacts",
+        run_id="generation-entailment",
+        git_commit="b" * 40,
+    )
+
+    record = result.records[0]
+    assert len(provider.requests) == 2
+    assert provider.requests[1].system.endswith(":citation_entailment_judge")
+    assert record.citation_entailment == 1.0
+    assert record.citation_entailment_judge_valid is True
+    assert record.calls == 2
+    assert record.input_tokens == 200
+    assert record.judge_input_tokens == 100
+    assert record.cost_usd == pytest.approx(0.00022)
+    assert result.summary.rows[0].mean_citation_entailment == 1.0
+    manifest = json.loads((result.path / "manifest.json").read_text())
+    assert len(manifest["citation_entailment_prompt_sha256"]) == 64
+
+
+def test_citation_entailment_parser_is_strict() -> None:
+    assert parse_citation_entailment_response(
+        '{"entailed":true,"reason":"Direct support."}'
+    ) == (True, "Direct support.", True)
+    assert parse_citation_entailment_response(
+        '{"entailed":"yes","reason":"Direct support."}'
+    ) == (False, "", False)
+    assert parse_citation_entailment_response("yes") == (False, "", False)
 
 
 @pytest.mark.parametrize(

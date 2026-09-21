@@ -473,6 +473,15 @@ def evaluate_generation(
         str | None,
         typer.Option(help="Optional provider reasoning-effort setting."),
     ] = None,
+    citation_entailment_judge: Annotated[
+        bool,
+        typer.Option(
+            help=(
+                "Use the same model for a second call judging whether cited "
+                "evidence semantically supports each answer."
+            )
+        ),
+    ] = False,
     run_id: Annotated[
         str | None,
         typer.Option(help="Optional immutable generation run identifier."),
@@ -502,11 +511,12 @@ def evaluate_generation(
         subset = load_subset(subset_file)
         dataset = XLDocBenchDataset(data_dir)
         questions = tuple(dataset.iter_subset(subset))
-        expected_calls = (
+        answer_calls = (
             len(retrieval_manifest["question_ids"])
             * len(selected_systems)
             * len(selected_budgets)
         )
+        expected_calls = answer_calls * (2 if citation_entailment_judge else 1)
         if expected_calls > max_calls:
             raise GenerationError(
                 f"run requires {expected_calls} calls, above --max-calls {max_calls}"
@@ -517,6 +527,7 @@ def evaluate_generation(
             reasoning_effort=reasoning_effort,
             systems=selected_systems,
             budgets=selected_budgets,
+            citation_entailment_judge=citation_entailment_judge,
             pricing=PricingMetadata(
                 input_usd_per_million=input_usd_per_million,
                 cached_input_usd_per_million=cached_input_usd_per_million,

@@ -198,15 +198,23 @@ The prompt requires a concise answer plus evidence-ID citations and requires
 `INSUFFICIENT_EVIDENCE` when the context cannot support an answer. Invalid JSON
 is not repaired and scores zero. Scoring follows the released XL-DocBench
 deterministic evaluator: relaxed rule-based accuracy, normalized token F1, and
-ANLS. Citation validity is the fraction of returned IDs present in the context;
-it checks traceability, not semantic entailment.
+ANLS. Citation validity is the fraction of returned IDs present in the context.
+The historical `citation_support` field measures overlap with registered gold
+pages and is now labeled gold-page alignment; neither metric is semantic
+entailment. An optional second call to the same frozen model judges whether the
+cited evidence supports the generated answer without seeing the gold answer.
+The judge uses only cited items, returns a strict boolean JSON decision, and
+treats embedded evidence as data rather than instructions. Invalid judge
+output scores zero.
 
-Every cell records raw and parsed responses, citations, provider/model IDs,
-provider usage, input/cached-input/output/reasoning tokens, latency, accuracy,
-similarity metrics, abstention correctness, and configured cost. Pricing is
-explicit experiment metadata, never inferred from a mutable live price table.
-The CLI requires a `--max-calls` authorization ceiling before constructing the
-provider. Runs are atomically published under
+Every cell records raw and parsed answer and judge responses, citations,
+provider/model IDs, disaggregated judge usage, total
+input/cached-input/output/reasoning tokens, end-to-end latency, accuracy,
+similarity metrics, abstention correctness, and configured total cost. Pricing
+is explicit experiment metadata, never inferred from a mutable live price
+table. The CLI requires a `--max-calls` authorization ceiling before
+constructing the provider and counts the optional judge in that ceiling. Runs
+are atomically published under
 `artifacts/generation-runs/<run-id>/` and bind to hashes of the retrieval
 manifest and contexts.
 

@@ -34,6 +34,7 @@ class GenerationConfig(AnswerModelConfig):
 
     systems: tuple[BenchmarkSystem, ...] = tuple(BenchmarkSystem)
     budgets: tuple[int, ...] = DEFAULT_TOKEN_BUDGETS
+    citation_entailment_judge: bool = False
 
     @model_validator(mode="after")
     def selections_are_canonical(self) -> "GenerationConfig":
@@ -98,7 +99,13 @@ class GenerationEvaluationRecord(BaseModel):
     token_f1: float = Field(ge=0, le=1)
     anls: float = Field(ge=0, le=1)
     citation_validity: float = Field(ge=0, le=1)
+    # Historical name retained for artifact compatibility. This measures
+    # citation alignment with registered gold pages, not semantic entailment.
     citation_support: float | None = Field(default=None, ge=0, le=1)
+    citation_entailment: float | None = Field(default=None, ge=0, le=1)
+    citation_entailment_judge_valid: bool | None = None
+    citation_entailment_judge_reason: str | None = None
+    citation_entailment_judge_raw_response: str | None = None
     citation_present: bool
     insufficient_evidence_correct: bool
     input_tokens: int = Field(ge=0)
@@ -107,6 +114,12 @@ class GenerationEvaluationRecord(BaseModel):
     reasoning_tokens: int = Field(ge=0)
     calls: int = Field(default=1, ge=1)
     latency_ms: float = Field(ge=0)
+    judge_input_tokens: int = Field(default=0, ge=0)
+    judge_cached_input_tokens: int = Field(default=0, ge=0)
+    judge_output_tokens: int = Field(default=0, ge=0)
+    judge_reasoning_tokens: int = Field(default=0, ge=0)
+    judge_latency_ms: float = Field(default=0, ge=0)
+    judge_response_id: str | None = None
     model_id: str
     response_id: str | None = None
     provider_usage: dict[str, Any]
@@ -125,7 +138,9 @@ class GenerationSummaryRow(BaseModel):
     mean_token_f1: float
     mean_anls: float
     mean_citation_validity: float
+    # Historical field name: mean registered-gold-page alignment.
     mean_citation_support: float | None
+    mean_citation_entailment: float | None = None
     citation_present_rate: float
     insufficient_evidence_accuracy: float | None
     mean_input_tokens: float
