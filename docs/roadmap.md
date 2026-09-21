@@ -63,6 +63,9 @@ retrieval claim.
 
 ## Gate 3: Test whether selected evidence improves answers
 
+**Status:** implementation and preregistration complete; provider run awaits a
+local API credential.
+
 Use already-saved contexts first. Compare fixed, structural, and compiler
 systems at 2K and 4K with one answer model, one prompt, and explicit pricing and
 call limits. Measure:
@@ -75,6 +78,12 @@ call limits. Measure:
 
 Expand budgets or add a second model only if the first guarded run shows a
 directional answer-quality or economic benefit.
+
+The first run is frozen in the
+[XLHoldout6b generation preregistration](research-log/xlholdout6b-generation-preregistration.md):
+36 answer cells at 2K/4K, the same model for answer and semantic citation
+judging, a 72-call hard ceiling, and an approximately $5 authorization
+envelope.
 
 ## Gate 4: Test the persistent representation directly
 
