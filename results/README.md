@@ -8,6 +8,7 @@ directories because they can contain large indexes and rendered source context.
 
 | Result | Status | Main conclusion |
 | --- | --- | --- |
+| [XLDev2 content-unit × policy factorial](factorial/xldev2-content-policy/report.md) | Diagnostic | Selection policy explains more of the page-recall effect than IR nodes on two table-heavy questions. |
 | [XLDev24 coverage packing](retrieval/xldev24-coverage/report.md) | Development | Compiler page recall and full coverage beat both RAG baselines at every tested budget. |
 | [XLHoldout6](retrieval/xlholdout6/report.md) | Historical holdout | The preceding compiler configuration mostly failed to reproduce its development advantage. |
 | [XLHoldout6b](retrieval/xlholdout6b/report.md) | Directional holdout | Compiler leads at 2K and 4K; fixed RAG leads at 8K and 16K. |

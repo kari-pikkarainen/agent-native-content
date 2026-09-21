@@ -12,7 +12,7 @@ fewer tokens, or that the approach generalizes or wins economically.
 
 ## Gate 1: Isolate representation from retrieval policy
 
-**Implementation status:** ready for the initial small-subset diagnostic.
+**Implementation status:** initial small-subset diagnostic complete.
 
 Run a representation-by-policy factorial comparison on development data. The
 exact contract is defined in the [factorial specification](specs/factorial.md).
@@ -30,8 +30,12 @@ limits, budgets, and token accounting fixed. This separates three effects:
 - faceting and diversified packing within each representation; and
 - any interaction between representation and policy.
 
-Do not advance an IR-specific claim if fixed or structural chunks recover the
-same gain under the enhanced policy.
+The two-question table-heavy diagnostic found that IR trailed the best chunk
+unit in seven of eight matched policy/budget comparisons. Faceting plus
+coverage-aware packing improved page recall in 10 of 12 within-unit
+comparisons, at a substantial latency cost. This rejects an IR-specific claim
+at this gate and points to selection policy as the stronger mechanism. See the
+[decision note](research-log/xldev2-content-policy-factorial.md).
 
 ## Gate 2: Audit retrieval metrics
 
