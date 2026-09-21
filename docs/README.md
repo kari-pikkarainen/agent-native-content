@@ -12,6 +12,7 @@ decision gates.
 - [Agent-ready content bundle](specs/agent-document.md)
 - [Retrieval baselines](specs/retrieval.md)
 - [Context compiler](specs/context-compiler.md)
+- [Content-unit × selection-policy factorial](specs/factorial.md)
 - [Evaluation protocol](specs/evaluation.md)
 
 ## Project record

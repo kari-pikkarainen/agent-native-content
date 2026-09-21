@@ -9,4 +9,5 @@ when it changes a durable architectural boundary, add an ADR.
 - [Agent-ready content bundle](agent-document.md)
 - [Retrieval baselines](retrieval.md)
 - [Context compiler](context-compiler.md)
+- [Content-unit × selection-policy factorial](factorial.md)
 - [Evaluation protocol](evaluation.md)

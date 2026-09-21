@@ -161,6 +161,25 @@ HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 \
 
 Run IDs are immutable; choose a new ID for every run.
 
+## Causal factorial control
+
+The primary benchmark changes both representation and selection behavior. Use
+the controlled factorial command to cross fixed chunks, structural chunks, and
+IR nodes with ranked single-query retrieval and faceted coverage-aware
+retrieval:
+
+```shell
+uv run --extra retrieval contextbench eval-factorial \
+  --subset-file benchmarks/xl-docbench/subsets/xldev2-tables.json \
+  --retrieval-corpus-subset-file benchmarks/xl-docbench/subsets/xldev24.json \
+  --run-id xldev2-factorial
+```
+
+The command deliberately excludes compiler-only structural expansion, table
+joins, and page-neighbor backfill. Its defaults use this same two-question
+diagnostic and fixed 11-document corpus. See the
+[factorial specification](docs/specs/factorial.md).
+
 ## Common workflows
 
 ### Inspect the pinned dataset
@@ -305,6 +324,7 @@ data/cache/xl-docbench/               hash-verified source PDFs
 data/cache/ingest/<source>/<config>/  authoritative parsed documents
 artifacts/indexes/<sha256>/           verified derived retrieval indexes
 artifacts/runs/<run-id>/              evidence-only retrieval runs
+artifacts/factorial-runs/<run-id>/    controlled causal-factor runs
 artifacts/generation-runs/<run-id>/   answer-generation runs
 artifacts/representation-runs/<id>/   representation runs
 results/                              compact canonical evidence committed to Git

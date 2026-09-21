@@ -121,6 +121,13 @@ from the per-cell records. See
 [evaluation protocol](specs/evaluation.md) for metric definitions and
 the first decision gate.
 
+The separate factorial evaluator reuses the same fixed, structural, and IR-node
+indexes but crosses each content unit with ranked single-query retrieval and
+faceted coverage-aware retrieval. It performs common provenance deduplication
+and deliberately omits structural compiler operators. Its immutable outputs
+live under `artifacts/factorial-runs/<run-id>/`; see the
+[factorial specification](specs/factorial.md).
+
 ## Generation boundary
 
 Answer generation reads immutable `contexts.jsonl` packets rather than running

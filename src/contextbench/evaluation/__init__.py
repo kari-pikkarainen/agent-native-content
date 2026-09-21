@@ -1,5 +1,20 @@
 """Evidence-only retrieval evaluation."""
 
+from contextbench.evaluation.factorial import (
+    FactorialRun,
+    factorial_markdown_report,
+    run_factorial_benchmark,
+    summarize_factorial,
+)
+from contextbench.evaluation.factorial_models import (
+    ContentUnit,
+    FactorialConfig,
+    FactorialEvaluationRecord,
+    FactorialFacetConfig,
+    FactorialSummary,
+    FactorialSummaryRow,
+    SelectionPolicy,
+)
 from contextbench.evaluation.models import (
     DEFAULT_TOKEN_BUDGETS,
     BenchmarkSystem,
@@ -22,10 +37,21 @@ __all__ = [
     "BenchmarkSystem",
     "CandidateStageMetrics",
     "CompilerStageAuditRecord",
+    "ContentUnit",
     "EvaluationCorpus",
     "EvaluationError",
+    "FactorialConfig",
+    "FactorialEvaluationRecord",
+    "FactorialFacetConfig",
+    "FactorialRun",
+    "FactorialSummary",
+    "FactorialSummaryRow",
     "RetrievalBenchmarkConfig",
     "RetrievalBenchmarkSummary",
     "RetrievalEvaluationRecord",
+    "SelectionPolicy",
+    "factorial_markdown_report",
+    "run_factorial_benchmark",
     "run_retrieval_benchmark",
+    "summarize_factorial",
 ]

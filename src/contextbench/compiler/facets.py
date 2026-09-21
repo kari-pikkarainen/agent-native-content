@@ -2,10 +2,22 @@
 
 import re
 from collections.abc import Sequence
+from typing import Literal, Protocol
 
-from contextbench.compiler.models import CompilerConfig
 from contextbench.retrieval.index import HybridIndex
-from contextbench.retrieval.models import RankedEvidence
+from contextbench.retrieval.models import RankedEvidence, RetrievalConfig
+
+
+class FacetRetrievalConfig(Protocol):
+    """Structural interface shared by compiler and controlled retrieval policies."""
+
+    retrieval: RetrievalConfig
+    query_faceting_enabled: bool
+    query_facet_limit: int
+    query_facet_min_terms: int
+    query_facet_full_weight: float
+    query_facet_rerank_strategy: Literal["batched", "single_pass"]
+    query_facet_rerank_candidate_limit: int
 
 _CLAUSE_BOUNDARY = re.compile(
     r"\s*(?:[,;]|\b(?:and|versus|vs\.?|while|whereas)\b)\s*",
@@ -49,7 +61,7 @@ def retrieve_faceted(
     *,
     token_budget: int,
     document_ids: set[str],
-    config: CompilerConfig,
+    config: FacetRetrievalConfig,
 ) -> tuple[RankedEvidence, ...]:
     """Fuse cheap facet candidates, then rerank the bounded pool once."""
     if not ranked:

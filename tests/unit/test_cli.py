@@ -203,3 +203,43 @@ def test_eval_retrieval_disables_keyed_table_joins(
 
     assert result.exit_code == 0
     assert not captured["config"].compiler.keyed_table_join_enabled
+
+
+def test_eval_factorial_defaults_to_small_fixed_corpus(
+    tmp_path: Path, monkeypatch
+) -> None:
+    captured = {}
+
+    def fake_run_xl_factorial(**kwargs):
+        captured.update(kwargs)
+        path = tmp_path / "artifacts" / "factorial-runs" / "factorial-1"
+        return SimpleNamespace(
+            path=path,
+            manifest=SimpleNamespace(run_id="factorial-1"),
+        )
+
+    monkeypatch.setattr(
+        "contextbench.evaluation.factorial_xl.run_xl_factorial",
+        fake_run_xl_factorial,
+    )
+
+    result = runner.invoke(
+        app,
+        [
+            "eval-factorial",
+            "--artifacts-root",
+            str(tmp_path / "artifacts"),
+            "--run-id",
+            "factorial-1",
+        ],
+    )
+
+    assert result.exit_code == 0
+    output = json.loads(result.stdout)
+    assert output["run_id"] == "factorial-1"
+    assert captured["subset_file"].name == "xldev2-tables.json"
+    assert captured["retrieval_corpus_subset_file"].name == "xldev24.json"
+    config = captured["config"]
+    assert config.budgets == (2048, 4096, 8192, 16384)
+    assert set(config.content_units) == {"fixed", "structural", "ir"}
+    assert set(config.selection_policies) == {"ranked", "faceted_coverage"}

@@ -24,6 +24,8 @@ DEFAULT_DATASET_DIR = Path("data/raw/xl-docbench")
 DEFAULT_DOCUMENT_CACHE = Path("data/cache/xl-docbench")
 DEFAULT_INGEST_CACHE = Path("data/cache/ingest")
 DEFAULT_XL100 = Path("benchmarks/xl-docbench/subsets/xl100.json")
+DEFAULT_XLDEV2 = Path("benchmarks/xl-docbench/subsets/xldev2-tables.json")
+DEFAULT_XLDEV24 = Path("benchmarks/xl-docbench/subsets/xldev24.json")
 DEFAULT_ARTIFACTS_ROOT = Path("artifacts")
 DEFAULT_EMBEDDING_MODEL = "BAAI/bge-small-en-v1.5"
 DEFAULT_RERANKER_MODEL = "cross-encoder/ms-marco-MiniLM-L-6-v2"
@@ -298,6 +300,117 @@ def evaluate_retrieval(
                     if compiler_stage_audit
                     else None
                 ),
+                "summary": str(result.path / "summary.json"),
+            },
+            ensure_ascii=False,
+            sort_keys=True,
+        )
+    )
+
+
+@app.command("eval-factorial")
+def evaluate_factorial(
+    data_dir: Annotated[
+        Path,
+        typer.Option(help="Directory for pinned XL-DocBench release metadata."),
+    ] = DEFAULT_DATASET_DIR,
+    subset_file: Annotated[
+        Path,
+        typer.Option(help="Small committed evaluation subset manifest."),
+    ] = DEFAULT_XLDEV2,
+    retrieval_corpus_subset_file: Annotated[
+        Path,
+        typer.Option(help="Fixed parent corpus defining all retrieval indexes."),
+    ] = DEFAULT_XLDEV24,
+    source_cache_dir: Annotated[
+        Path,
+        typer.Option(help="Content-addressed source PDF cache."),
+    ] = DEFAULT_DOCUMENT_CACHE,
+    ingest_cache_dir: Annotated[
+        Path,
+        typer.Option(help="Content-addressed Docling ingestion cache."),
+    ] = DEFAULT_INGEST_CACHE,
+    artifacts_root: Annotated[
+        Path,
+        typer.Option(help="Root for derived indexes and immutable runs."),
+    ] = DEFAULT_ARTIFACTS_ROOT,
+    docling_artifacts_dir: Annotated[
+        Path | None,
+        typer.Option(help="Optional directory of pre-downloaded Docling models."),
+    ] = None,
+    embedding_model: Annotated[
+        str,
+        typer.Option(help="SentenceTransformers embedding model ID."),
+    ] = DEFAULT_EMBEDDING_MODEL,
+    reranker_model: Annotated[
+        str,
+        typer.Option(help="SentenceTransformers cross-encoder model ID."),
+    ] = DEFAULT_RERANKER_MODEL,
+    seed: Annotated[
+        int,
+        typer.Option(help="Recorded experiment seed."),
+    ] = 20260919,
+    query_facet_limit: Annotated[
+        int,
+        typer.Option(min=1, help="Maximum deterministic lexical query facets."),
+    ] = 3,
+    query_facet_min_terms: Annotated[
+        int,
+        typer.Option(min=1, help="Minimum terms required in a query facet."),
+    ] = 3,
+    query_facet_rerank_candidate_limit: Annotated[
+        int,
+        typer.Option(min=1, help="Maximum candidates reranked for each facet."),
+    ] = 250,
+    run_id: Annotated[
+        str | None,
+        typer.Option(help="Optional immutable factorial run identifier."),
+    ] = None,
+) -> None:
+    """Cross content units with ranked and faceted-coverage policies."""
+    from contextbench.evaluation import FactorialConfig, FactorialFacetConfig
+    from contextbench.evaluation.factorial_xl import run_xl_factorial
+    from contextbench.ingest import IngestionError
+    from contextbench.ir.project import IRProjectionError
+    from contextbench.retrieval import RetrievalConfig
+
+    retrieval = RetrievalConfig(
+        embedding_model=embedding_model,
+        reranker_model=reranker_model,
+    )
+    config = FactorialConfig(
+        seed=seed,
+        retrieval=retrieval,
+        faceting=FactorialFacetConfig(
+            retrieval=retrieval,
+            query_facet_limit=query_facet_limit,
+            query_facet_min_terms=query_facet_min_terms,
+            query_facet_rerank_candidate_limit=(
+                query_facet_rerank_candidate_limit
+            ),
+        ),
+    )
+    try:
+        result = run_xl_factorial(
+            data_dir=data_dir,
+            subset_file=subset_file,
+            retrieval_corpus_subset_file=retrieval_corpus_subset_file,
+            source_cache_dir=source_cache_dir,
+            ingest_cache_dir=ingest_cache_dir,
+            artifacts_root=artifacts_root,
+            docling_artifacts_dir=docling_artifacts_dir,
+            config=config,
+            run_id=run_id,
+            progress=lambda message: typer.echo(message, err=True),
+        )
+    except (DatasetError, IngestionError, IRProjectionError, RuntimeError) as exc:
+        _abort(str(exc))
+    typer.echo(
+        json.dumps(
+            {
+                "report": str(result.path / "report.md"),
+                "run_dir": str(result.path),
+                "run_id": result.manifest.run_id,
                 "summary": str(result.path / "summary.json"),
             },
             ensure_ascii=False,

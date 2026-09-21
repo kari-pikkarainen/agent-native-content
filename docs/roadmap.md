@@ -12,7 +12,10 @@ fewer tokens, or that the approach generalizes or wins economically.
 
 ## Gate 1: Isolate representation from retrieval policy
 
-Run a representation-by-policy factorial comparison on development data.
+**Implementation status:** ready for the initial small-subset diagnostic.
+
+Run a representation-by-policy factorial comparison on development data. The
+exact contract is defined in the [factorial specification](specs/factorial.md).
 
 | Content unit | Control policy | Enhanced policy |
 | --- | --- | --- |
