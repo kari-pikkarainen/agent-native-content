@@ -51,3 +51,8 @@ The safe defaults select those same files. Runs are atomically published under
 `artifacts/factorial-runs/<run-id>/` and contain a complete manifest,
 per-question metrics, contexts, summary, and Markdown report. Existing run IDs
 are never overwritten.
+
+The shared evaluator reports both provenance page recall and conservative
+content-verified page recall. The latter credits a source node's pages only
+when its full normalized text is present in the emitted context, preventing a
+partial multi-page chunk from inheriting all of the node's pages.

@@ -97,6 +97,10 @@ class FactorialEvaluationRecord(BaseModel):
     matched_pages: dict[str, tuple[int, ...]]
     evidence_page_recall: float = Field(ge=0, le=1)
     full_evidence_coverage: bool
+    content_verified_selected_pages: dict[str, tuple[int, ...]]
+    content_verified_matched_pages: dict[str, tuple[int, ...]]
+    content_verified_page_recall: float = Field(ge=0, le=1)
+    full_content_verified_coverage: bool
     gold_quote_count: int = Field(ge=0)
     matched_quote_count: int = Field(ge=0)
     evidence_quote_recall: float = Field(ge=0, le=1)
@@ -117,6 +121,8 @@ class FactorialSummaryRow(BaseModel):
     question_count: int
     mean_evidence_page_recall: float
     full_evidence_coverage_rate: float
+    mean_content_verified_page_recall: float
+    full_content_verified_coverage_rate: float
     mean_evidence_quote_recall: float
     full_quote_coverage_rate: float
     mean_context_tokens: float

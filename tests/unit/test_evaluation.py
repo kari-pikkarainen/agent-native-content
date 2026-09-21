@@ -19,14 +19,18 @@ from contextbench.evaluation import (
     RetrievalBenchmarkSummary,
     run_retrieval_benchmark,
 )
+from contextbench.evaluation.evidence import evaluate_context
 from contextbench.evaluation.models import RetrievalSummaryRow
-from contextbench.evaluation.reports import markdown_report
+from contextbench.evaluation.reports import markdown_report, summarize
 from contextbench.ir import project_document
 from contextbench.retrieval import (
+    ContextItem,
+    ContextPacket,
     HashEmbeddingModel,
     HybridIndex,
     LexicalOverlapReranker,
     RetrievalConfig,
+    RetrievalScores,
 )
 
 
@@ -114,7 +118,20 @@ def test_runner_writes_complete_immutable_evidence_artifacts(tmp_path: Path) -> 
     assert all(record.retrieval_latency_ms >= 0 for record in result.records)
     assert all(record.gold_quote_count == 1 for record in result.records)
     assert all(record.matched_quote_count <= 1 for record in result.records)
+    assert all(record.answerable for record in result.records)
+    assert all(
+        record.document_ids == ("dataset-doc-1",) for record in result.records
+    )
+    assert all(
+        0 <= record.content_verified_page_recall <= 1
+        for record in result.records
+    )
     assert len(result.summary.rows) == 8
+    assert len(result.summary.paired_intervals) == 12
+    assert all(
+        interval.ci95_low == interval.mean_delta == interval.ci95_high
+        for interval in result.summary.paired_intervals
+    )
 
     expected_files = {
         "contexts.jsonl",
@@ -136,6 +153,82 @@ def test_runner_writes_complete_immutable_evidence_artifacts(tmp_path: Path) -> 
     report = (result.path / "report.md").read_text()
     assert "No answer-generation model was used" in report
     assert "Evidence-only decision gate" in report
+    assert "Audited metrics" in report
+    assert "Paired source-cluster bootstrap" in report
+
+
+def test_content_verified_pages_do_not_credit_partial_source_nodes(
+    tmp_path: Path,
+) -> None:
+    corpus = _corpus(tmp_path)
+    document = corpus.documents["dataset-doc-1"]
+    node = next(
+        node
+        for node in document.nodes
+        if any(box.page_no == 1 for box in node.bounding_boxes)
+    )
+    item = ContextItem(
+        evidence_id="partial-node",
+        document_id=document.id,
+        page_start=node.page_start,
+        page_end=node.page_end,
+        content="deliberately incomplete fragment",
+        token_count=3,
+        source_node_ids=(node.id,),
+        source_item_ids=node.source_item_ids,
+        scores=RetrievalScores(),
+    )
+    packet = ContextPacket(
+        query="target",
+        token_budget=10,
+        token_count=3,
+        items=(item,),
+        metadata={},
+    )
+
+    metrics = evaluate_context(corpus.questions[0], packet, corpus.documents)
+
+    assert metrics["evidence_page_recall"] == 1.0
+    assert metrics["content_verified_page_recall"] == 0.0
+    assert metrics["content_verified_selected_pages"] == {"dataset-doc-1": ()}
+
+
+def test_answerable_and_quoted_summaries_exclude_vacuous_questions(
+    tmp_path: Path,
+) -> None:
+    result = _run(tmp_path, run_id="audit-summary")
+    answerable = result.records[0].model_copy(
+        update={
+            "evidence_page_recall": 0.0,
+            "content_verified_page_recall": 0.0,
+            "evidence_quote_recall": 0.0,
+        }
+    )
+    unanswerable = result.records[0].model_copy(
+        update={
+            "question_id": "unanswerable",
+            "answerable": False,
+            "gold_pages": {},
+            "matched_pages": {},
+            "evidence_page_recall": 1.0,
+            "full_evidence_coverage": True,
+            "content_verified_matched_pages": {},
+            "content_verified_page_recall": 1.0,
+            "full_content_verified_coverage": True,
+            "gold_quote_count": 0,
+            "matched_quote_count": 0,
+            "evidence_quote_recall": 1.0,
+            "full_quote_coverage": True,
+        }
+    )
+
+    row = summarize("audit", (answerable, unanswerable)).rows[0]
+
+    assert row.mean_evidence_page_recall == 0.5
+    assert row.answerable_question_count == 1
+    assert row.answerable_mean_evidence_page_recall == 0.0
+    assert row.quoted_question_count == 1
+    assert row.quoted_mean_evidence_quote_recall == 0.0
 
 
 def test_report_breaks_baseline_coverage_ties_with_recall() -> None:

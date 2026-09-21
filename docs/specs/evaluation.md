@@ -83,11 +83,14 @@ even though the current evaluation path contains no randomized operation.
 
 Every question × system × budget cell records:
 
+- whether the question is answerable and its source-document scope;
 - selected evidence IDs and the complete serialized context packet;
 - selected, gold, and matched one-based PDF pages by dataset document ID;
 - exact packed token count;
 - retrieval/compilation latency in milliseconds;
 - evidence-page recall and full-evidence coverage;
+- content-verified page recall, which credits a referenced node's pages only
+  when that node's full normalized source text is present in the context;
 - exact normalized evidence-quote recall and full-quote coverage when quotes
   are supplied by the dataset;
 - tokens to full evidence, when full coverage is reached;
@@ -104,6 +107,21 @@ verbatim after case-folding and whitespace normalization in the packed context.
 A question without annotated quotes has vacuous quote recall `1.0` and full
 quote coverage `true`. Quote recall is intentionally strict and complements,
 rather than replaces, page recall.
+
+Content-verified page recall is a conservative provenance/content check. A
+selected chunk does not inherit every page from a multi-page source node unless
+the full normalized node text occurs in the emitted chunk. This prevents a
+partial chunk from receiving page credit for absent portions of a large table
+or paragraph. It can under-credit synthetic or selectively rendered evidence,
+so it is reported with exact quote recall rather than treated as ground truth.
+
+Summary artifacts retain the registered all-question metrics for continuity
+and also report page metrics over answerable questions only and quote metrics
+over questions with at least one non-empty quote. Compiler deltas against each
+RAG baseline include descriptive paired 95% bootstrap intervals. Resampling is
+clustered by the sorted source-document scope, uses the registered seed, and
+defaults to 10,000 resamples. The intervals describe uncertainty in the sampled
+benchmark population; they are not a substitute for a larger holdout.
 
 Tokens-to-full is the cumulative item-token count at the earliest ranked
 context prefix covering every gold page. It is null when the budget never
@@ -137,8 +155,8 @@ contexts.jsonl      the corresponding complete context packets
 compiler-stages.jsonl
                     optional candidate recall at each compiler boundary and
                     against structural retrieval
-summary.json        aggregate rows by system and budget
-report.md           human-readable table and evidence-only decision deltas
+summary.json        aggregate rows plus paired source-cluster intervals
+report.md           registered and audited metrics, intervals, and deltas
 ```
 
 Derived indexes live under `artifacts/indexes/<sha256>/`; their key includes

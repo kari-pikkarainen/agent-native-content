@@ -80,6 +80,8 @@ class RetrievalEvaluationRecord(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     question_id: str
+    answerable: bool
+    document_ids: tuple[str, ...]
     system: BenchmarkSystem
     token_budget: int = Field(ge=1)
     token_count: int = Field(ge=0)
@@ -89,6 +91,10 @@ class RetrievalEvaluationRecord(BaseModel):
     matched_pages: dict[str, tuple[int, ...]]
     evidence_page_recall: float = Field(ge=0, le=1)
     full_evidence_coverage: bool
+    content_verified_selected_pages: dict[str, tuple[int, ...]]
+    content_verified_matched_pages: dict[str, tuple[int, ...]]
+    content_verified_page_recall: float = Field(ge=0, le=1)
+    full_content_verified_coverage: bool
     gold_quote_count: int = Field(ge=0)
     matched_quote_count: int = Field(ge=0)
     evidence_quote_recall: float = Field(ge=0, le=1)
@@ -115,6 +121,31 @@ class RetrievalSummaryRow(BaseModel):
     median_tokens_to_full_evidence: float | None
     mean_redundancy: float
     mean_retrieval_latency_ms: float
+    answerable_question_count: int = Field(default=0, ge=0)
+    quoted_question_count: int = Field(default=0, ge=0)
+    answerable_mean_evidence_page_recall: float | None = None
+    answerable_full_evidence_coverage_rate: float | None = None
+    answerable_mean_content_verified_page_recall: float | None = None
+    answerable_full_content_verified_coverage_rate: float | None = None
+    quoted_mean_evidence_quote_recall: float | None = None
+    quoted_full_quote_coverage_rate: float | None = None
+
+
+class RetrievalPairedInterval(BaseModel):
+    """Document-clustered paired uncertainty for one treatment contrast."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    treatment: BenchmarkSystem
+    baseline: BenchmarkSystem
+    token_budget: int = Field(ge=1)
+    metric: str
+    eligible_question_count: int = Field(ge=1)
+    source_cluster_count: int = Field(ge=1)
+    mean_delta: float
+    ci95_low: float
+    ci95_high: float
+    bootstrap_resamples: int = Field(ge=1)
 
 
 class RetrievalBenchmarkSummary(BaseModel):
@@ -124,3 +155,4 @@ class RetrievalBenchmarkSummary(BaseModel):
 
     run_id: str
     rows: tuple[RetrievalSummaryRow, ...]
+    paired_intervals: tuple[RetrievalPairedInterval, ...] = ()

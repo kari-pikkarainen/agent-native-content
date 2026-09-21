@@ -175,7 +175,7 @@ def run_retrieval_benchmark(
         compiler_corpus_index=compiler_corpus_index,
         long_chunks=long_chunks,
     )
-    summary = summarize(resolved_run_id, records)
+    summary = summarize(resolved_run_id, records, seed=config.seed)
     python_version, platform_name = environment_info()
     manifest = RunManifest(
         run_id=resolved_run_id,
@@ -425,6 +425,8 @@ def _evaluate_cells(
                 records.append(
                     RetrievalEvaluationRecord(
                         question_id=question.id,
+                        answerable=question.answerable,
+                        document_ids=question.document_ids,
                         system=system,
                         token_budget=budget,
                         token_count=packet.token_count,

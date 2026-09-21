@@ -18,7 +18,12 @@ def evaluate_context(
     item_pages = [
         _item_pages(item, documents, ir_id_to_dataset_id) for item in packet.items
     ]
+    content_verified_item_pages = [
+        _content_verified_item_pages(item, documents, ir_id_to_dataset_id)
+        for item in packet.items
+    ]
     selected = _merge_pages(item_pages)
+    content_verified_selected = _merge_pages(content_verified_item_pages)
     gold = {
         document_id: tuple(sorted(set(pages)))
         for document_id, pages in question.gold_evidence_pages.items()
@@ -33,6 +38,22 @@ def evaluate_context(
     matched_count = sum(len(pages) for pages in matched.values())
     recall = matched_count / gold_count if gold_count else 1.0
     full_coverage = matched_count == gold_count
+    content_verified_matched = {
+        document_id: tuple(
+            sorted(
+                set(pages).intersection(
+                    content_verified_selected.get(document_id, ())
+                )
+            )
+        )
+        for document_id, pages in gold.items()
+    }
+    content_verified_matched_count = sum(
+        len(pages) for pages in content_verified_matched.values()
+    )
+    content_verified_recall = (
+        content_verified_matched_count / gold_count if gold_count else 1.0
+    )
     quote_count, matched_quote_count, quote_recall, full_quote_coverage = (
         _quote_coverage(question, packet.items)
     )
@@ -42,6 +63,12 @@ def evaluate_context(
         "matched_pages": matched,
         "evidence_page_recall": recall,
         "full_evidence_coverage": full_coverage,
+        "content_verified_selected_pages": content_verified_selected,
+        "content_verified_matched_pages": content_verified_matched,
+        "content_verified_page_recall": content_verified_recall,
+        "full_content_verified_coverage": (
+            content_verified_matched_count == gold_count
+        ),
         "gold_quote_count": quote_count,
         "matched_quote_count": matched_quote_count,
         "evidence_quote_recall": quote_recall,
@@ -110,6 +137,28 @@ def _item_pages(
     }
     if not pages and item.page_start is not None and item.page_end is not None:
         pages.update(range(item.page_start, item.page_end + 1))
+    return {dataset_id: tuple(sorted(pages))}
+
+
+def _content_verified_item_pages(
+    item: ContextItem,
+    documents: Mapping[str, IRDocument],
+    ir_id_to_dataset_id: Mapping[str, str],
+) -> dict[str, tuple[int, ...]]:
+    """Credit pages only when each referenced node's full text is emitted."""
+    dataset_id = ir_id_to_dataset_id[item.document_id]
+    document = documents[dataset_id]
+    normalized_content = _normalize_text(item.content)
+    pages: set[int] = set()
+    for node_id in item.source_node_ids:
+        node = document.node_by_id[node_id]
+        node_text = _normalize_text(node.text)
+        if not node_text or node_text not in normalized_content:
+            continue
+        node_pages = {box.page_no for box in node.bounding_boxes}
+        if not node_pages and node.page_start is not None and node.page_end is not None:
+            node_pages.update(range(node.page_start, node.page_end + 1))
+        pages.update(node_pages)
     return {dataset_id: tuple(sorted(pages))}
 
 

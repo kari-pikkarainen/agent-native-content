@@ -410,6 +410,13 @@ def summarize_factorial(
                 full_evidence_coverage_rate=statistics.fmean(
                     float(record.full_evidence_coverage) for record in selected
                 ),
+                mean_content_verified_page_recall=statistics.fmean(
+                    record.content_verified_page_recall for record in selected
+                ),
+                full_content_verified_coverage_rate=statistics.fmean(
+                    float(record.full_content_verified_coverage)
+                    for record in selected
+                ),
                 mean_evidence_quote_recall=statistics.fmean(
                     record.evidence_quote_recall for record in selected
                 ),
@@ -444,14 +451,16 @@ def factorial_markdown_report(summary: FactorialSummary) -> str:
         "No structural expansion, table joins, page-neighbor backfill, or answer "
         "model participates in this controlled experiment.",
         "",
-        "| Unit | Policy | Budget | Page recall | Full pages | Quote recall | "
-        "Full quotes | Mean tokens | Redundancy | Latency (ms) |",
-        "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+        "| Unit | Policy | Budget | Page recall | Verified recall | Full pages | "
+        "Quote recall | Full quotes | Mean tokens | Redundancy | Latency (ms) |",
+        "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | "
+        "---: | ---: |",
     ]
     for row in summary.rows:
         lines.append(
             f"| {row.content_unit.value} | {row.selection_policy.value} | "
             f"{row.token_budget} | {row.mean_evidence_page_recall:.3f} | "
+            f"{row.mean_content_verified_page_recall:.3f} | "
             f"{row.full_evidence_coverage_rate:.3f} | "
             f"{row.mean_evidence_quote_recall:.3f} | "
             f"{row.full_quote_coverage_rate:.3f} | "
