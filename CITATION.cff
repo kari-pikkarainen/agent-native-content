@@ -4,6 +4,7 @@ title: "Agent-Native Content"
 type: software
 version: 0.1.0
 date-released: 2026-09-20
+license: Apache-2.0
 authors:
   - name: "Agent-Native Content contributors"
 abstract: >-

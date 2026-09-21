@@ -20,6 +20,10 @@ uv run --frozen pytest -q
 
 Tests must remain offline and use committed fixtures or verified local caches.
 
+Unless explicitly stated otherwise, contributions submitted for inclusion are
+licensed under the project's [Apache License 2.0](LICENSE), as described in
+Section 5 of that license.
+
 ## Research integrity
 
 - Never change released gold labels or question answers.

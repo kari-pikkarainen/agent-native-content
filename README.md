@@ -417,3 +417,8 @@ and kill conditions. The
 [retrieval specification](docs/specs/retrieval.md), and
 [compiler specification](docs/specs/context-compiler.md) define the implemented
 boundaries in more detail.
+
+## License
+
+Agent-Native Content is available under the
+[Apache License 2.0](LICENSE).
