@@ -53,6 +53,11 @@ class BM25Index:
                     1 - self.b + self.b * length / max(self._average_length, 1)
                 )
                 score += self._idf.get(term, 0.0) * numerator / denominator
+            if score <= 0.0:
+                # A chunk matching no query term is not a sparse hit. Appending
+                # it anyway gave it a rank, and so reciprocal-rank-fusion
+                # credit, ordered by chunk id -- a hash, not relevance.
+                continue
             scored.append((index, score))
         scored.sort(key=lambda pair: (-pair[1], self.chunks[pair[0]].id))
         return scored[:limit]

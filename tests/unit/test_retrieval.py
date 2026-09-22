@@ -23,6 +23,7 @@ from contextbench.retrieval import (
     rank_long_context,
 )
 from contextbench.retrieval.index import _index_key
+from contextbench.retrieval.sparse import BM25Index
 
 
 @pytest.fixture
@@ -699,6 +700,98 @@ def test_offline_hash_models_report_no_revision() -> None:
     assert LexicalOverlapReranker().revision is None
 
 
+def _sparse_probe_corpus() -> tuple[RetrievalChunk, ...]:
+    """Ten chunks of which exactly five contain the probe term ``zirconium``."""
+    texts = (
+        "zirconium alloys resist corrosion in reactor cladding.",
+        "The bridge deck was poured in three continuous sections.",
+        "Cold-worked zirconium keeps its strength at temperature.",
+        "Rainfall totals for the catchment fell for a fourth year.",
+        "Trace hafnium is separated from zirconium before use.",
+        "The orchestra rehearsed the second movement twice.",
+        "Welding zirconium demands an inert shielding atmosphere.",
+        "Ferry timetables change on the first Monday of the month.",
+        "Neutron transparency is why zirconium is chosen at all.",
+        "The bakery opens before dawn on market days.",
+    )
+    return tuple(
+        RetrievalChunk(
+            id=f"sparse-chunk-{position:02d}",
+            arm=RetrievalArm.FIXED,
+            document_id="sparse-doc",
+            text=chunk_text,
+            token_count=len(chunk_text.split()),
+            source_node_ids=(f"sparse-node-{position:02d}",),
+            source_item_ids=(f"sparse-item-{position:02d}",),
+        )
+        for position, chunk_text in enumerate(texts)
+    )
+
+
+def test_bm25_returns_only_chunks_that_match_a_query_term() -> None:
+    """A chunk sharing no term with the query is not a sparse hit.
+
+    Five of these ten chunks contain ``zirconium`` and five share no token
+    with the query at all. Asking for ten results must still yield five: a
+    zero-score chunk carries no lexical evidence, and returning it gave it a
+    rank, ordered among its fellow zeros by chunk id, which is a hash.
+    """
+    chunks = _sparse_probe_corpus()
+    config = RetrievalConfig()
+    index = BM25Index(chunks, k1=config.sparse_k1, b=config.sparse_b)
+
+    hits = index.search("zirconium", limit=10)
+
+    assert len(hits) == 5
+    assert all(score > 0.0 for _position, score in hits)
+    assert {chunks[position].id for position, _score in hits} == {
+        "sparse-chunk-00",
+        "sparse-chunk-02",
+        "sparse-chunk-04",
+        "sparse-chunk-06",
+        "sparse-chunk-08",
+    }
+
+
+def test_unmatched_chunks_earn_no_sparse_fusion_credit() -> None:
+    """A non-matching chunk reaches fusion on its dense term alone.
+
+    Reciprocal-rank fusion pays ``1 / (rrf_k + rank)`` per channel, so a
+    zero-score sparse entry used to be worth as much as a genuine match at
+    the same rank. Any candidate that BM25 did not hit must now score exactly
+    its dense reciprocal-rank term and nothing more.
+    """
+    chunks = _sparse_probe_corpus()
+    config = RetrievalConfig(candidate_limit=10, rerank_limit=10)
+    index = HybridIndex(
+        chunks,
+        config=config,
+        embedder=HashEmbeddingModel(config.embedding_dimensions),
+        reranker=LexicalOverlapReranker(),
+        tokenizer=FixtureTokenCounter(),
+    )
+    sparse_ids = {
+        chunks[position].id
+        for position, _score in index.sparse.search("zirconium", limit=10)
+    }
+
+    candidates = index.retrieve_candidates("zirconium")
+    dense_ranks = {
+        chunks[position].id: rank
+        for rank, (position, _score) in enumerate(
+            index._dense_search("zirconium", 10, allowed_indices=None), 1
+        )
+    }
+
+    unmatched = [item for item in candidates if item.chunk.id not in sparse_ids]
+    assert unmatched, "the dense channel must surface at least one non-match"
+    for item in unmatched:
+        assert item.scores.sparse == 0.0
+        assert item.scores.fused == pytest.approx(
+            1 / (config.rrf_k + dense_ranks[item.chunk.id])
+        )
+
+
 _RANKING_CORPUS_TEXTS = (
     "Revenue increased strongly across every reported region this quarter.",
     "Revenue in North America grew by eleven percent year over year.",
@@ -761,6 +854,11 @@ def _observed_rankings(index: HybridIndex) -> dict[str, tuple[tuple[str, int], .
 # the rekey is provably a cache invalidation rather than a change in results.
 # Recapture the same way, from an extracted d7f427e tree, if the corpus or the
 # queries change; never by recording what the current code prints.
+#
+# One row is no longer a pure d7f427e capture. Stopping BM25 from returning
+# zero-score chunks moved ``quarterly metrics``; that row was re-derived from
+# the reciprocal-rank arithmetic, not re-recorded, and the derivation is on the
+# row itself. The other six rows still hold their d7f427e values.
 _RANKINGS_BEFORE_THE_REVISION_PIN = {
     "revenue by region": (
         ("ranking-chunk-00", 1),
@@ -786,11 +884,19 @@ _RANKINGS_BEFORE_THE_REVISION_PIN = {
         ("ranking-chunk-07", 3),
         ("ranking-chunk-13", 4),
     ),
+    # Re-derived, not re-recorded, when BM25 stopped returning zero-score
+    # chunks. Only 13, 07 and 10 contain "quarterly" or "metrics", so the
+    # pre-fix sparse top-five padded itself with 00 and 01 at score 0.0, in
+    # chunk-id order. That paid chunk-00 sparse rank 4, worth 1/64, lifting it
+    # to fused 1/64 + 1/65 = 0.031010 and into the fourth rerank slot. Without
+    # the padding chunk-00 keeps only dense rank 5, 1/65 = 0.015385, and loses
+    # the slot to chunk-04, which earns 1/63 = 0.015873 from dense rank 3 on
+    # its own. The first three places are sparse-and-dense hits and do not move.
     "quarterly metrics": (
         ("ranking-chunk-07", 1),
         ("ranking-chunk-13", 2),
         ("ranking-chunk-10", 3),
-        ("ranking-chunk-00", 4),
+        ("ranking-chunk-04", 4),
     ),
     "region 42": (
         ("ranking-chunk-12", 1),
@@ -827,6 +933,12 @@ def test_offline_index_rankings_are_unchanged_by_the_revision_pin() -> None:
     score, and it alone catches dropping the BM25 idf factor. The other six
     queries absorb BM25 score-scaling changes in RRF fusion and the top-four
     rerank cut even when the sparse top-five genuinely changes.
+
+    Absorbing score-scaling is not absorbing everything. A change to which
+    chunks BM25 returns at all moves ranks rather than magnitudes, and those
+    the table does see: dropping zero-score chunks from the sparse hits left
+    ``europe costs identifier`` untouched, since all five of its hits score
+    above zero, and moved ``quarterly metrics`` instead.
 
     So this is a cache-invalidation check over one small offline corpus, not a
     general scoring guard. A regression that preserves relative order at every
