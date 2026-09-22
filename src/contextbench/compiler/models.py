@@ -16,7 +16,14 @@ from contextbench.retrieval.models import (
     RetrievalScores,
 )
 
-COMPILER_VERSION = "0.7.0"
+# Not a release number and not tied to the package version. It tracks one
+# thing: whether compiled packet contents can differ for a reason a config diff
+# would not reveal -- a change in selection, expansion, or packing behavior at
+# an identical ``compiler_config`` hash. It is emitted into packet metadata, so
+# archived packets from either side of such a change stay distinguishable by
+# their own metadata alone. Bump it whenever that is true; leave it alone for
+# refactors, comments, and anything a config already records.
+COMPILER_VERSION = "0.8.0"
 
 # ``priority_tier`` states a candidate's class and nothing else. It must never
 # depend on what an expansion happened to produce for one query, because

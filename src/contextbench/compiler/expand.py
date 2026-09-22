@@ -249,9 +249,17 @@ def expand_candidates(
             # retrieval whenever a join fired made every direct hit
             # unselectable while any join still fit the remaining budget, and
             # left core retrieval sharing a tier with page-neighbor windows.
-            # A join's advantage now has to come from its own score and its
-            # coverage of both referenced tables, which is what the coverage
-            # and table-reference terms in ``compiler/pack.py`` already reward.
+            #
+            # What this establishes is only that the class gate is gone. It
+            # does not make the surviving comparison sound. Joins and direct
+            # hits now meet inside one tier while their scores are still on
+            # different scales: a join carries a raw reranker score and an
+            # ``origin_rank`` numbered inside its own result set, so the best
+            # join collects the same rank-1 bonus in ``compiler/pack.py`` as
+            # the best retrieved node, while faceted direct hits carry an RRF
+            # value in both score fields. Putting those on one scale is task 2
+            # of Phase 1 in ``docs/plans/2026-09-21-improvement-plan.md``, not
+            # this change.
             expanded.extend(
                 candidate.model_copy(
                     update={"expansion_order": expansion_order + offset}

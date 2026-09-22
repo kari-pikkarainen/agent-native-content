@@ -1203,25 +1203,26 @@ def test_keyed_joins_do_not_gate_core_evidence_out_of_the_packet(
     counter = FixtureTokenCounter()
     ir = project_document(source, ingest_metadata(tmp_path), tokenizer=counter)
     scope = DocumentScope.from_documents([ir], source_documents={ir.id: source})
+    config = compiler_config()
     budget = 50
 
     packet, trace = compile_context_with_trace(
         JOINED_TABLES_AND_PROSE_QUERY,
         scope,
         budget,
-        compiler_config(),
+        config,
         tokenizer=counter,
     )
 
+    # Read the premise off the list packing actually sees: dedupe runs first,
+    # and its result is truncated, so counting pre-dedupe candidates could
+    # overstate how much budget the joins really consume.
+    packed_pool = trace.deduplicated_candidates[: config.max_expanded_candidates]
     joins = [
-        candidate
-        for candidate in trace.expanded_candidates
-        if candidate.operator == "keyed_join"
+        candidate for candidate in packed_pool if candidate.operator == "keyed_join"
     ]
     core = [
-        candidate
-        for candidate in trace.expanded_candidates
-        if candidate.operator != "keyed_join"
+        candidate for candidate in packed_pool if candidate.operator != "keyed_join"
     ]
     # Guard the premise: without this the test would pass for the wrong reason.
     # Every join fits, and once they are all packed nothing else can be, so a
@@ -1282,6 +1283,73 @@ def test_priority_tier_does_not_depend_on_whether_joins_fired(
     assert tiers_by_chunk[True] == tiers_by_chunk[False]
     assert set(tiers_by_chunk[True].values()) == {PRIMARY_EVIDENCE_TIER}
     assert PRIMARY_EVIDENCE_TIER < FALLBACK_CONTEXT_TIER
+
+
+def test_page_neighbor_windows_rank_after_joins_and_core_evidence_at_16k(
+    tmp_path: Path,
+) -> None:
+    """Fixed-window filler may spend leftover budget, never take precedence.
+
+    This is the case the join tier bump broke: with core retrieval pushed to
+    the page-neighbor tier, a window could be picked ahead of a direct hit.
+    Joins, core retrieval, and page neighbors all have to materialise at once
+    for the ordering between them to mean anything, so this runs at the real
+    16K budget with the shipped gates rather than a lowered one.
+    """
+    source = joined_tables_and_prose_source()
+    counter = FixtureTokenCounter()
+    ir = project_document(source, ingest_metadata(tmp_path), tokenizer=counter)
+    scope = DocumentScope.from_documents([ir], source_documents={ir.id: source})
+    config = compiler_config()
+    budget = 16384
+
+    # Pin the shipped gates this test depends on, so it cannot quietly drift
+    # into testing a configuration the benchmark never runs.
+    assert config.page_neighbor_min_budget == 16384
+    assert config.page_neighbor_radius > 0
+    assert config.keyed_table_join_enabled
+    assert config.packing_strategy == "coverage"
+    assert budget >= config.page_neighbor_min_budget
+
+    packet, trace = compile_context_with_trace(
+        JOINED_TABLES_AND_PROSE_QUERY,
+        scope,
+        budget,
+        config,
+        tokenizer=counter,
+    )
+
+    # Dedupe drops exact text duplicates, so text identifies a candidate.
+    operator_by_content = {
+        candidate.chunk.text: candidate.operator
+        for candidate in trace.deduplicated_candidates
+    }
+    assert len(operator_by_content) == len(trace.deduplicated_candidates)
+    operators = [operator_by_content[item.content] for item in packet.items]
+
+    # Premise: all three classes really are competing in this packet.
+    assert "keyed_join" in operators
+    assert "retrieval" in operators
+    assert "page_neighbor" in operators
+
+    windows = [
+        index
+        for index, operator in enumerate(operators)
+        if operator == "page_neighbor"
+    ]
+    primary = [
+        index
+        for index, operator in enumerate(operators)
+        if operator != "page_neighbor"
+    ]
+    # Every window comes after every piece of primary evidence.
+    assert min(windows) > max(primary)
+
+    contents = [item.content for item in packet.items]
+    assert any("Joined table key:" in content for content in contents)
+    assert any(PROSE_BESIDE_JOINED_TABLES in content for content in contents)
+    assert any("Model | Retention" in content for content in contents)
+    assert packet.token_count <= budget
 
 
 def test_simple_query_does_not_activate_specialized_operators(
