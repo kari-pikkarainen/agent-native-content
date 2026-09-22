@@ -1,0 +1,144 @@
+# XLHoldout6c freeze
+
+Date: 2026-09-22
+
+Precommit: `f6522f7`
+
+Canonical run: none. This subset has not been run and must not be run before
+Gate 1.
+
+## Status
+
+Frozen. `benchmarks/xl-docbench/subsets/xlholdout6c.json` is the Gate 1
+screening holdout required by Phase 0 task 8 of the
+[improvement plan](../plans/2026-09-21-improvement-plan.md). It was selected
+from release metadata alone. No retrieval, compilation, ingestion, indexing,
+evaluation, or answer generation was performed against it, and none of its six
+source documents was read.
+
+Two commitments travel with this file:
+
+1. It is never tuned on. No configuration, threshold, prompt, or default may
+   be chosen, adjusted, or rejected using any observation from it.
+2. It is run once, at Gate 1, with the configuration already selected on
+   `xldev24`.
+
+## Selection rules
+
+The rules are `xlholdout6b`'s, applied unchanged except for the preflight
+deviation recorded below. They were derived from `xlholdout6b.json`'s
+`selection_method` and verified by re-executing them: with the exclusion set
+restricted to `xl10`, `xldev24`, and `xlholdout6` and seed `20260921`, the
+procedure below reproduces `xlholdout6b`'s six question IDs exactly, along with
+its recorded 838 source pages and 56,231,276 source bytes.
+
+1. Candidate pool: questions in the committed `xl100` manifest.
+2. Keep `task_type == "single_doc"`.
+3. Keep answerable questions (`metadata.is_unanswerable` false).
+4. Drop any question whose source document appears in the exclusion set below.
+5. Drop any question whose source document is recorded as a PDF preflight
+   failure.
+6. Within each of the six domains, order the survivors by ascending source
+   `page_count`, then ascending source `file_size_bytes`, then ascending
+   `SHA-256("<selection_seed>:<question_id>")` in hexadecimal, and take the
+   first. One question per domain, six in total.
+7. Emit question IDs and `source_document_ids` in ascending domain-name order,
+   which is the order used by `xlholdout6b`.
+
+Seed: `20260922`, following the one-per-day convention of the earlier subsets.
+The seed only enters the tie-break.
+
+Strata are computed from release metadata: `source_pages` and `source_bytes`
+are sums over the six distinct source documents, and `evidence_modality`
+counts a question as `table_chart_or_image` when `metadata.evidence_sources`
+contains `Table`, `Chart`, or `Image`, and as `text_or_no_evidence` otherwise.
+That modality rule reproduces the recorded counts for `xl10`, `xlholdout6`, and
+`xlholdout6b`.
+
+## Exclusion set
+
+Every source document used by any question in `xl10` (6 documents), `xldev24`
+(11), `xlholdout6` (6), and `xlholdout6b` (6). The union is 28 distinct
+documents, because `doc_000166` is shared by `xl10` and `xldev24`:
+
+```text
+doc_000001 doc_000003 doc_000008 doc_000015 doc_000025 doc_000040 doc_000056
+doc_000061 doc_000072 doc_000089 doc_000097 doc_000100 doc_000102 doc_000133
+doc_000134 doc_000143 doc_000147 doc_000157 doc_000166 doc_000216 doc_000220
+doc_000244 doc_000253 doc_000309 doc_000310 doc_000321 doc_000330 doc_000362
+```
+
+`xl100` uses 120 distinct documents, so 98 remain document-fresh before the
+answerability and preflight filters.
+
+## Tie-break
+
+Ties are broken on ascending `SHA-256("20260922:" + question_id)`, never by
+sampling. The tie-break decided exactly one domain. In
+`technical_engineering`, `adubench_single_001346` and `adubench_single_000687`
+share the same source document `doc_000363`, so their page and byte keys are
+identical; the digests are `38918363c56f...` and `b4950c99d51e...`, and the
+lower digest selects `adubench_single_001346`.
+
+## Selected questions
+
+| Domain | Question | Document | Pages | Bytes | Modality |
+| --- | --- | --- | ---: | ---: | --- |
+| finance_business | `adubench_single_000741` | `doc_000028` | 135 | 4,482,102 | text |
+| legal_regulation | `adubench_single_001173` | `doc_000257` | 150 | 1,782,770 | text |
+| medical_clinical | `adubench_single_000826` | `doc_000067` | 110 | 1,154,633 | text |
+| narrative_literature | `adubench_single_000331` | `doc_000168` | 550 | 62,005,852 | text |
+| scientific_academic | `adubench_single_000255` | `doc_000127` | 118 | 28,678,548 | text |
+| technical_engineering | `adubench_single_001346` | `doc_000363` | 176 | 3,316,582 | chart |
+
+Totals: 6 questions, 6 distinct documents, 1,239 pages, 101,420,487 bytes.
+All six are answerable single-document questions. None of the six documents
+appears in `xl10`, `xldev24`, `xlholdout6`, or `xlholdout6b`.
+
+## Deviation: the affirmative preflight is deferred
+
+`xlholdout6b` selected only from sources that had passed a fetch-and-verify
+preflight. Selection here was performed offline, so the negative half of that
+filter was applied from the recorded failure ledgers
+(`data/cache/xl-docbench/failures.jsonl` and
+`data/cache/xl-docbench/documents/failures.jsonl`, 22 failed documents, of
+which 3 would otherwise have been eligible), but the positive half was not:
+only `doc_000067` is present and SHA-256-verified in the local source cache.
+The other five pinned sources are preflight-deferred.
+
+Requiring a cache-verified source instead would not have produced a balanced
+set: no document-fresh, answerable `finance_business` candidate in `xl100` is
+cached, so that rule yields five domains, not six. The balance rule was kept
+and the preflight rule was weakened, not the reverse.
+
+To keep the freeze meaningful, the contingency is pre-registered here and in
+the manifest rather than decided later. If a pinned source fails preflight
+before the Gate 1 run, substitute the next candidate in the same domain's
+deterministic order and record the substitution in this log. The frozen
+orders are:
+
+- finance_business: `adubench_single_000741`, `adubench_single_000181`,
+  `adubench_single_000045`, `adubench_single_000360`
+- legal_regulation: `adubench_single_001173`, `adubench_single_000757`,
+  `adubench_single_000103`, `adubench_single_000038`
+- medical_clinical: `adubench_single_000826`, `adubench_single_000184`,
+  `adubench_single_001267`, `adubench_single_001215`
+- narrative_literature: `adubench_single_000331`, `adubench_single_000256`
+- scientific_academic: `adubench_single_000255`, `adubench_single_000113`,
+  `adubench_single_000630`, `adubench_single_001199`
+- technical_engineering: `adubench_single_001346`, `adubench_single_000687`,
+  `adubench_single_000846`, `adubench_single_000130`
+
+## Known weaknesses
+
+- Five of six questions have text-only gold evidence, against three of six on
+  `xlholdout6b`. Modality was never a selection constraint in either subset;
+  it is an outcome of minimizing pages and bytes. Gate 1 therefore says little
+  about table, chart, and image evidence, and no table or figure claim may
+  rest on it.
+- The set costs 1,239 pages and about 101 MB to ingest, against 838 pages for
+  `xlholdout6b`. `doc_000168` alone is 550 pages and 62 MB.
+- `narrative_literature` had only two eligible candidates, so its fallback
+  chain is one deep.
+- Six questions cannot bound a loss margin. Gate 1 is a screening check, as
+  the improvement plan already states.
