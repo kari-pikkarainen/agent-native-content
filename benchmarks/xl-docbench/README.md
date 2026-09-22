@@ -15,6 +15,7 @@ question IDs in deterministic order.
 | `xl10.json` | Earlier pipeline smoke/regression set | Contaminated smoke set |
 | `xlholdout6.json` | First directional confirmation | Historical holdout |
 | `xlholdout6b.json` | Fresh metadata-selected confirmation | Directional holdout |
+| `xlholdout6c.json` | Gate 1 screening, frozen 2026-09-22 before any compiler change | Frozen; run once at Gate 1, never tuned on |
 | `xl100.json` | Registered full evaluation | Not yet run with selected compiler |
 
 Subset intent is part of the experiment contract. Do not silently substitute a

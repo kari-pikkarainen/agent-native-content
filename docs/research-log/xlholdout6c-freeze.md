@@ -68,8 +68,11 @@ doc_000134 doc_000143 doc_000147 doc_000157 doc_000166 doc_000216 doc_000220
 doc_000244 doc_000253 doc_000309 doc_000310 doc_000321 doc_000330 doc_000362
 ```
 
-`xl100` uses 120 distinct documents, so 98 remain document-fresh before the
-answerability and preflight filters.
+`xl100` uses 120 distinct documents, of which 22 of the 28 excluded ones
+appear, so 98 remain document-fresh before the answerability and preflight
+filters. The remaining six excluded documents are used by prior subsets but
+not by any `xl100` question, which is why the figure is 120 − 22 rather than
+120 − 28.
 
 ## Tie-break
 
@@ -101,10 +104,40 @@ appears in `xl10`, `xldev24`, `xlholdout6`, or `xlholdout6b`.
 preflight. Selection here was performed offline, so the negative half of that
 filter was applied from the recorded failure ledgers
 (`data/cache/xl-docbench/failures.jsonl` and
-`data/cache/xl-docbench/documents/failures.jsonl`, 22 failed documents, of
-which 3 would otherwise have been eligible), but the positive half was not:
-only `doc_000067` is present and SHA-256-verified in the local source cache.
-The other five pinned sources are preflight-deferred.
+`data/cache/xl-docbench/documents/failures.jsonl`), but the positive half was
+not: only `doc_000067` is present and SHA-256-verified in the local source
+cache. The other five pinned sources are preflight-deferred.
+
+Those ledgers are under `data/cache/`, which `.gitignore` excludes, and they
+are network-derived, so rule 5 is not reproducible from the repository alone.
+It is recorded here instead, because it decides two of the six picks: without
+it `finance_business` selects `adubench_single_000572` on `doc_000288` (105
+pages) rather than `doc_000028` (135), and `legal_regulation` selects
+`adubench_single_000245` on `doc_000124` (96 pages) rather than `doc_000257`
+(150). The ledgers hold 22 distinct documents, every one a
+`DocumentDownloadError`:
+
+```text
+doc_000016 doc_000045 doc_000057 doc_000086 doc_000099 doc_000101 doc_000115
+doc_000124 doc_000125 doc_000126 doc_000136 doc_000165 doc_000172 doc_000177
+doc_000200 doc_000240 doc_000288 doc_000290 doc_000312 doc_000323 doc_000328
+doc_000356
+```
+
+Five of those 22 would otherwise have been eligible, carrying six questions
+between them. An earlier revision of this log recorded three; that figure was
+wrong and could not be reconciled against any reading of the rule. The
+predicate is: present in `xl100`, `task_type == "single_doc"`, answerable, and
+on a document absent from the 28-document exclusion set.
+
+| Question | Document |
+| --- | --- |
+| `adubench_single_000095` | `doc_000045` |
+| `adubench_single_000245` | `doc_000124` |
+| `adubench_single_000249` | `doc_000125` |
+| `adubench_single_000572` | `doc_000288` |
+| `adubench_single_001243` | `doc_000288` |
+| `adubench_single_001283` | `doc_000312` |
 
 Requiring a cache-verified source instead would not have produced a balanced
 set: no document-fresh, answerable `finance_business` candidate in `xl100` is
@@ -114,8 +147,27 @@ and the preflight rule was weakened, not the reverse.
 To keep the freeze meaningful, the contingency is pre-registered here and in
 the manifest rather than decided later. If a pinned source fails preflight
 before the Gate 1 run, substitute the next candidate in the same domain's
-deterministic order and record the substitution in this log. The frozen
-orders are:
+deterministic order **that sits on a distinct document which itself passes
+preflight**, repeating until one does, and record every substitution in this
+log.
+
+The distinct-document requirement is load-bearing rather than pedantic: the
+plain next candidate is not always on a different source. In
+`technical_engineering` the next candidate by the frozen order is
+`adubench_single_000687`, which sits on `doc_000363` — the same document as
+the pinned question — so if that source fails, that substitute fails with it.
+The chains below therefore list one question per distinct document, and an
+earlier revision of this log listed `adubench_single_000687` as
+`technical_engineering`'s first fallback, which would not have been
+executable.
+
+If a domain's chain is exhausted, **run Gate 1 on the remaining domains and
+report the set as five-domain**, recording which domain was dropped and why.
+Do not substitute across domains, re-draw, or relax a selection rule after
+results are visible. `narrative_literature` is the shallowest chain at two
+distinct documents, so it is the most likely to exhaust.
+
+The frozen orders are:
 
 - finance_business: `adubench_single_000741`, `adubench_single_000181`,
   `adubench_single_000045`, `adubench_single_000360`
@@ -126,8 +178,12 @@ orders are:
 - narrative_literature: `adubench_single_000331`, `adubench_single_000256`
 - scientific_academic: `adubench_single_000255`, `adubench_single_000113`,
   `adubench_single_000630`, `adubench_single_001199`
-- technical_engineering: `adubench_single_001346`, `adubench_single_000687`,
-  `adubench_single_000846`, `adubench_single_000130`
+- technical_engineering: `adubench_single_001346`, `adubench_single_000846`,
+  `adubench_single_000130`, `adubench_single_001202`
+
+Each entry sits on a distinct document. Chain depths, counted in distinct
+documents: finance_business 4, legal_regulation 7, medical_clinical 8,
+narrative_literature 2, scientific_academic 7, technical_engineering 9.
 
 ## Known weaknesses
 
@@ -139,6 +195,14 @@ orders are:
 - The set costs 1,239 pages and about 101 MB to ingest, against 838 pages for
   `xlholdout6b`. `doc_000168` alone is 550 pages and 62 MB.
 - `narrative_literature` had only two eligible candidates, so its fallback
-  chain is one deep.
+  chain is two distinct documents deep and is the first that could exhaust.
+- The reproduction check against `xlholdout6b` validates less than it may
+  appear to. It exercises rules 1 to 4, 6 and 7, but not the affirmative
+  preflight, which is inert on `xlholdout6b` because every domain winner
+  there was cache-verified anyway, and not the tie-break, because no tie
+  fired on `xlholdout6b`. Both are active here: the preflight is deferred on
+  five of six sources, and the tie-break decided `technical_engineering`.
+  Those two rules rest on their stated definitions and on the digests
+  recorded above, not on the reproduction.
 - Six questions cannot bound a loss margin. Gate 1 is a screening check, as
   the improvement plan already states.

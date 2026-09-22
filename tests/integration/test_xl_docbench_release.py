@@ -85,9 +85,26 @@ def test_third_holdout_is_balanced_and_document_fresh() -> None:
         document_id for question in questions for document_id in question.document_ids
     }
 
+    # The question ids are the freeze. Everything else here describes them, so
+    # pin them literally: without this a swap within a document -- the same
+    # document, the same modality, the same page and byte totals -- would pass
+    # every other assertion in this test.
+    assert tuple(third.question_ids) == (
+        "adubench_single_000741",
+        "adubench_single_001173",
+        "adubench_single_000826",
+        "adubench_single_000331",
+        "adubench_single_000255",
+        "adubench_single_001346",
+    )
     assert len(third.question_ids) == 6
     assert set(third.question_ids).issubset(xl100.question_ids)
     assert third.strata["purpose"] == "gate1_screening_holdout_not_final_claims"
+    assert third.strata["evidence_modality"] == {
+        "table_chart_or_image": 1,
+        "text_or_no_evidence": 5,
+    }
+    assert third.strata["source_documents"] == 6
     assert third.strata["domains"] == {
         "finance_business": 1,
         "legal_regulation": 1,
