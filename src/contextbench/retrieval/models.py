@@ -22,6 +22,12 @@ class RetrievalConfig(BaseModel):
     fixed_chunk_tokens: int = Field(default=512, ge=1)
     fixed_overlap_tokens: int = Field(default=64, ge=0)
     structural_chunk_tokens: int = Field(default=512, ge=1)
+    # Default on: this is the fix for the structural arm's inability to
+    # retrieve heading vocabulary. Off reproduces the pre-fix behaviour
+    # exactly, leaving structural ``search_text`` as ``None``, which is what
+    # keeps the ablation measurable. Neither position changes emitted chunk
+    # text or token counts; see ``docs/specs/retrieval.md``.
+    structural_heading_search_context: bool = True
     sparse_k1: float = Field(default=1.5, gt=0)
     sparse_b: float = Field(default=0.75, ge=0, le=1)
     rrf_k: int = Field(default=60, ge=1)

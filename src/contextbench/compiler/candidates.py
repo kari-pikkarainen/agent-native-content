@@ -5,6 +5,7 @@ from collections.abc import Sequence
 
 from contextbench.ir.models import IRDocument, IRNodeKind
 from contextbench.ir.tokenizer import TokenCounter
+from contextbench.retrieval.chunking import contextual_search_text
 from contextbench.retrieval.models import RetrievalArm, RetrievalChunk
 
 _NON_EVIDENCE_GROUPS = {IRNodeKind.LIST}
@@ -25,7 +26,7 @@ def node_chunks(
                 or node.kind in _NON_EVIDENCE_GROUPS
             ):
                 continue
-            search_text = _contextual_search_text(node.text, node.heading_path)
+            search_text = contextual_search_text(node.text, node.heading_path)
             payload = (
                 f"compiler-node-v2\0{document.id}\0{node.id}\0{search_text}"
             ).encode()
@@ -45,10 +46,3 @@ def node_chunks(
                 )
             )
     return tuple(chunks)
-
-
-def _contextual_search_text(text: str, heading_path: tuple[str, ...]) -> str:
-    headings = heading_path
-    if headings and headings[-1].strip().casefold() == text.strip().casefold():
-        headings = headings[:-1]
-    return "\n".join((*headings, text))

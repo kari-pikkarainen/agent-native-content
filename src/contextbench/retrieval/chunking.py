@@ -53,6 +53,19 @@ class CounterChunkTokenizer(BaseTokenizer):
         return self.counter.count
 
 
+def contextual_search_text(text: str, heading_path: tuple[str, ...]) -> str:
+    """Join a heading trail above chunk text for search only, never for output.
+
+    Shared by the compiler candidates and the structural arm so both index the
+    same contextual string. The last heading is dropped when it duplicates the
+    text itself, so a heading node is not repeated against itself.
+    """
+    headings = heading_path
+    if headings and headings[-1].strip().casefold() == text.strip().casefold():
+        headings = headings[:-1]
+    return "\n".join((*headings, text))
+
+
 def fixed_chunks(
     document: IRDocument,
     *,
@@ -153,6 +166,15 @@ def structural_chunks(
         node_ids = tuple(dict.fromkeys(node_by_ref[ref].id for ref in source_refs))
         if not node_ids or not raw_chunk.text.strip():
             continue
+        heading_path = tuple(raw_chunk.meta.headings or ())
+        # Search-only context. The emitted ``text`` stays ``raw_chunk.text``,
+        # so token counts, budgets and the string a model reads are unchanged;
+        # only what the indexes read gains the heading trail.
+        search_text = (
+            contextual_search_text(raw_chunk.text, heading_path)
+            if config.structural_heading_search_context and heading_path
+            else None
+        )
         chunks.append(
             _chunk_from_nodes(
                 document,
@@ -162,7 +184,8 @@ def structural_chunks(
                 arm=RetrievalArm.STRUCTURAL,
                 ordinal=len(chunks),
                 token_count=counter.count(raw_chunk.text),
-                heading_path=tuple(raw_chunk.meta.headings or ()),
+                heading_path=heading_path,
+                search_text=search_text,
             )
         )
     return tuple(chunks)
@@ -178,6 +201,7 @@ def _chunk_from_nodes(
     token_count: int,
     source_item_ids: tuple[str, ...] | None = None,
     heading_path: tuple[str, ...] | None = None,
+    search_text: str | None = None,
 ) -> RetrievalChunk:
     nodes = [document.node_by_id[node_id] for node_id in source_node_ids]
     source_refs = source_item_ids or tuple(
@@ -195,6 +219,7 @@ def _chunk_from_nodes(
         arm=arm,
         document_id=document.id,
         text=text,
+        search_text=search_text,
         token_count=token_count,
         heading_path=heading_path
         if heading_path is not None

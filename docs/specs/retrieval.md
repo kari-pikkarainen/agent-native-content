@@ -160,68 +160,88 @@ Consequences, audited across the consumers of `retrieve()` and `pack()`:
   list and is the intended reading: an uncited claim is ungrounded whatever
   the reason.
 
-### Known defect: the structural arm cannot retrieve heading vocabulary
+### Fixed defect: the structural arm could not retrieve heading vocabulary
 
-This is a separate defect from the channel-positivity work above. It is not
+**Status: fixed.** `RetrievalConfig.structural_heading_search_context`
+defaults to `True`, and with it `structural_chunks` sets each chunk's
+`search_text` to its heading trail joined above the chunk text, exactly as the
+compiler's candidates already did. Setting the field to `False` reproduces the
+pre-fix behaviour exactly -- structural `search_text` stays `None` -- so the
+defect can be ablated rather than merely described. The rest of this section
+records what the defect was, because **every published pre-fix structural
+number was measured in the `False` state and carries it.**
+
+The fix is search-only. `retrieval_text` is `search_text or text`; the emitted
+chunk `text`, its `token_count`, the chunk id, provenance and every budget are
+byte-identical in both positions of the field, and the fixed, long-context and
+compiler arms are untouched.
+
+This was a separate defect from the channel-positivity work above. It was not
 caused by either guard; the guards only made it visible.
 
 Both channels read `RetrievalChunk.retrieval_text`, which is `search_text or
-text`. `search_text` is `None` on every `fixed` and `structural` chunk, so for
-those two arms the indexed string is the chunk text alone.
+text`. Before the fix, `search_text` was `None` on every `fixed` and
+`structural` chunk, so for those two arms the indexed string was the chunk text
+alone.
 
 - Arm A (`fixed`) builds its windows by concatenating **every** IR node that
   carries text, in ordinal order, which includes title and heading nodes. Its
   indexed vocabulary is therefore the document's full vocabulary.
 - Arm B (`structural`) builds each chunk from `raw_chunk.text` as returned by
   Docling's `HybridChunker`, and keeps the chunker's headings separately as
-  `heading_path` metadata. Metadata is never concatenated into the chunk text,
-  so heading and title strings never enter `retrieval_text` and are invisible
-  to BM25, to the dense embedding, and to the reranker alike.
+  `heading_path` metadata. Metadata was never concatenated into anything the
+  indexes read, so heading and title strings never entered `retrieval_text` and
+  were invisible to BM25, to the dense embedding, and to the reranker alike.
 
 Measured by building both indexes over the committed unit fixture, whose
 document has the title `Quarterly Report`, headings `Results` and `Methods`,
 and a list group named `Highlights`:
 
-| term | source | `fixed` indexed | `structural` indexed |
-|---|---|---|---|
-| `quarterly` | title | yes | no |
-| `report` | title | yes | no |
-| `results` | heading | yes | no |
-| `methods` | heading | yes | no |
-| `highlights` | list-group name | yes | no |
-| `measured` | code body | yes | yes |
+| term | source | `fixed` indexed | `structural`, field off | `structural`, field on |
+|---|---|---|---|---|
+| `quarterly` | title | yes | no | yes |
+| `report` | title | yes | no | yes |
+| `results` | heading | yes | no | yes |
+| `methods` | heading | yes | no | yes |
+| `highlights` | list-group name | yes | no | no |
+| `measured` | code body | yes | yes | yes |
 
-The consequence is arm-asymmetric and reaches well past the fixture. A
-benchmark question phrased in the vocabulary of a section heading -- and
-questions about document structure naturally are -- is retrievable by the fixed
-baseline and structurally unreachable by the structural arm, whatever the
-embedder. On the fixture, three of the seven empty `(arm, query)` pairs are
-this defect rather than genuinely absent vocabulary, and one non-empty pair
-(`structural`/`results revenue`) survives only on its body term. An arm
-comparison run in this state is biased **in favour of the fixed baseline** by
-an amount nobody has measured.
+`highlights` is the one residual, and it is not a heading: it is an
+`IRNodeKind.LIST` group name, which the chunker renders as its items while
+dropping the name, so it never enters a heading trail. The compiler arm cannot
+reach it either, for its own reason (it skips `IRNodeKind.LIST` groups as
+non-evidence). It is a different, smaller gap and is not fixed here.
 
-The compiler arm does **not** share the gap. `compiler/candidates.py` sets
-`search_text` explicitly via `_contextual_search_text`, which joins the node's
+The consequence of the defect was arm-asymmetric and reached well past the
+fixture. A benchmark question phrased in the vocabulary of a section heading --
+and questions about document structure naturally are -- was retrievable by the
+fixed baseline and structurally unreachable by the structural arm, whatever the
+embedder. On the fixture it accounted for three of the seven empty `(arm,
+query)` pairs, and one non-empty pair (`structural`/`results revenue`) survived
+only on its body term. With the field on, the empty set is four pairs, every
+one of them empty on both arms for genuinely absent vocabulary. Any arm
+comparison run in the `False` state is biased **in favour of the fixed
+baseline** by an amount that has not been measured on the benchmark subsets.
+
+The compiler arm never shared the gap. `compiler/candidates.py` sets
+`search_text` explicitly via `contextual_search_text`, which joins the node's
 `heading_path` above its own text (dropping the last heading when it duplicates
-the node text, so a heading node is not repeated). Every compiler candidate
-therefore carries its full heading trail in `retrieval_text`. Over the same
-fixture, the code node's `search_text` is the three lines `Quarterly Report`,
-`Methods`, `print('measured')`, so `methods` is indexed for the compiler arm
-and not for the structural one. Two caveats found while checking, both distinct
-from the structural gap: the compiler arm skips `IRNodeKind.LIST` group nodes
-as non-evidence, so the group name `Highlights` is unreachable there too, and
-it skips `content_layer == "furniture"` nodes entirely.
+the node text, so a heading node is not repeated). That helper now lives in
+`retrieval/chunking.py` and is shared by both arms, so they build the same
+contextual string; the import direction is `compiler` -> `retrieval`, never the
+reverse. Over the fixture, the code node's `search_text` is the three lines
+`Quarterly Report`, `Methods`, `print('measured')` for both arms. One further
+compiler caveat, distinct from this gap: it skips `content_layer ==
+"furniture"` nodes entirely.
 
-**This defect is unfixed and was deliberately not fixed here.** Changing what
-the structural arm indexes -- whether by giving it a heading-prefixed
-`search_text` like the compiler's, or by concatenating headings into the chunk
-text -- would move every structural number in every published result, so it is
-a design decision for the rerun rather than a documentation fix. Whoever runs
-the rerun must decide explicitly: either fix it and remeasure both arms, or run
-with it and state in the results that Arm A had access to heading vocabulary
-that Arm B did not. Carrying the published structural numbers forward without
-deciding is not an option.
+**What this means for existing results.** Turning the field on moves every
+structural number, so published structural results and the paired deltas
+against them cannot be carried across the fix. A rerun must remeasure both
+arms; a run that deliberately reproduces the old state must set
+`structural_heading_search_context=False` and say so. Adding the field changes
+`RetrievalConfig`, which is part of the derived-index key payload, so every
+cached index rekeys across the change in either direction -- a stale index is
+never reused across it.
 
 ### How much the sparse defect cost each arm
 

@@ -87,7 +87,16 @@ def expand_candidates(
                         "structural_chunk_tokens": min(
                             config.table_chunk_tokens,
                             token_budget - minimum_table_tokens,
-                        )
+                        ),
+                        # Pinned off so giving the structural arm heading
+                        # context does not move the compiler. These fragments
+                        # are scored by the reranker, which reads
+                        # ``retrieval_text``; leaving the flag at its new
+                        # default would change table fragment scores here as a
+                        # side effect of a change scoped to Arm B. The compiler
+                        # adds heading context to the rendered fragment itself
+                        # through ``include_heading_context``.
+                        "structural_heading_search_context": False,
                     }
                 )
                 table_chunks = structural_chunks(

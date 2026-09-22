@@ -49,26 +49,38 @@ def retrieval_fixture(tmp_path: Path):
 # both exactly 0.0 before the dense positivity guard landed: rank 1 was awarded
 # on hash-ordered dense rank credit alone, over a chunk sharing no query term
 # and no vector direction with the query. Empty is the honest answer for all
-# seven, and it is what BM25 alone has returned for the sparse channel since
+# four, and it is what BM25 alone has returned for the sparse channel since
 # its own guard.
 #
-# They are empty for two different reasons, and the difference matters. Both
-# channels read ``chunk.retrieval_text``, which is ``search_text or text``, and
-# ``search_text`` is ``None`` on every ``fixed`` and ``structural`` chunk, so
-# ``retrieval_text`` is the chunk text alone. Measured by building both indexes
-# over the fixture, the indexed vocabularies are:
+# This set used to hold seven pairs, and the three it lost were lost to a fix,
+# not to a weakened assertion. ``RetrievalConfig.structural_heading_search_
+# context`` now defaults to ``True``, so ``structural_chunks`` sets each chunk's
+# ``search_text`` to its heading trail joined above its own text, exactly as the
+# compiler's candidates do. Both channels read ``chunk.retrieval_text``, which
+# is ``search_text or text``, so headings are now indexed for the structural arm
+# too. Emitted ``text`` and ``token_count`` are untouched in either position of
+# the flag; this is a search-only change.
 #
-#   fixed:      42 america by grew highlights increased measured methods north
-#               print quarterly region report results revenue strongly
-#   structural: 42 america by grew increased measured north print region
-#               revenue strongly
+# Measured by building both indexes over the fixture, with the flag on and then
+# off, the indexed vocabularies are:
+#
+#   fixed (either position):  42 america by grew highlights increased measured
+#                             methods north print quarterly region report
+#                             results revenue strongly
+#   structural, flag on:      the same list minus "highlights"
+#   structural, flag off:     42 america by grew increased measured north print
+#                             region revenue strongly
 #
 # The fixed arm windows over *every* node carrying text, title and headings
 # included (``chunking.fixed_chunks``), so its indexed vocabulary equals the
-# document's. ``structural_chunks`` builds each chunk from ``raw_chunk.text``
-# and keeps the headings as ``heading_path`` metadata only, so ``Quarterly
-# Report``, ``Results``, ``Methods`` and the ``Highlights`` list-group name are
-# in the fixture but in no structural chunk text. Per pair:
+# document's. With the flag off, ``structural_chunks`` indexes ``raw_chunk.text``
+# alone and ``Quarterly Report``, ``Results`` and ``Methods`` are unreachable --
+# that was the defect. With it on, the only term the fixed arm indexes and the
+# structural arm does not is ``highlights``, and that one is not a heading at
+# all: it is an ``IRNodeKind.LIST`` group name, which Docling's chunker renders
+# as "- North America grew." while dropping the name, so it never enters a
+# heading trail. The compiler arm cannot reach it either, for its own reason
+# (it skips ``IRNodeKind.LIST`` groups as non-evidence). Per remaining pair:
 #
 #   fixed/metrics                 vocabulary genuinely absent: neither
 #                                 "metrics" nor any casefold match of it
@@ -77,29 +89,17 @@ def retrieval_fixture(tmp_path: Path):
 #                                 "conclusion".
 #   structural/metrics            genuinely absent, as above.
 #   structural/growth conclusion  genuinely absent, as above.
-#   structural/quarterly report   present but unindexed. Both terms are in the
-#                                 title node "Quarterly Report"; neither is in
-#                                 a structural chunk.
-#   structural/methods            present but unindexed. "Methods" is a level-1
-#                                 heading node; the chunk under it carries only
-#                                 its code body, "print('measured')".
-#   structural/report highlights  present but unindexed. "report" from the
-#                                 title, "highlights" from the list-group node
-#                                 text "Highlights"; the structural chunker
-#                                 renders that group as "- North America
-#                                 grew." and drops the name.
 #
-# So four of the seven are honest misses and three are a retrieval gap that the
-# positivity guards expose rather than cause: the structural arm cannot reach
-# heading vocabulary at all. This is why ``structural``/``measured``, a body
-# word, is not in this set, and why the same three queries succeed on the fixed
-# arm. It is not confined to the empty rows either -- ``structural``/``results
-# revenue`` returns a hit, but on "revenue" alone, because "Results" is a
-# heading. The gap is unfixed and out of scope here; fixing it would move every
-# structural number. It is recorded as its own defect in
-# ``docs/specs/retrieval.md``, because a benchmark question phrased in
-# section-heading vocabulary is reachable by the fixed arm and invisible to the
-# structural one, which biases the arm comparison.
+# All four are honest misses, and every one of them is an honest miss on *both*
+# arms. That symmetry is the point of the fix: the set no longer contains a
+# single pair that is empty only because of which arm asked. The three that
+# left -- ``structural``/``quarterly report``, ``structural``/``methods`` and
+# ``structural``/``report highlights`` -- now retrieve on heading vocabulary
+# their chunk text still does not contain. ``report highlights`` retrieves on
+# "report" from the title heading only; "highlights" remains unindexed for the
+# reason above, the same way ``structural``/``results revenue`` used to return a
+# hit on "revenue" alone. Published pre-fix structural numbers were measured in
+# the flag-off state and carry the defect; see ``docs/specs/retrieval.md``.
 #
 # This list is the measured result, not a target: it is reachable only under
 # the offline ``hash-256-v1`` embedding, whose 256-dimension sign-bit vectors
@@ -112,10 +112,7 @@ _FIXTURE_QUERIES_WITHOUT_EVIDENCE = frozenset(
     {
         (RetrievalArm.FIXED, "metrics"),
         (RetrievalArm.FIXED, "growth conclusion"),
-        (RetrievalArm.STRUCTURAL, "quarterly report"),
         (RetrievalArm.STRUCTURAL, "metrics"),
-        (RetrievalArm.STRUCTURAL, "methods"),
-        (RetrievalArm.STRUCTURAL, "report highlights"),
         (RetrievalArm.STRUCTURAL, "growth conclusion"),
     }
 )
@@ -179,10 +176,15 @@ def test_fixture_queries_return_ranked_traceable_evidence(
     assert ranked[0].chunk.source_item_ids
     # Now tightened to ``> 0`` on both channels, which the comment this
     # replaced said to do once the dense channel filtered non-matches too.
-    # The 7 pairs that made the weaker ``>= 0`` necessary were exactly the
+    # The pairs that made the weaker ``>= 0`` necessary were exactly the
     # ones reaching rank 1 on a zero score in both channels; they are the
-    # split above, and none of them lands here. For the 13 that remain, the
-    # top hit shares a query term and a vector direction with the query.
+    # split above, and none of them lands here. For the 16 that remain --
+    # 13 before heading context reached the structural arm -- the top hit
+    # shares a query term and a vector direction with the query. The three
+    # newcomers are scored hits, not empty rows relabelled: measured, they
+    # are structural/quarterly report at sparse 0.4705 dense 0.6325,
+    # structural/methods at 0.8944/0.4472, and structural/report highlights
+    # at 0.2353/0.3162, each clearing this assertion on its own.
     assert ranked[0].scores.sparse > 0
     assert ranked[0].scores.dense > 0
     assert ranked[0].scores.fused > 0
@@ -296,6 +298,110 @@ def test_search_text_drives_retrieval_but_emitted_text_stays_exact() -> None:
 
     assert len(packet.items) == 1
     assert packet.items[0].content == "Precise emitted evidence"
+
+
+def _structural_index(
+    tmp_path: Path, retrieval_fixture, *, heading_context: bool
+) -> HybridIndex:
+    source, ir, config = retrieval_fixture
+    return HybridIndex.build(
+        [ir],
+        arm=RetrievalArm.STRUCTURAL,
+        config=config.model_copy(
+            update={"structural_heading_search_context": heading_context}
+        ),
+        source_documents={ir.id: source},
+        tokenizer=FixtureTokenCounter(),
+        embedder=HashEmbeddingModel(config.embedding_dimensions),
+        artifacts_root=tmp_path / f"artifacts-{heading_context}",
+    )
+
+
+def test_structural_chunks_index_heading_vocabulary_when_enabled(
+    tmp_path: Path, retrieval_fixture
+) -> None:
+    """A term that exists only in a heading must reach the structural indexes.
+
+    ``methods`` appears in the fixture as a level-1 heading and nowhere in any
+    chunk body: the chunk under it carries only ``print('measured')``. So a hit
+    here can only have come from ``search_text`` carrying the heading trail,
+    which is what ``structural_heading_search_context`` turns on.
+    """
+    index = _structural_index(tmp_path, retrieval_fixture, heading_context=True)
+
+    ranked = index.retrieve("methods")
+
+    assert ranked
+    chunk = ranked[0].chunk
+    assert "methods" not in chunk.text.casefold()
+    assert chunk.heading_path == ("Quarterly Report", "Methods")
+    assert chunk.search_text == "Quarterly Report\nMethods\n" + chunk.text
+    # Retrieved on the heading in both channels, not on rank credit alone.
+    assert ranked[0].scores.sparse > 0
+    assert ranked[0].scores.dense > 0
+
+
+def test_structural_heading_context_off_leaves_headings_unindexed(
+    tmp_path: Path, retrieval_fixture
+) -> None:
+    """The off position must reproduce the pre-fix behaviour exactly.
+
+    Pre-fix, ``search_text`` was ``None`` on every structural chunk and heading
+    vocabulary was unreachable. Both halves are asserted, so the ablation arm
+    of the Phase C comparison is a real reproduction and not merely a weaker
+    version of the fix.
+    """
+    index = _structural_index(tmp_path, retrieval_fixture, heading_context=False)
+
+    assert all(chunk.search_text is None for chunk in index.chunks)
+    assert all(
+        chunk.retrieval_text == chunk.text for chunk in index.chunks
+    )
+    assert index.retrieve("methods") == ()
+    assert index.retrieve("quarterly report") == ()
+    # A body term is unaffected by the flag in either position.
+    assert index.retrieve("measured")
+
+
+def test_structural_heading_context_changes_no_emitted_text_or_token_count(
+    tmp_path: Path, retrieval_fixture
+) -> None:
+    """Search-only means search-only: output bytes and budgets cannot move.
+
+    ``search_text`` is read by the indexes; ``text`` and ``token_count`` are
+    what a model sees and what every budget is charged against. The flag must
+    leave chunk identity, emitted text, token counts and provenance identical
+    in both positions, and a packed context for a query that both positions
+    retrieve must be byte-identical.
+    """
+    on = _structural_index(tmp_path, retrieval_fixture, heading_context=True)
+    off = _structural_index(tmp_path, retrieval_fixture, heading_context=False)
+
+    def emitted(index: HybridIndex):
+        return tuple(
+            (
+                chunk.id,
+                chunk.text,
+                chunk.token_count,
+                chunk.heading_path,
+                chunk.page_start,
+                chunk.page_end,
+                chunk.source_node_ids,
+                chunk.source_item_ids,
+            )
+            for chunk in index.chunks
+        )
+
+    assert emitted(on) == emitted(off)
+    assert [chunk.search_text for chunk in off.chunks] == [None] * len(off.chunks)
+    assert all(chunk.search_text is not None for chunk in on.chunks)
+
+    packed_on = on.pack("measured", token_budget=12)
+    packed_off = off.pack("measured", token_budget=12)
+    assert [item.content for item in packed_on.items] == [
+        item.content for item in packed_off.items
+    ]
+    assert packed_on.token_count == packed_off.token_count
 
 
 def test_token_budget_expands_rerank_pool_by_candidate_token_mass() -> None:
@@ -768,6 +874,20 @@ def test_index_key_is_stable_for_a_fixed_revision() -> None:
     change to the key payload, its field names, or the retrieval config
     defaults would strand every cached index under a new key, so that change
     has to be made deliberately.
+
+    Both literals moved once, deliberately, when ``RetrievalConfig`` gained
+    ``structural_heading_search_context``. The key payload embeds
+    ``config.model_dump(mode="json")``, so a new config field rekeys every
+    cached index -- which is correct here, because the flag changes what the
+    structural arm indexes and a stale index must not be reused across it.
+
+    Derived rather than re-recorded: rebuilding this exact payload with the
+    single new key deleted from the config dump, and hashing it the same way,
+    reproduces the previous literals byte for byte --
+    ``09fca44765c922c8ba0b5a1812ae172ab0a578842a7e52ff1887a14e40bdf99e``
+    offline and ``fcafc11e9de5b97151c6b0bb473435f3fd6196e6e7fe3d247403fdb7b5
+    c2e927`` hub-backed. The added key is therefore the whole of the
+    difference; nothing else in the payload moved.
     """
     assert _key(
         embedding_model="hash-256-v1",
@@ -776,9 +896,9 @@ def test_index_key_is_stable_for_a_fixed_revision() -> None:
         reranker_model="lexical-overlap-v1",
         reranker_version="1",
         reranker_revision=None,
-    ) == "09fca44765c922c8ba0b5a1812ae172ab0a578842a7e52ff1887a14e40bdf99e"
+    ) == "3dff8843ce030b48bd9ff9ca59eec5826e2be6c9d62409dfc9ae1b7f9e15d105"
 
-    assert _key() == "fcafc11e9de5b97151c6b0bb473435f3fd6196e6e7fe3d247403fdb7b5c2e927"
+    assert _key() == "8bc92172223a345ab003704cf6081998ac06d393fadf012cd30eb285f4417b23"
 
 
 def test_configured_hub_model_requires_a_revision() -> None:
