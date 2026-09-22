@@ -52,6 +52,18 @@ rerun that republishes a baseline should decide this first: if the dense mirror
 is fixed after a baseline is republished, every number in that baseline moves
 again and the rerun is wasted.
 
+### How much the sparse defect cost each arm
+
+The share of the sparse channel that was noise was measured before the fix,
+and it is not the same share in every arm: 6 of 35 sparse ranks were unearned
+on the ranking corpus, 15 of 30 on the fixed retrieval fixture, and 15 of 20
+on the structural one, where five queries matched no chunk at all and their
+whole sparse channel was noise. The arms therefore did not pay equally for the
+defect, which is why a rerun has to remeasure the paired deltas rather than
+carry the published ones over. These counts come from the committed fixture
+corpora, which are small: they establish that the effect differs by arm, not
+how large it is on the benchmark subsets.
+
 ## Models
 
 The default `hash-256-v1` embedding and `lexical-overlap-v1` reranker are
@@ -113,6 +125,13 @@ versions, and the pinned embedding and reranker model revisions. The serialized
 artifact includes the same provenance plus canonical chunks and vectors, so a
 changed implementation, or the same model ID repinned to different weights,
 selects a different derived index path.
+
+Adding the revisions to the key invalidated the existing cache. All 31
+indexes under `artifacts/indexes/` were written before the pin, record the two
+hub models without a revision, and are now unreachable by key: they must be
+rebuilt. That is cache invalidation, not a change in results, but it means the
+next run pays full index construction for every arm rather than reusing a warm
+cache.
 
 Benchmark evaluation may build a single index per arm over all subset source
 documents. `retrieve(..., document_ids=...)` and `pack(..., document_ids=...)`

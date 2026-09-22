@@ -157,6 +157,15 @@ def run_generation_benchmark(
         try:
             response = provider.generate(request, config=config)
         except Exception as exc:
+            # Recorded, not fixed: an exception from the provider aborts the
+            # whole run. ``_publish_run`` runs only after this loop completes,
+            # so a 429 or a timeout at call 40 of 72 discards all 40 responses
+            # already paid for and writes no artifact at all. The
+            # ``response_valid`` handling below survives a *non-completed
+            # response*, which is a different failure; it is not crash safety
+            # and must not be read as it. The same applies to the judge call
+            # further down. Making a partial run durable is a design change,
+            # not a fix to make here.
             raise GenerationError(
                 f"provider failed for {question.id}/{row['system']}/"
                 f"{row['token_budget']}: {exc}"

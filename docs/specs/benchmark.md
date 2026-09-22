@@ -757,7 +757,15 @@ Record at minimum:
 * output tokens;
 * calls;
 * dollars per query;
-* dollars per correct answer.
+* dollars per correct answer;
+* response valid rate, and the judge valid rate when a judge is enabled.
+
+A response the provider did not complete is a failed call, not a wrong answer.
+Each cell records `response_valid`, the provider's `status` and
+`incomplete_reason`, and the same fields for the judge call; each summary row
+records the resulting `response_valid_rate` and
+`citation_entailment_judge_valid_rate`. Without those rates an arm whose calls
+were truncated is indistinguishable from an arm that answered badly.
 
 ---
 
@@ -839,6 +847,8 @@ embedding_revision
 reranker_model
 reranker_revision
 answer_model
+temperature
+seed
 
 tokenizer
 token_budget
@@ -847,6 +857,14 @@ random_seed
 
 environment info
 ```
+
+`temperature` and `seed` are the answer model's configured sampling settings,
+recorded by every run that calls an answer model: a generation run writes them
+as top-level manifest fields, and the representation run carries them inside
+its frozen `config` block. `null` records that the setting was not sent at all
+and the provider default applied, which is not the same as a value of zero;
+many reasoning models reject an explicit temperature. Both are distinct from
+`random_seed`, which is the benchmark's own seed.
 
 `embedding_revision` and `reranker_revision` record the exact model weights,
 because a model ID alone names a moving branch. A hub-backed model is loaded at

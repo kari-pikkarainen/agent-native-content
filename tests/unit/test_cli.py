@@ -385,3 +385,82 @@ def test_eval_commands_refuse_a_new_model_id_on_the_default_revision(
 
     assert paired.exit_code == 0, paired.output
     assert calls == ["retrieval"]
+
+
+def test_eval_commands_accept_offline_models_without_a_revision(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """The offline models have no commit to name, so none may be demanded.
+
+    ``hash-256-v1`` and ``lexical-overlap-v1`` are computed locally and have no
+    Hugging Face repository, so the revision is never used. Refusing them while
+    the default revision is in place asked the user for the commit of a model
+    that has none, which is advice that cannot be followed.
+    """
+    captured: dict[str, dict] = {}
+
+    def fake_run_xl_retrieval(**kwargs):
+        captured["retrieval"] = kwargs
+        return SimpleNamespace(
+            path=tmp_path / "artifacts" / "runs" / "run-1",
+            manifest=SimpleNamespace(run_id="run-1"),
+        )
+
+    def fake_run_xl_factorial(**kwargs):
+        captured["factorial"] = kwargs
+        return SimpleNamespace(
+            path=tmp_path / "artifacts" / "factorial-runs" / "run-2",
+            manifest=SimpleNamespace(run_id="run-2"),
+        )
+
+    monkeypatch.setattr(
+        "contextbench.evaluation.xl_docbench.run_xl_retrieval",
+        fake_run_xl_retrieval,
+    )
+    monkeypatch.setattr(
+        "contextbench.evaluation.factorial_xl.run_xl_factorial",
+        fake_run_xl_factorial,
+    )
+
+    offline_embedding = runner.invoke(
+        app,
+        [
+            "eval-retrieval",
+            "--artifacts-root",
+            str(tmp_path / "artifacts"),
+            "--run-id",
+            "run-1",
+            "--embedding-model",
+            "hash-256-v1",
+        ],
+    )
+    offline_reranker = runner.invoke(
+        app,
+        [
+            "eval-factorial",
+            "--artifacts-root",
+            str(tmp_path / "artifacts"),
+            "--run-id",
+            "run-2",
+            "--reranker-model",
+            "lexical-overlap-v1",
+        ],
+    )
+
+    assert offline_embedding.exit_code == 0, offline_embedding.output
+    assert offline_reranker.exit_code == 0, offline_reranker.output
+    assert captured["retrieval"]["config"].retrieval.embedding_model == "hash-256-v1"
+    assert (
+        captured["factorial"]["config"].retrieval.reranker_model
+        == "lexical-overlap-v1"
+    )
+
+    # The guard still refuses a hub model ID paired with a revision that pins
+    # a different model.
+    hub_mismatch = runner.invoke(
+        app,
+        ["eval-retrieval", "--embedding-model", "other/embedding-v2"],
+    )
+
+    assert hub_mismatch.exit_code == 1
+    assert "--embedding-revision" in hub_mismatch.output

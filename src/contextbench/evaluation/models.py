@@ -121,6 +121,15 @@ class RetrievalSummaryRow(BaseModel):
     median_tokens_to_full_evidence: float | None
     mean_redundancy: float
     mean_retrieval_latency_ms: float
+    # Every ``answerable_*`` field below is over questions that are BOTH
+    # marked answerable AND carry at least one annotated gold page, as decided
+    # by ``reports._is_answerable_with_pages``. The name is narrower than the
+    # eligibility it now reports: a question with no annotated gold page is
+    # excluded even when its answerable flag is true, because its vacuous
+    # recall of 1.0 is identical in every arm. The Markdown column was renamed
+    # to "Answerable gold-page n" to say so; these JSON keys keep their
+    # historical names so published ``summary.json`` files stay readable by
+    # existing consumers, which is why the meaning is documented here instead.
     answerable_question_count: int = Field(default=0, ge=0)
     quoted_question_count: int = Field(default=0, ge=0)
     answerable_mean_evidence_page_recall: float | None = None

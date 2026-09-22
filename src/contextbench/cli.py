@@ -35,6 +35,13 @@ DEFAULT_RERANKER_MODEL = "cross-encoder/ms-marco-MiniLM-L-6-v2"
 # in the retrieval library.
 DEFAULT_EMBEDDING_REVISION = "5c38ec7c405ec4b44b94cc5a9bb96e735b38267a"
 DEFAULT_RERANKER_REVISION = "233902d25c440f23af6f7d6e94d2946bac0bee0a"
+# The offline deterministic models have no hub identity, so no commit can pin
+# them: ``embedding_model_from_config`` and ``reranker_from_config`` build them
+# locally and ignore the revision argument. Selecting one is therefore not a
+# model/revision mismatch. These two names mirror the dispatch in
+# ``contextbench.retrieval.index``; keep them in step with it.
+OFFLINE_EMBEDDING_PREFIX = "hash-"
+OFFLINE_RERANKER_MODEL = "lexical-overlap-v1"
 
 
 def version_callback(value: bool) -> None:
@@ -194,8 +201,9 @@ def evaluate_retrieval(
         str,
         typer.Option(
             help=(
-                "SentenceTransformers embedding model ID. A non-default ID "
-                "requires an explicit --embedding-revision."
+                "SentenceTransformers embedding model ID. A non-default hub "
+                "ID requires an explicit --embedding-revision; the offline "
+                "hash-* models take none."
             )
         ),
     ] = DEFAULT_EMBEDDING_MODEL,
@@ -207,8 +215,9 @@ def evaluate_retrieval(
         str,
         typer.Option(
             help=(
-                "SentenceTransformers cross-encoder model ID. A non-default ID "
-                "requires an explicit --reranker-revision."
+                "SentenceTransformers cross-encoder model ID. A non-default "
+                "hub ID requires an explicit --reranker-revision; the offline "
+                "lexical-overlap-v1 reranker takes none."
             )
         ),
     ] = DEFAULT_RERANKER_MODEL,
@@ -385,8 +394,9 @@ def evaluate_factorial(
         str,
         typer.Option(
             help=(
-                "SentenceTransformers embedding model ID. A non-default ID "
-                "requires an explicit --embedding-revision."
+                "SentenceTransformers embedding model ID. A non-default hub "
+                "ID requires an explicit --embedding-revision; the offline "
+                "hash-* models take none."
             )
         ),
     ] = DEFAULT_EMBEDDING_MODEL,
@@ -398,8 +408,9 @@ def evaluate_factorial(
         str,
         typer.Option(
             help=(
-                "SentenceTransformers cross-encoder model ID. A non-default ID "
-                "requires an explicit --reranker-revision."
+                "SentenceTransformers cross-encoder model ID. A non-default "
+                "hub ID requires an explicit --reranker-revision; the offline "
+                "lexical-overlap-v1 reranker takes none."
             )
         ),
     ] = DEFAULT_RERANKER_MODEL,
@@ -937,12 +948,16 @@ def _require_matching_revisions(
     reranker_model: str,
     reranker_revision: str,
 ) -> None:
-    """Refuse a non-default model ID still carrying the default revision.
+    """Refuse a non-default hub model ID still carrying the default revision.
 
     Each default revision is the commit its own default model ID resolved to.
-    Pairing it with a different model ID would stamp a manifest with a hash
+    Pairing it with a different hub model ID would stamp a manifest with a hash
     that never belonged to those weights, so fail before the run starts rather
     than leave the hub to reject the pair mid-download.
+
+    An offline model name is exempt. It resolves to no hub repository, so there
+    is no commit to name and the revision is never used; demanding one would be
+    asking for something that cannot exist.
     """
     pairs = (
         (
@@ -952,6 +967,7 @@ def _require_matching_revisions(
             "--embedding-revision",
             embedding_revision,
             DEFAULT_EMBEDDING_REVISION,
+            embedding_model.startswith(OFFLINE_EMBEDDING_PREFIX),
         ),
         (
             "--reranker-model",
@@ -960,6 +976,7 @@ def _require_matching_revisions(
             "--reranker-revision",
             reranker_revision,
             DEFAULT_RERANKER_REVISION,
+            reranker_model == OFFLINE_RERANKER_MODEL,
         ),
     )
     for (
@@ -969,7 +986,10 @@ def _require_matching_revisions(
         revision_flag,
         revision,
         default_revision,
+        is_offline,
     ) in pairs:
+        if is_offline:
+            continue
         if model != default_model and revision == default_revision:
             _abort(
                 f"{model_flag} {model} is not the default model, and "

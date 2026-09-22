@@ -424,13 +424,33 @@ gold pages or quotes, are defined in the
 
 The active gate is Gate 0 of the
 [improvement plan](docs/plans/2026-09-21-improvement-plan.md): re-baseline the
-measurement. A 2026-09-21 code review found shared retrieval and reporting
-defects that are still present, including BM25 returning every chunk with a
-zero score into rank fusion, embedding and reranker models loaded without a
-pinned revision, and run manifests that do not record whether the worktree was
-dirty. Those defects affect every arm, but not necessarily by the same amount,
-so the absolute figures and paired deltas published on this page should be
-treated as provisional until the affected runs are repeated.
+measurement. A 2026-09-21 code review found three shared retrieval and
+reporting defects: BM25 returning every chunk with a zero score into rank
+fusion, embedding and reranker models loaded without a pinned revision, and
+run manifests that do not record whether the worktree was dirty. All three are
+fixed on this branch. Nothing has been remeasured: every absolute figure and
+paired delta published on this page comes from a run made before those fixes
+and stays provisional until the affected runs are repeated. The BM25 defect
+did not cost every arm the same amount, which is why the paired deltas must be
+remeasured rather than carried over. Measured on the fixture corpora, 6 of 35
+sparse ranks were unearned on the ranking corpus, 15 of 30 on the fixed
+retrieval fixture, and 15 of 20 on the structural one, where five queries had
+no genuine sparse hit at all and their whole sparse channel was noise ordered
+by chunk ID.
+
+One defect from that review is not fixed. The dense channel still awards rank
+credit, and so reciprocal-rank-fusion credit, to chunks whose similarity to
+the query is exactly zero, in chunk-ID order, exactly as the sparse channel
+did before the BM25 fix; see
+[the retrieval specification](docs/specs/retrieval.md). Fixing it moves
+published numbers, so it has to be decided before any rerun republishes a
+baseline: decided afterwards, every number in that baseline moves a second
+time and the rerun is wasted.
+
+Pinning the model revisions changed the derived-index key, so all 31 cached
+indexes under `artifacts/indexes/` are now unreachable by key and must be
+rebuilt. That is cache invalidation rather than a change in results, but the
+first rerun pays full index construction rather than reusing a warm cache.
 
 That re-baselining is in progress and not complete. It ends with continuous
 integration green on `main`, a fresh `xlholdout6c` holdout frozen before any

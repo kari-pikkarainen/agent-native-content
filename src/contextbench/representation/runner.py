@@ -181,10 +181,30 @@ def run_gold_representation_benchmark(
             try:
                 response = provider.generate(request, config=config)
             except Exception as exc:
+                # Recorded, not fixed: this re-raise aborts the whole run, and
+                # ``_publish_run`` runs only after the loop completes, so a
+                # rate-limit or timeout on the last call discards every
+                # response already paid for in this run. Nothing is written.
+                # Only a *non-completed* response is survivable, and only in
+                # the generation runner; an exception is not. Writing a
+                # durable partial artifact is a design change, not a fix to
+                # make here.
                 raise RepresentationError(
                     f"provider failed for {question.id}/{condition.value}: {exc}"
                 ) from exc
             latency_ms = (time.perf_counter_ns() - started) / 1_000_000
+            # Unfixed mirror of the generation-path fix. ``response_valid``
+            # here is the parse result alone: it never consults
+            # ``response.provider_valid``, so a response the provider cut
+            # short still parses or fails to parse on its truncated text and
+            # is scored as a wrong answer rather than as a failed call. The
+            # summary has no valid-rate field, so nothing in the artifact
+            # exposes it either. This experiment is paid (plan Phase 3
+            # task 6), so a truncation episode silently depresses one
+            # condition's accuracy. Left as it is deliberately: the
+            # generation fix was scoped to the generation path, and repeating
+            # it here would move this experiment's numbers without a
+            # remeasurement to attribute them to.
             parsed_answer, citations, response_valid = parse_answer_response(
                 response.text
             )

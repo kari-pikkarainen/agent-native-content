@@ -170,6 +170,11 @@ models must be loaded at an explicit revision, so an upstream weight change
 rekeys the index and is recorded in the run manifest instead of silently
 mixing weights.
 
+Adding the revisions to that key invalidated the cache: all 31 indexes
+currently under `artifacts/indexes/` predate the pin and are unreachable by
+key, so the next run rebuilds every one of them and cannot be timed against a
+warm-cache run.
+
 Run the registered experiment with:
 
 ```shell
@@ -220,13 +225,48 @@ output scores zero.
 Every cell records raw and parsed answer and judge responses, citations,
 provider/model IDs, disaggregated judge usage, total
 input/cached-input/output/reasoning tokens, end-to-end latency, accuracy,
-similarity metrics, abstention correctness, and configured total cost. Pricing
-is explicit experiment metadata, never inferred from a mutable live price
-table. The CLI requires a `--max-calls` authorization ceiling before
+similarity metrics, abstention correctness, and configured total cost.
+
+Each cell also records whether the call succeeded, separately from whether the
+answer was right:
+
+- `response_valid`, true only when the provider reported a completed, readable
+  response *and* that response satisfied the strict JSON answer contract. A
+  truncated response is a failed call, not a wrong answer, and scores zero on
+  every metric either way;
+- `provider_status`, `provider_incomplete_reason`, and `provider_text_error`,
+  the provider's own account of why a response was not usable. A null status
+  means the provider reported none and is not read as a failure;
+- `citation_entailment_judge_valid` with the same three provider fields for
+  the judge call. `None` means no judge call was made for this cell, which is
+  never aggregated as a judge failure.
+
+The summary rows carry `response_valid_rate` and
+`citation_entailment_judge_valid_rate` so an arm whose calls were truncated
+cannot be read as an arm that answered badly. The judge rate is over the cells
+that actually called the judge and is null when none did.
+
+Pricing is explicit experiment metadata, never inferred from a mutable live
+price table. The CLI requires a `--max-calls` authorization ceiling before
 constructing the provider and counts the optional judge in that ceiling. Runs
 are atomically published under
 `artifacts/generation-runs/<run-id>/` and bind to hashes of the retrieval
-manifest and contexts.
+manifest and contexts. The run manifest records the configured `temperature`
+and `seed` alongside the frozen config; null means the setting was not sent
+and the provider default applied.
+
+### Paid-run safeguards and their limits
+
+The valid-rate fields above are a *reporting* safeguard: they keep a
+non-completed response from being scored as a wrong answer, and the run
+continues so the calls already paid for are still recorded. They are not crash
+safety. An exception raised by the provider call — a rate limit, a timeout, a
+transport error — propagates out of the cell loop, and the run is published
+only after that loop completes, so every response already paid for in that run
+is lost and no artifact is written. The same is true of the representation
+experiment. Durable partial artifacts are not implemented; until they are, a
+paid run is all-or-nothing against provider failures and should be sized and
+scheduled on that basis.
 
 ## Released rule mapping and deviations
 
@@ -349,6 +389,17 @@ exact representation, local representation tokens, provider usage, accuracy,
 token F1, ANLS, citation validity/support, latency, and cost. Questions without
 gold pages are skipped and listed in the manifest and summary. Immutable runs
 are published under `artifacts/representation-runs/<run-id>/`.
+
+Known defect, recorded and not fixed: this runner derives its `response_valid`
+from the answer parse alone and never consults the provider's completion
+state, so a response the provider cut short is scored as a wrong answer rather
+than as a failed call, and the summary has no valid-rate field to expose how
+often that happened. This is the unfixed mirror of the fix already made in the
+generation path, whose `response_valid` is the conjunction of the parse result
+and `ProviderAnswer.provider_valid`. The experiment is paid (plan Phase 3
+task 6), so a truncation episode would silently depress one condition's
+accuracy and cost real money to discover. Fixing it moves this experiment's
+numbers and therefore needs its own change and its own remeasurement.
 
 The initial enriched condition contains deterministic outline, extractive
 section previews, numeric/normative/date/exception facts, definitions,
