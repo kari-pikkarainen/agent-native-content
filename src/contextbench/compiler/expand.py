@@ -12,6 +12,7 @@ from contextbench.compiler.joins import (
     keyed_table_join_candidates,
 )
 from contextbench.compiler.models import (
+    FALLBACK_CONTEXT_TIER,
     CompilerCandidate,
     CompilerConfig,
     CompilerQueryCache,
@@ -242,12 +243,15 @@ def expand_candidates(
             else join_factory()
         )
         if joins:
-            expanded = [
-                candidate.model_copy(
-                    update={"priority_tier": candidate.priority_tier + 1}
-                )
-                for candidate in expanded
-            ]
+            # Joins are appended as ordinary primary evidence. They must not
+            # restate the tier of anything already expanded: ``priority_tier``
+            # is a hard gate in ``_coverage_selection``, so demoting core
+            # retrieval whenever a join fired made every direct hit
+            # unselectable while any join still fit the remaining budget, and
+            # left core retrieval sharing a tier with page-neighbor windows.
+            # A join's advantage now has to come from its own score and its
+            # coverage of both referenced tables, which is what the coverage
+            # and table-reference terms in ``compiler/pack.py`` already reward.
             expanded.extend(
                 candidate.model_copy(
                     update={"expansion_order": expansion_order + offset}
@@ -406,7 +410,7 @@ def _page_neighbor_candidates(
                 ),
                 origin_rank=evidence.rank,
                 expansion_order=offset,
-                priority_tier=1,
+                priority_tier=FALLBACK_CONTEXT_TIER,
                 operator="page_neighbor",
             )
         )

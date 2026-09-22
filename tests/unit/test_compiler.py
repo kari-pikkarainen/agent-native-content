@@ -25,7 +25,11 @@ from contextbench.compiler.joins import (
     _row_keys,
     keyed_table_join_candidates,
 )
-from contextbench.compiler.models import CompilerCandidate
+from contextbench.compiler.models import (
+    FALLBACK_CONTEXT_TIER,
+    PRIMARY_EVIDENCE_TIER,
+    CompilerCandidate,
+)
 from contextbench.compiler.pack import pack_candidates
 from contextbench.ir import project_document
 from contextbench.ir.models import IRNodeKind
@@ -231,6 +235,73 @@ def joined_table_source() -> DoclingDocument:
         caption=second_caption,
         prov=provenance(2, "model datasets", 700),
     )
+    return document
+
+
+PROSE_BESIDE_JOINED_TABLES = "Retention improved after the migration."
+
+
+def joined_tables_and_prose_source() -> DoclingDocument:
+    """Two joinable tables plus prose the same query also needs."""
+    document = DoclingDocument(name="joined-tables-and-prose")
+    document.add_page(1, Size(width=612, height=792))
+    document.add_page(2, Size(width=612, height=792))
+    heading = document.add_heading(
+        "Findings",
+        level=1,
+        prov=provenance(1, "Findings", 760),
+    )
+    document.add_text(
+        label=DocItemLabel.TEXT,
+        text=PROSE_BESIDE_JOINED_TABLES,
+        parent=heading,
+        prov=provenance(1, PROSE_BESIDE_JOINED_TABLES, 735),
+    )
+    for page, caption_text, headers, rows in (
+        (
+            1,
+            "Table C.1 | Model cohorts",
+            ("Model", "Cohort"),
+            (("ALPHA-1", "North"), ("BETA-2", "South"), ("GAMMA-3", "East")),
+        ),
+        (
+            2,
+            "Table C.2 | Model retention",
+            ("Model", "Retention"),
+            (
+                ("ALPHA-1", "71 percent"),
+                ("BETA-2", "64 percent"),
+                ("GAMMA-3", "58 percent"),
+            ),
+        ),
+    ):
+        caption = document.add_text(
+            label=DocItemLabel.CAPTION,
+            text=caption_text,
+            prov=provenance(page, caption_text, 700),
+        )
+        values = (headers, *rows)
+        cells = [
+            TableCell(
+                start_row_offset_idx=row,
+                end_row_offset_idx=row + 1,
+                start_col_offset_idx=column,
+                end_col_offset_idx=column + 1,
+                text=text,
+                column_header=row == 0,
+            )
+            for row, row_values in enumerate(values)
+            for column, text in enumerate(row_values)
+        ]
+        document.add_table(
+            data=TableData(
+                table_cells=cells,
+                num_rows=len(values),
+                num_cols=len(headers),
+            ),
+            caption=caption,
+            prov=provenance(page, caption_text, 680),
+        )
     return document
 
 
@@ -1111,6 +1182,106 @@ def test_keyed_table_join_is_prioritized_when_enabled(tmp_path: Path) -> None:
     assert "Main References: [blank]" in packet.items[0].content
     assert packet.token_count <= packet.token_budget
     assert "keyed_join" in packet.metadata["active_operators"]
+
+
+JOINED_TABLES_AND_PROSE_QUERY = (
+    "What retention did the migration reach in Table C.1 and Table C.2?"
+)
+
+
+def test_keyed_joins_do_not_gate_core_evidence_out_of_the_packet(
+    tmp_path: Path,
+) -> None:
+    """Joins compete for budget; they must not make core evidence unselectable.
+
+    ``_coverage_selection`` only ever looks at the lowest ``priority_tier``
+    that still fits, so demoting core retrieval whenever a join fired kept
+    direct hits out of the packet entirely while any join still fit. The
+    budget here is chosen so the joins alone would consume it.
+    """
+    source = joined_tables_and_prose_source()
+    counter = FixtureTokenCounter()
+    ir = project_document(source, ingest_metadata(tmp_path), tokenizer=counter)
+    scope = DocumentScope.from_documents([ir], source_documents={ir.id: source})
+    budget = 50
+
+    packet, trace = compile_context_with_trace(
+        JOINED_TABLES_AND_PROSE_QUERY,
+        scope,
+        budget,
+        compiler_config(),
+        tokenizer=counter,
+    )
+
+    joins = [
+        candidate
+        for candidate in trace.expanded_candidates
+        if candidate.operator == "keyed_join"
+    ]
+    core = [
+        candidate
+        for candidate in trace.expanded_candidates
+        if candidate.operator != "keyed_join"
+    ]
+    # Guard the premise: without this the test would pass for the wrong reason.
+    # Every join fits, and once they are all packed nothing else can be, so a
+    # tier that ranks joins above core evidence leaves a packet of joins only.
+    assert len(joins) > 1
+    assert core
+    join_tokens = sum(join.chunk.token_count for join in joins)
+    assert join_tokens <= budget
+    assert join_tokens + min(
+        candidate.chunk.token_count for candidate in core
+    ) > budget
+
+    contents = [item.content for item in packet.items]
+    assert packet.token_count <= budget
+    # The joins keep their lead on merit: they cover both referenced tables.
+    assert "Joined table key: alpha-1" in contents[0]
+    assert "keyed_join" in packet.metadata["active_operators"]
+    # ...but core retrieval evidence still reaches the packet.
+    assert any(PROSE_BESIDE_JOINED_TABLES in content for content in contents)
+    assert any("Model | Retention" in content for content in contents)
+
+
+def test_priority_tier_does_not_depend_on_whether_joins_fired(
+    tmp_path: Path,
+) -> None:
+    """A candidate's tier states its class, not what else the query produced."""
+    source = joined_tables_and_prose_source()
+    counter = FixtureTokenCounter()
+    ir = project_document(source, ingest_metadata(tmp_path), tokenizer=counter)
+    scope = DocumentScope.from_documents([ir], source_documents={ir.id: source})
+
+    tiers_by_chunk = {}
+    for joins_enabled in (False, True):
+        _packet, trace = compile_context_with_trace(
+            JOINED_TABLES_AND_PROSE_QUERY,
+            scope,
+            50,
+            compiler_config(keyed_table_join_enabled=joins_enabled),
+            tokenizer=counter,
+        )
+        tiers_by_chunk[joins_enabled] = {
+            candidate.chunk.id: candidate.priority_tier
+            for candidate in trace.expanded_candidates
+            if candidate.operator != "keyed_join"
+        }
+        if joins_enabled:
+            assert any(
+                candidate.operator == "keyed_join"
+                for candidate in trace.expanded_candidates
+            )
+            assert all(
+                candidate.priority_tier == PRIMARY_EVIDENCE_TIER
+                for candidate in trace.expanded_candidates
+                if candidate.operator == "keyed_join"
+            )
+
+    assert tiers_by_chunk[False]
+    assert tiers_by_chunk[True] == tiers_by_chunk[False]
+    assert set(tiers_by_chunk[True].values()) == {PRIMARY_EVIDENCE_TIER}
+    assert PRIMARY_EVIDENCE_TIER < FALLBACK_CONTEXT_TIER
 
 
 def test_simple_query_does_not_activate_specialized_operators(

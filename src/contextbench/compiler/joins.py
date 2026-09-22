@@ -6,7 +6,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from itertools import combinations
 
-from contextbench.compiler.models import CompilerCandidate
+from contextbench.compiler.models import PRIMARY_EVIDENCE_TIER, CompilerCandidate
 from contextbench.ir.models import IRDocument, IRNode, IRNodeKind
 from contextbench.ir.tokenizer import TokenCounter
 from contextbench.retrieval.models import (
@@ -158,6 +158,10 @@ def keyed_table_join_candidates(
             scores=RetrievalScores(fused=lexical_score, reranked=reranker_score),
             origin_rank=rank,
             expansion_order=rank - 1,
+            # A join is primary evidence: it answers the question the same way
+            # a retrieved node does, so it shares the retrieval tier and wins
+            # or loses on score and coverage rather than on class.
+            priority_tier=PRIMARY_EVIDENCE_TIER,
             allow_shared_source=True,
             operator="keyed_join",
         )

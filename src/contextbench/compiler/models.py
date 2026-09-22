@@ -18,6 +18,20 @@ from contextbench.retrieval.models import (
 
 COMPILER_VERSION = "0.7.0"
 
+# ``priority_tier`` states a candidate's class and nothing else. It must never
+# depend on what an expansion happened to produce for one query, because
+# ``compiler/pack.py`` treats it as a hard gate: coverage packing considers only
+# the lowest tier that still fits, so a candidate one tier up cannot be selected
+# at all while anything below it fits the remaining budget.
+#
+# Tier 0 holds everything that can carry the answer -- direct retrieval,
+# siblings, list neighbors, table fragments, and keyed table joins. Inside the
+# tier they compete on coverage and score, never by class.
+PRIMARY_EVIDENCE_TIER = 0
+# Tier 1 holds bounded fixed-window context added only to spend budget that
+# primary evidence left over. It must never gate primary evidence out.
+FALLBACK_CONTEXT_TIER = 1
+
 
 class CompilerConfig(BaseModel):
     """All configurable decisions in compiler v0."""
@@ -94,7 +108,8 @@ class CompilerCandidate(BaseModel):
     scores: RetrievalScores
     origin_rank: int = Field(ge=1)
     expansion_order: int = Field(ge=0)
-    priority_tier: int = Field(default=0, ge=0)
+    # One of the tier constants above; see their comment for the gate it drives.
+    priority_tier: int = Field(default=PRIMARY_EVIDENCE_TIER, ge=0)
     allow_shared_source: bool = False
     operator: Literal[
         "retrieval",
