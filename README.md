@@ -39,27 +39,49 @@ The complete evidence-only benchmark pipeline is implemented:
 - guarded answer-generation evaluation over already-saved contexts; and
 - portable agent-document bundles plus a controlled representation experiment.
 
-The selected compiler beats the best RAG baseline on the 24-question
-development set at every tested budget. A fresh six-question holdout confirms
-the advantage at 2K and 4K tokens, but fixed RAG wins at 8K and 16K:
+The selected compiler leads the best RAG baseline on **page** recall on the
+24-question development set at every tested budget. It does not lead on
+**exact quote** recall at every budget, and the difference between those two
+statements is the most important thing on this page.
 
 | Budget | Dev compiler | Dev best RAG | Holdout compiler | Holdout best RAG |
 | ---: | ---: | ---: | ---: | ---: |
-| 2K | **0.727** | 0.533 | **0.513** | 0.425 |
-| 4K | **0.791** | 0.634 | **0.626** | 0.565 |
-| 8K | **0.868** | 0.755 | 0.815 | **0.856** |
-| 16K | **0.922** | 0.836 | 0.935 | **1.000** |
+| 2K | **0.728** | 0.533 | **0.513** | 0.425 |
+| 4K | **0.794** | 0.634 | **0.626** | 0.565 |
+| 8K | **0.858** | 0.739 | 0.815 | **0.856** |
+| 16K | **0.906** | 0.843 | 0.935 | **1.000** |
 
 Values are mean gold-evidence page recall at the stated context budget. The
 development set has 24 questions over 11 documents; the directional holdout
 has six questions over six previously unused documents. No answer model was
 used for these results.
 
-These figures come from the 2026-09-22 re-baseline, after nine defect fixes.
-The compiler's own numbers barely moved; the baselines improved, mostly
-because the structural arm can now retrieve on heading vocabulary it was
-previously blind to. The margin is therefore narrower than this page
-previously reported, not wider. At 2K on the holdout the paired interval
+On exact quote recall over the same development runs the picture is different,
+and the compiler does not lead at the budget it is supposed to own:
+
+| Budget | Dev compiler | Dev best RAG |
+| ---: | ---: | ---: |
+| 2K | 0.354 | **0.399** |
+| 4K | **0.424** | 0.399 |
+| 8K | **0.476** | 0.465 |
+| 16K | **0.528** | 0.476 |
+
+The paired interval for the compiler's exact-quote advantage over fixed RAG
+includes zero at **every** budget, before and after the Phase 1 fixes. Against
+structural chunks at 2K it is negative with an interval that excludes zero.
+The compiler's demonstrated advantage on this benchmark is a page-selection
+advantage; an exact-evidence advantage has not been established.
+
+The development figures come from the 2026-09-22 run after Phase 1's three
+correctness fixes; the holdout figures predate them and were not re-run,
+because re-running a holdout to keep a table tidy would spend it. The largest
+of those fixes repaired IR reading order, and it moved the fixed baseline
+hardest: that arm had been building windows from a token stream in which 40.9
+per cent of items were appended out of document order. Its page recall
+*fell* when this was fixed, because a window splicing two distant pages was
+credited with both, and its quote recall rose. The margin on this page is
+therefore narrower than it was before the 2026-09-22 re-baseline, and the
+reasons are recorded rather than absorbed. At 2K on the holdout the paired interval
 against fixed RAG is [+0.033, +0.233], and at 16K it is [−0.121, −0.017],
 so both the low-budget win and the high-budget loss exclude zero.
 
@@ -438,7 +460,17 @@ gold pages or quotes, are defined in the
 - Page recall over-credits the compiler, and the size is now measured. On the
   full development factorial IR nodes beat the better chunk unit in eight of
   eight matched cells on page recall and three of eight on exact quote recall,
-  never by more than 0.021 on the latter.
+  never by more than 0.021 on the latter. Phase 1 sharpened this: the paired
+  interval for the compiler's exact-quote advantage over fixed RAG includes
+  zero at every budget, and against structural chunks at 2K it is −0.060 with
+  an interval excluding zero, so at that budget the compiler is measurably
+  behind on exact evidence while leading on pages.
+- Page recall can also over-credit a *baseline*, which Phase 1 demonstrated
+  directly. Before the IR reading-order repair the fixed arm's windows spliced
+  distant pages together and were credited with all of them: identical window
+  counts, but 2.43 distinct pages per window instead of 1.82. Fixing it lowered
+  that arm's page recall and raised its quote recall. See
+  [the Phase 1 record](docs/research-log/phase1-correctness-fixes-9110e70.md).
 - Agent enrichment is deterministic and mostly extractive. It is not a
   semantic knowledge graph or an abstractive document rewrite.
 - On the two-question representation diagnostic, IR used about 49% more tokens
