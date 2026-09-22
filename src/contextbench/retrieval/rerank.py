@@ -114,6 +114,17 @@ class SentenceTransformerCrossEncoderReranker:
         self,
         pairs: Sequence[tuple[str, RetrievalChunk]],
     ) -> list[float]:
+        # Unverified on an empty ``pairs``: it is reachable in principle --
+        # ``retrieve()`` calls ``rerank(query, ())`` when both channels refuse
+        # every chunk, which reaches ``self._model.predict([])`` -- but no test
+        # covers it and no benchmark run can hit it. The positivity guards only
+        # empty a channel under the offline ``hash-256-v1`` embedding, and this
+        # adapter is only used with a hub-backed model, whose similarities are
+        # all strictly positive on every published run (see
+        # ``docs/specs/retrieval.md``). If a future embedder can produce an
+        # empty candidate set, verify what SentenceTransformers' ``predict``
+        # returns for an empty batch before relying on this path; do not assume
+        # it is ``[]``.
         values = self._model.predict(
             [(query, chunk.retrieval_text) for query, chunk in pairs]
         )

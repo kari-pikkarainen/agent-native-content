@@ -122,8 +122,34 @@ Consequences, audited across the consumers of `retrieve()` and `pack()`:
   pages, not a vacuous `1.0`. The `1.0` branch in `evaluation/evidence.py` is
   reached only when a question annotates no gold pages at all, which is a
   property of the question and independent of retrieval.
-- `tokens_to_full_evidence` is `None` for an empty context, meaning full
-  evidence was never reached, and the summary's median skips it.
+- `tokens_to_full_evidence` is `None` for an empty context **only when the
+  question annotates gold pages**, meaning full evidence was never reached, and
+  the summary's median skips it. For a question with no gold pages at all,
+  `_tokens_to_full` returns `0` before it looks at a single item, so an empty
+  context scores a perfect `0` tokens-to-full rather than `None`. That is the
+  same vacuity class as `full_evidence_coverage`, and so is `_quote_coverage`,
+  which returns `1.0` and `True` for a question carrying no gold quotes. All
+  three are properties of the question, not of retrieval, and an arm cannot be
+  credited for them; a summary that mixes gold-less questions into these
+  averages flatters every arm equally and hides an empty context entirely.
+- An empty context can *raise* a metric, not only lower one.
+  `insufficient_evidence_correct` is `(not question.answerable) and accuracy ==
+  1.0`. An empty evidence section makes "the context does not contain enough
+  information" the natural answer, so emptying retrieval pushes the model
+  toward exactly the response an unanswerable question scores as correct. An
+  arm that retrieves nothing can therefore post a *higher* unanswerable score
+  than one that retrieves well, for no retrieval merit at all. Read that metric
+  alongside the answerable accuracy and the empty-context count, never alone.
+- The compiler arm does not necessarily go empty when the baselines do.
+  `expand_candidates`' keyed-table-join path runs off `(query, documents)`
+  rather than off `ranked`: `keyed_table_join_candidates` is called with the
+  query and the document scope, not with the ranked evidence, so it can emit
+  candidates for a query whose sparse and dense channels both returned nothing.
+  A query that yields an empty packet on `fixed` and `structural` can yield a
+  non-empty compiler packet. That is not a bug on its own -- the join is a
+  different retrieval path -- but it means "empty retrieval" is not an
+  arm-neutral condition, and a comparison that assumes all arms go empty
+  together is wrong.
 - Redundancy over zero items is `0.0` by an explicit guard, not a division by
   zero.
 - Reports render an empty cell numerically; `n/a` appears only where a metric
@@ -133,6 +159,69 @@ Consequences, audited across the consumers of `retrieve()` and `pack()`:
   citation support are `0.0`. This is the existing rule for an empty citation
   list and is the intended reading: an uncited claim is ungrounded whatever
   the reason.
+
+### Known defect: the structural arm cannot retrieve heading vocabulary
+
+This is a separate defect from the channel-positivity work above. It is not
+caused by either guard; the guards only made it visible.
+
+Both channels read `RetrievalChunk.retrieval_text`, which is `search_text or
+text`. `search_text` is `None` on every `fixed` and `structural` chunk, so for
+those two arms the indexed string is the chunk text alone.
+
+- Arm A (`fixed`) builds its windows by concatenating **every** IR node that
+  carries text, in ordinal order, which includes title and heading nodes. Its
+  indexed vocabulary is therefore the document's full vocabulary.
+- Arm B (`structural`) builds each chunk from `raw_chunk.text` as returned by
+  Docling's `HybridChunker`, and keeps the chunker's headings separately as
+  `heading_path` metadata. Metadata is never concatenated into the chunk text,
+  so heading and title strings never enter `retrieval_text` and are invisible
+  to BM25, to the dense embedding, and to the reranker alike.
+
+Measured by building both indexes over the committed unit fixture, whose
+document has the title `Quarterly Report`, headings `Results` and `Methods`,
+and a list group named `Highlights`:
+
+| term | source | `fixed` indexed | `structural` indexed |
+|---|---|---|---|
+| `quarterly` | title | yes | no |
+| `report` | title | yes | no |
+| `results` | heading | yes | no |
+| `methods` | heading | yes | no |
+| `highlights` | list-group name | yes | no |
+| `measured` | code body | yes | yes |
+
+The consequence is arm-asymmetric and reaches well past the fixture. A
+benchmark question phrased in the vocabulary of a section heading -- and
+questions about document structure naturally are -- is retrievable by the fixed
+baseline and structurally unreachable by the structural arm, whatever the
+embedder. On the fixture, three of the seven empty `(arm, query)` pairs are
+this defect rather than genuinely absent vocabulary, and one non-empty pair
+(`structural`/`results revenue`) survives only on its body term. An arm
+comparison run in this state is biased **in favour of the fixed baseline** by
+an amount nobody has measured.
+
+The compiler arm does **not** share the gap. `compiler/candidates.py` sets
+`search_text` explicitly via `_contextual_search_text`, which joins the node's
+`heading_path` above its own text (dropping the last heading when it duplicates
+the node text, so a heading node is not repeated). Every compiler candidate
+therefore carries its full heading trail in `retrieval_text`. Over the same
+fixture, the code node's `search_text` is the three lines `Quarterly Report`,
+`Methods`, `print('measured')`, so `methods` is indexed for the compiler arm
+and not for the structural one. Two caveats found while checking, both distinct
+from the structural gap: the compiler arm skips `IRNodeKind.LIST` group nodes
+as non-evidence, so the group name `Highlights` is unreachable there too, and
+it skips `content_layer == "furniture"` nodes entirely.
+
+**This defect is unfixed and was deliberately not fixed here.** Changing what
+the structural arm indexes -- whether by giving it a heading-prefixed
+`search_text` like the compiler's, or by concatenating headings into the chunk
+text -- would move every structural number in every published result, so it is
+a design decision for the rerun rather than a documentation fix. Whoever runs
+the rerun must decide explicitly: either fix it and remeasure both arms, or run
+with it and state in the results that Arm A had access to heading vocabulary
+that Arm B did not. Carrying the published structural numbers forward without
+deciding is not an option.
 
 ### How much the sparse defect cost each arm
 

@@ -44,13 +44,62 @@ def retrieval_fixture(tmp_path: Path):
     return document, ir, config
 
 
-# The (arm, query) pairs that match nothing in either channel, and so
-# legitimately retrieve nothing now that both channels refuse non-matches.
-# Every one of these ranked a chunk first with sparse and dense both exactly
-# 0.0 before the dense positivity guard landed: rank 1 was awarded on
-# hash-ordered dense rank credit alone, over a chunk sharing no query term and
-# no vector direction with the query. Empty is the honest answer, and it is
-# what BM25 alone has returned for the sparse channel since its own guard.
+# The (arm, query) pairs that retrieve nothing now that both channels refuse
+# non-matches. Every one of these ranked a chunk first with sparse and dense
+# both exactly 0.0 before the dense positivity guard landed: rank 1 was awarded
+# on hash-ordered dense rank credit alone, over a chunk sharing no query term
+# and no vector direction with the query. Empty is the honest answer for all
+# seven, and it is what BM25 alone has returned for the sparse channel since
+# its own guard.
+#
+# They are empty for two different reasons, and the difference matters. Both
+# channels read ``chunk.retrieval_text``, which is ``search_text or text``, and
+# ``search_text`` is ``None`` on every ``fixed`` and ``structural`` chunk, so
+# ``retrieval_text`` is the chunk text alone. Measured by building both indexes
+# over the fixture, the indexed vocabularies are:
+#
+#   fixed:      42 america by grew highlights increased measured methods north
+#               print quarterly region report results revenue strongly
+#   structural: 42 america by grew increased measured north print region
+#               revenue strongly
+#
+# The fixed arm windows over *every* node carrying text, title and headings
+# included (``chunking.fixed_chunks``), so its indexed vocabulary equals the
+# document's. ``structural_chunks`` builds each chunk from ``raw_chunk.text``
+# and keeps the headings as ``heading_path`` metadata only, so ``Quarterly
+# Report``, ``Results``, ``Methods`` and the ``Highlights`` list-group name are
+# in the fixture but in no structural chunk text. Per pair:
+#
+#   fixed/metrics                 vocabulary genuinely absent: neither
+#                                 "metrics" nor any casefold match of it
+#                                 appears anywhere in the fixture.
+#   fixed/growth conclusion       genuinely absent: no "growth", no
+#                                 "conclusion".
+#   structural/metrics            genuinely absent, as above.
+#   structural/growth conclusion  genuinely absent, as above.
+#   structural/quarterly report   present but unindexed. Both terms are in the
+#                                 title node "Quarterly Report"; neither is in
+#                                 a structural chunk.
+#   structural/methods            present but unindexed. "Methods" is a level-1
+#                                 heading node; the chunk under it carries only
+#                                 its code body, "print('measured')".
+#   structural/report highlights  present but unindexed. "report" from the
+#                                 title, "highlights" from the list-group node
+#                                 text "Highlights"; the structural chunker
+#                                 renders that group as "- North America
+#                                 grew." and drops the name.
+#
+# So four of the seven are honest misses and three are a retrieval gap that the
+# positivity guards expose rather than cause: the structural arm cannot reach
+# heading vocabulary at all. This is why ``structural``/``measured``, a body
+# word, is not in this set, and why the same three queries succeed on the fixed
+# arm. It is not confined to the empty rows either -- ``structural``/``results
+# revenue`` returns a hit, but on "revenue" alone, because "Results" is a
+# heading. The gap is unfixed and out of scope here; fixing it would move every
+# structural number. It is recorded as its own defect in
+# ``docs/specs/retrieval.md``, because a benchmark question phrased in
+# section-heading vocabulary is reachable by the fixed arm and invisible to the
+# structural one, which biases the arm comparison.
 #
 # This list is the measured result, not a target: it is reachable only under
 # the offline ``hash-256-v1`` embedding, whose 256-dimension sign-bit vectors
@@ -1083,14 +1132,18 @@ def _observed_rankings(index: HybridIndex) -> dict[str, tuple[tuple[str, int], .
 # three. Both were re-derived from the reciprocal-rank arithmetic, not
 # re-recorded, and each derivation sits on its own row.
 #
-# The other five rows still hold their d7f427e *values*, and after the dense
-# guard four of them hold them for unchanged reasons: ``revenue by region``,
-# ``north america growth``, ``margin recovery`` and ``europe costs
-# identifier`` have no non-positive similarity anywhere in their dense
-# top-five, so the guard discards nothing from them. ``europe costs`` lost
-# chunk-00 from dense rank 5 at similarity exactly 0.0; chunk-00 sat below the
-# top-four rerank cut either way, so nothing moved. ``margin recovery`` had
-# also lost zero-score sparse padding earlier, likewise below the cut.
+# The other five rows still hold their d7f427e *values*. Four of them --
+# ``revenue by region``, ``north america growth``, ``margin recovery`` and
+# ``europe costs identifier`` -- have no non-positive similarity anywhere in
+# their dense top-five, so the *dense* guard discards nothing from them. That
+# is a statement about the dense guard only, not about the row being untouched:
+# ``margin recovery`` did lose zero-score sparse padding to the earlier BM25
+# guard. Its value survives because the padding sat below the top-four rerank
+# cut, so removing it changed no returned entry -- the same way ``europe
+# costs`` survived losing chunk-00 from dense rank 5 at similarity exactly 0.0,
+# also below the cut. Read these four as "the dense guard changed nothing
+# here", and ``margin recovery`` and ``europe costs`` as additionally "an input
+# did change, below the cut".
 #
 # Treat an unchanged value as evidence about the value only. If one of these
 # rows later flips, the first place to look is the derivation recorded beside

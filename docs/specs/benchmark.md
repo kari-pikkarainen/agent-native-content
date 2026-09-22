@@ -436,8 +436,17 @@ No LLM planner.
 
 Retrieve independently:
 
-* top N sparse candidates;
-* top N dense candidates.
+* top N sparse candidates **that match at least one query term**;
+* top N dense candidates **whose cosine similarity to the query is strictly
+  positive**.
+
+Both channels refuse non-matches before ranking, and N is a ceiling rather
+than a quota: a channel returns fewer than N candidates when fewer than N
+qualify, and returns nothing when none does. Do not pad a short channel to N.
+Padding hands a candidate a rank, and therefore reciprocal-rank-fusion credit,
+ordered by chunk ID -- a hash, not relevance. An empty result from both
+channels is a legitimate outcome and must propagate as an empty packet; see
+`docs/specs/retrieval.md` for the decision and the measurements behind it.
 
 Suggested initial value:
 
