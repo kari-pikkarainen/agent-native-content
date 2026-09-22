@@ -380,7 +380,13 @@ gold pages or quotes, are defined in the
   untested.
 - Six development questions have no annotated gold pages and therefore receive
   the protocol's identical vacuous-success score in every arm. Answerable-only
-  metrics are not yet reported alongside the aggregate.
+  and quote-eligible summaries are now computed and rendered alongside the
+  aggregate, but eligibility keys on a question's answerable flag rather than
+  on it having annotated gold pages, so an answerable question with no gold
+  pages still contributes a vacuous score. The canonical development and
+  holdout reports predate this reporting; only the
+  [metric-audit rerun](results/retrieval/xlholdout6b-metric-audit/report.md)
+  publishes the answerable-only tables.
 - Evidence retrieval has been measured more thoroughly than end-to-end answer
   quality. No answer-generation or economic result exists yet.
 - Compiler retrieval is currently slower: about 4.7–5.4 seconds per holdout
@@ -399,15 +405,31 @@ gold pages or quotes, are defined in the
 
 ## Next decision gate
 
-First isolate the causal contribution of representation from retrieval policy:
-compare fixed chunks, structural chunks, and IR nodes under both single-query
-ranked packing and faceted coverage-aware packing. At the same time, add
-answerable-only reporting, stricter content/span coverage, quote metrics as
-co-primary outcomes, and paired document-clustered uncertainty intervals.
+The active gate is Gate 0 of the
+[improvement plan](docs/plans/2026-09-21-improvement-plan.md): re-baseline the
+measurement. A 2026-09-21 code review found shared retrieval and reporting
+defects that are still present, including BM25 returning every chunk with a
+zero score into rank fusion, embedding and reranker models loaded without a
+pinned revision, and run manifests that do not record whether the worktree was
+dirty. Those defects affect every arm, but not necessarily by the same amount,
+so the absolute figures and paired deltas published on this page should be
+treated as provisional until the affected runs are repeated.
 
-Only after that audit should the project spend on guarded answer generation at
-2K and 4K or expand to an untouched cross-document set, another benchmark, and
-realistic 64K/128K long context. See the [research roadmap](docs/roadmap.md).
+That re-baselining is in progress and not complete. It ends with continuous
+integration green on `main`, a fresh `xlholdout6c` holdout frozen before any
+compiler change, and republished `xldev24` and `xlholdout6b` results. The gate
+closes only if, on the remeasured `xldev24`, the paired source-cluster
+bootstrap interval for the compiler against the best RAG baseline excludes zero
+at both 2K and 4K. If it does not, the plan is to stop and write that up.
+
+Only after that does the plan harden the compiler and then run the content-unit
+by policy factorial on the full development set. That factorial is the
+comparison that can separate representation from retrieval policy; the existing
+factorial evidence is a two-question diagnostic. Guarded answer generation at
+2K and 4K is implemented and preregistered but has produced no result, so no
+answer-quality or economic claim is available yet, and expansion to an
+untouched cross-document set, a second benchmark, and realistic 64K/128K long
+context stays behind that. See the [research roadmap](docs/roadmap.md).
 
 ## Repository map
 
