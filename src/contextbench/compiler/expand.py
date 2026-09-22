@@ -299,11 +299,17 @@ def expand_candidates(
             for offset, candidate in enumerate(page_neighbors)
         )
 
+    # ``reranked`` is the only score here that means the same thing for every
+    # candidate class: a cross-encoder score against this query, shrunk by an
+    # explicit penalty for derived classes. ``fused`` is not -- it records how
+    # a candidate entered the pool, and that differs by class (an RRF sum for
+    # anything retrieved, a lexical overlap ratio for a keyed join), so it
+    # cannot break ties between classes and is no longer read here. The
+    # remaining keys are structural and total, so this stays deterministic.
     expanded.sort(
         key=lambda candidate: (
             candidate.priority_tier,
             -candidate.scores.reranked,
-            -candidate.scores.fused,
             candidate.origin_rank,
             candidate.expansion_order,
             candidate.chunk.id,
@@ -422,6 +428,9 @@ def _page_neighbor_candidates(
                 operator="page_neighbor",
             )
         )
+    # ``fused`` is safe as a tiebreak here and only here: every candidate in
+    # this list is a page-neighbor window whose ``fused`` is a retrieval RRF
+    # value from its anchor times a distance penalty, so they are one scale.
     expanded.sort(
         key=lambda candidate: (
             -candidate.scores.reranked,

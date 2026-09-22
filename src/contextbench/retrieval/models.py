@@ -116,7 +116,21 @@ class RetrievalChunk(BaseModel):
 
 
 class RetrievalScores(BaseModel):
-    """Scores from each shared retrieval stage."""
+    """Scores from each shared retrieval stage.
+
+    Only ``reranked`` is comparable across candidate classes. It always holds a
+    cross-encoder score for this candidate against the query, optionally shrunk
+    by an explicit structural penalty, so it is the one field any cross-class
+    ordering may key on.
+
+    ``dense``, ``sparse`` and ``fused`` are provenance: they record how a
+    candidate reached the pool, and their units depend on which path it took.
+    ``fused`` is an RRF sum for anything retrieved -- over sparse and dense for
+    a single query, over rankings for a faceted one -- and a lexical overlap
+    ratio for a keyed table join, which was never retrieved at all. Comparing
+    those numbers to each other is meaningless; they may break ties only inside
+    one class, and are published so a run can be audited.
+    """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 

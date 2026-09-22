@@ -23,7 +23,7 @@ from contextbench.retrieval.models import (
 # archived packets from either side of such a change stay distinguishable by
 # their own metadata alone. Bump it whenever that is true; leave it alone for
 # refactors, comments, and anything a config already records.
-COMPILER_VERSION = "0.8.0"
+COMPILER_VERSION = "0.9.0"
 
 # ``priority_tier`` states a candidate's class and nothing else. It must never
 # depend on what an expansion happened to produce for one query, because

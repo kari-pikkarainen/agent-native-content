@@ -20,6 +20,7 @@ from contextbench.compiler import (
 )
 from contextbench.compiler.candidates import node_chunks
 from contextbench.compiler.expand import _penalize, expand_candidates
+from contextbench.compiler.facets import query_facets
 from contextbench.compiler.joins import (
     _key_columns,
     _row_keys,
@@ -172,6 +173,62 @@ def oversized_table_source() -> DoclingDocument:
         caption=caption,
         parent=heading,
         prov=provenance(1, "district table", 690),
+    )
+    return document
+
+
+FACETED_QUERY = (
+    "Which district reported the highest revenue, "
+    "and how were the measurements audited?"
+)
+AUDIT_PARAGRAPH = "Measurements were audited across every district revenue return."
+
+
+def faceted_oversized_table_source() -> DoclingDocument:
+    """An oversized table beside prose that answers the query's other clause."""
+    document = DoclingDocument(name="faceted-oversized-table")
+    document.add_page(1, Size(width=612, height=792))
+    heading = document.add_heading(
+        "Results",
+        level=1,
+        prov=provenance(1, "Results", 750),
+    )
+    document.add_text(
+        label=DocItemLabel.TEXT,
+        text=AUDIT_PARAGRAPH,
+        parent=heading,
+        prov=provenance(1, AUDIT_PARAGRAPH, 730),
+    )
+    caption = document.add_text(
+        label=DocItemLabel.CAPTION,
+        text="District revenue",
+        parent=heading,
+        prov=provenance(1, "District revenue", 710),
+    )
+    values = [("District", "Revenue")] + [
+        (f"District{index}", str(100 + index)) for index in range(12)
+    ]
+    cells = [
+        TableCell(
+            start_row_offset_idx=row,
+            end_row_offset_idx=row + 1,
+            start_col_offset_idx=column,
+            end_col_offset_idx=column + 1,
+            text=text,
+            column_header=row == 0,
+        )
+        for row, row_values in enumerate(values)
+        for column, text in enumerate(row_values)
+    ]
+    document.add_table(
+        data=TableData(
+            table_cells=cells,
+            num_rows=len(values),
+            num_cols=2,
+        ),
+        caption=caption,
+        parent=heading,
+        prov=provenance(1, "district table", 680),
     )
     return document
 
@@ -1005,6 +1062,195 @@ def test_table_is_preserved_with_caption_headers_and_rows(compiler_fixture) -> N
     assert "North | 42" in item.content
     assert item.source_node_ids == (table_node.id,)
     assert item.source_item_ids == table_node.source_item_ids
+
+
+def _faceted_oversized_table_scope(tmp_path: Path):
+    source = faceted_oversized_table_source()
+    counter = FixtureTokenCounter()
+    ir = project_document(source, ingest_metadata(tmp_path), tokenizer=counter)
+    scope = DocumentScope.from_documents([ir], source_documents={ir.id: source})
+    return scope, counter
+
+
+def test_faceted_core_scores_share_the_reranker_scale_with_fragments(
+    tmp_path: Path,
+) -> None:
+    """Faceted core evidence must be ordered by the same quantity as fragments.
+
+    Under the shipped defaults the facet stage fused candidates with RRF and
+    wrote that sum into ``reranked`` as well as ``fused``, discarding the
+    cross-encoder score it had just computed. Table fragments kept a raw
+    reranker score, so an RRF value near 0.03 was compared against a reranker
+    score, and every fragment sorted above every direct hit regardless of
+    relevance.
+    """
+    scope, counter = _faceted_oversized_table_scope(tmp_path)
+    config = compiler_config()
+    reranker = LexicalOverlapReranker()
+    budget = 18
+
+    # Premise: the defect only exists under these two defaults together.
+    assert config.query_faceting_enabled
+    assert config.query_facet_rerank_strategy == "batched"
+    assert query_facets(
+        FACETED_QUERY,
+        limit=config.query_facet_limit,
+        min_terms=config.query_facet_min_terms,
+    )
+
+    _packet, trace = compile_context_with_trace(
+        FACETED_QUERY,
+        scope,
+        budget,
+        config,
+        tokenizer=counter,
+        reranker=reranker,
+    )
+
+    # ``reranked`` now holds the score the reranker actually produced for this
+    # candidate against this query, and ``fused`` still holds the RRF sum.
+    evidence = next(
+        candidate
+        for candidate in trace.ranked_evidence
+        if AUDIT_PARAGRAPH in candidate.chunk.retrieval_text
+    )
+    assert evidence.scores.reranked == pytest.approx(
+        reranker.score(FACETED_QUERY, [evidence.chunk])[0]
+    )
+    assert evidence.scores.fused > 0
+    assert evidence.scores.reranked != pytest.approx(evidence.scores.fused)
+
+    fragments = [
+        candidate
+        for candidate in trace.expanded_candidates
+        if candidate.operator == "table_fragment"
+    ]
+    core = [
+        candidate
+        for candidate in trace.expanded_candidates
+        if candidate.operator == "retrieval"
+    ]
+    # Premise: the oversized table really did fragment.
+    assert len(fragments) > 1
+    paragraph = next(
+        candidate for candidate in core if AUDIT_PARAGRAPH in candidate.chunk.text
+    )
+
+    # The paragraph answers a whole facet; no fragment matches the query as
+    # well. On one scale that has to show up in the score and in the order.
+    assert paragraph.scores.reranked > max(
+        fragment.scores.reranked for fragment in fragments
+    )
+    positions = {
+        candidate.chunk.id: index
+        for index, candidate in enumerate(trace.expanded_candidates)
+    }
+    assert positions[paragraph.chunk.id] < min(
+        positions[fragment.chunk.id] for fragment in fragments
+    )
+
+
+@pytest.mark.parametrize("strategy", ("coverage", "ranked"))
+def test_table_fragments_stop_displacing_faceted_core_evidence(
+    tmp_path: Path,
+    strategy: str,
+) -> None:
+    """The scale mismatch cost core evidence its place in the packet."""
+    scope, counter = _faceted_oversized_table_scope(tmp_path)
+    config = compiler_config(packing_strategy=strategy)
+    budget = 18
+
+    packet, trace = compile_context_with_trace(
+        FACETED_QUERY,
+        scope,
+        budget,
+        config,
+        tokenizer=counter,
+        reranker=LexicalOverlapReranker(),
+    )
+
+    operator_by_content = {
+        candidate.chunk.text: candidate.operator
+        for candidate in trace.deduplicated_candidates
+    }
+    assert len(operator_by_content) == len(trace.deduplicated_candidates)
+    operators = [operator_by_content[item.content] for item in packet.items]
+    contents = [item.content for item in packet.items]
+
+    assert packet.token_count <= budget
+    assert operators
+    # Direct hits lead, and the table's own caption node survives: when every
+    # fragment sorted first it was dropped as a substring of one of them.
+    assert operators[0] == "retrieval"
+    assert AUDIT_PARAGRAPH in contents[0]
+    assert any(content == "Results\n\nDistrict revenue" for content in contents)
+
+
+class ConstantReranker:
+    """Scores every pair the same, so only the tiebreak keys decide order."""
+
+    name = "constant-v1"
+
+    @property
+    def version(self) -> str:
+        return "1"
+
+    @property
+    def revision(self) -> str | None:
+        return None
+
+    def score(self, query: str, chunks) -> list[float]:
+        return [1.0] * len(chunks)
+
+    def score_pairs(self, pairs) -> list[float]:
+        return [1.0] * len(pairs)
+
+
+def test_reranker_ties_fall_back_to_structure_not_to_fused_scores(
+    tmp_path: Path,
+) -> None:
+    """``fused`` is class-local provenance and cannot order across classes.
+
+    A keyed join's ``fused`` is a lexical overlap ratio; a retrieved node's is
+    an RRF sum an order of magnitude smaller. Using it to break a reranker tie
+    ranked joins first on units alone.
+    """
+    source = joined_tables_and_prose_source()
+    counter = FixtureTokenCounter()
+    ir = project_document(source, ingest_metadata(tmp_path), tokenizer=counter)
+    scope = DocumentScope.from_documents([ir], source_documents={ir.id: source})
+
+    _packet, trace = compile_context_with_trace(
+        JOINED_TABLES_AND_PROSE_QUERY,
+        scope,
+        50,
+        compiler_config(),
+        tokenizer=counter,
+        reranker=ConstantReranker(),
+    )
+    candidates = trace.expanded_candidates
+
+    # Premise: every reranker score ties, and the two classes' ``fused``
+    # values are on different scales with the join's the larger.
+    assert len({candidate.scores.reranked for candidate in candidates}) == 1
+    joins = [
+        candidate for candidate in candidates if candidate.operator == "keyed_join"
+    ]
+    core = [
+        candidate for candidate in candidates if candidate.operator == "retrieval"
+    ]
+    assert joins and core
+    assert max(join.scores.fused for join in joins) > max(
+        candidate.scores.fused for candidate in core
+    )
+
+    # With the scores tied, order comes from the structural keys alone.
+    keys = [
+        (candidate.origin_rank, candidate.expansion_order, candidate.chunk.id)
+        for candidate in candidates
+    ]
+    assert keys == sorted(keys)
+    assert candidates[0].operator == "retrieval"
 
 
 def test_oversized_table_uses_reranked_docling_chunks(tmp_path: Path) -> None:

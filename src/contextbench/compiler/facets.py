@@ -112,15 +112,39 @@ def retrieve_faceted(
         by_id,
         key=lambda chunk_id: (-fused[chunk_id], best_rank[chunk_id], chunk_id),
     )[: len(ranked)]
+    # The RRF sum belongs in ``fused`` -- it is a fusion score and that is what
+    # the field names. It must not also be written into ``reranked``. Under the
+    # batched strategy ``rerank_many`` above has already put a real
+    # cross-encoder score there for every candidate in every ranking, and
+    # overwriting it left the compiler ordering faceted core evidence by an RRF
+    # value near ``full_weight / (rrf_k + 1)`` while keyed joins, table
+    # fragments, and page-neighbor windows carried raw reranker scores. Those
+    # are not the same quantity, and ``compiler/expand.py`` and
+    # ``compiler/pack.py`` both order on ``reranked``. Keeping the real score
+    # costs nothing: it is already computed.
+    #
+    # Under ``single_pass`` the rankings were never reranked, so ``reranked``
+    # is still its retrieval-stage default here; the ``index.rerank`` call
+    # below sets it from the full query before anything orders on it.
+    #
+    # Residual caveat, deliberate and not free to remove: ``by_id.setdefault``
+    # keeps the first ranking that produced a candidate, and ranking 0 is the
+    # full query, so a candidate the full query found carries a full-query
+    # score while a candidate reached only through a facet carries that
+    # facet's score. Same model and same scale, different conditioning. A
+    # facet is shorter and more specific than the query it came from, so those
+    # scores tend to read high, and nothing here corrects for that; the
+    # ``query_facet_full_weight`` advantage that ranking 0 gets in the RRF sum
+    # above is the only counterweight. Making the conditioning uniform means
+    # scoring facet-only candidates against the full query too -- a second
+    # cross-encoder pass, or a wider first one -- which is a latency decision,
+    # not a scale fix.
     fused_candidates = tuple(
         by_id[chunk_id].model_copy(
             update={
                 "rank": rank,
                 "scores": by_id[chunk_id].scores.model_copy(
-                    update={
-                        "fused": fused[chunk_id],
-                        "reranked": fused[chunk_id],
-                    }
+                    update={"fused": fused[chunk_id]}
                 ),
             }
         )
