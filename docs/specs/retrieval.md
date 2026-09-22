@@ -30,23 +30,27 @@ The returned `RankedEvidence` records dense, sparse, fused, and reranked scores.
 Packed `ContextItem` values carry document IDs, pages, heading paths, IR node
 IDs, Docling source item IDs, and an evidence ID suitable for answer citations.
 
-### Known defect: the dense channel ranks non-matches
+### Both channels refuse non-matches
 
 Stage 1 returns only chunks that match at least one query term: a chunk scoring
 zero under BM25 carries no lexical evidence, so giving it a rank gave it
 reciprocal-rank-fusion credit ordered by chunk ID, which is a hash rather than
 relevance.
 
-Stage 2 still has that defect. `HybridIndex._dense_search` applies no
-positivity guard: it sorts every similarity, including exactly `0.0` and
-negative values, truncates to the candidate limit, and breaks ties by chunk ID.
-A chunk with zero similarity to the query therefore receives a dense rank in
-hash order and the full `1 / (rrf_k + rank)` credit that rank is worth, exactly
-as zero-score chunks once did on the sparse side. Short queries against the
+Stage 2 now applies the same rule. `HybridIndex._dense_search` drops any chunk
+whose similarity to the query is not strictly positive before ranking. Vectors
+are L2-normalized, so the similarity is a cosine and `<= 0.0` means at or
+beyond orthogonal: there is no shared direction to rank on. Previously the
+stage sorted every similarity including exactly `0.0` and negative values,
+truncated to the candidate limit, and broke ties by chunk ID, so a chunk with
+zero similarity collected a dense rank in hash order and the full
+`1 / (rrf_k + rank)` credit that rank is worth. Short queries against the
 default 256-dimension hash embedding leave most chunks at similarity exactly
-`0.0`, so this is the common case rather than a corner.
+`0.0`, so that was the common case rather than a corner.
 
-This is recorded, not fixed.
+This was previously recorded here as a known defect held open by a research
+question about empty results. That question has been decided, and the
+subsections below record both the decision and the measurements it rests on.
 
 #### It cannot fire on a benchmark run
 
@@ -66,34 +70,69 @@ run used, a non-positive similarity does not occur:
   normalization, scored against those stored vectors give 6,928,752
   query-chunk similarities. None is at or below zero; the minimum is `+0.1878`;
   none appears in any top-40. (The reproduction was checked against the stored
-  vectors themselves, which it reproduces to within `6e-8`.)
+  vectors themselves, which it reproduces to approximately `5e-7` -- float32
+  precision. An earlier version of this page said `6e-8`; independent
+  reproduction reached `4.47e-07`, about seven times looser, which is
+  consistent with float32 batch nondeterminism rather than with a disagreement
+  about the vectors. The positivity conclusion is unaffected -- the smallest
+  similarity involved is `+0.1878`, five orders of magnitude above the
+  discrepancy -- but a reader reproducing the work will not hit `6e-8` and
+  should not treat missing it as a failure. Read the agreement as float32
+  precision, not as a fixed constant.)
 
-A positivity guard on `_dense_search` is therefore inert under the production
-embedder: it would discard nothing on any run the benchmark has published, and
-so it cannot change a published number. This narrows the defect rather than
-dismissing it. The guard is still a genuine correctness change -- the code
-really does hand rank credit to zero-similarity chunks, and would do so for any
-embedder whose vectors are not confined to a positive cone -- but the reachable
-case today is the offline `hash-256-v1` model, whose sign-bit vectors leave
-most chunks at exactly `0.0` against a short query.
+The positivity guard on `_dense_search` is therefore inert under the production
+embedder: it discards nothing on any run the benchmark has published, and so it
+cannot change a published number. This narrows the guard's reach rather than
+dismissing it. It is a genuine correctness change -- the code really did hand
+rank credit to zero-similarity chunks, and would do so for any embedder whose
+vectors are not confined to a positive cone -- but the reachable case today is
+the offline `hash-256-v1` model, whose sign-bit vectors leave most chunks at
+exactly `0.0` against a short query.
 
-#### What blocks the fix is an empty-candidate question
+#### Empty retrieval is a legitimate outcome
 
-The guard is not blocked on the rerun. It is blocked on a policy question the
-hash model exposes. BM25 already refuses zero-score chunks; if the dense
-channel also refuses zero-similarity chunks, a query that matches nothing in
-either channel yields no candidates at all, where it previously yielded
-hash-ordered non-matches. Measured on the committed fixtures, a strict guard
-empties 7 of the 20 fixture (arm, query) pairs -- `fixed`/`metrics`,
-`fixed`/`growth conclusion`, and `structural` for `quarterly report`,
-`metrics`, `methods`, `report highlights` and `growth conclusion` -- and drops
-the `region 42` row of the pinned ranking table from four results to three,
-because only three of those chunks carry any signal in either channel.
+The guard raises a policy question that only the hash model exposes. BM25
+already refuses zero-score chunks; now that the dense channel also refuses
+zero-similarity chunks, a query matching nothing in either channel yields no
+candidates at all, where it previously yielded hash-ordered non-matches.
 
-Whether an empty retrieval is the correct outcome for a query that matches
-nothing, or whether the pipeline needs a floor, is a research decision and is
-deliberately not taken here. Returning the top-k anyway would reinstate exactly
-the hash-ordered credit the guard removes, so it is not a neutral default.
+**The decision is that empty is correct.** A channel holding no evidence
+returns nothing. That is exactly the semantics BM25 has had since its own
+guard landed, and the asymmetry between the two channels was the defect, not
+the emptiness. No floor is applied. Returning the top-k anyway would reinstate
+precisely the hash-ordered credit the guard removes, so it is not a neutral
+default; it is the old behavior under a new name. A downstream consumer that
+needs a non-empty context must widen its query or its scope, not be handed
+chunks the retrieval stack could not justify.
+
+Measured on the committed fixtures, the guard empties 7 of the 20 fixture
+(arm, query) pairs -- `fixed`/`metrics`, `fixed`/`growth conclusion`, and
+`structural` for `quarterly report`, `metrics`, `methods`, `report highlights`
+and `growth conclusion` -- and shortens the `region 42` row of the pinned
+ranking table from four results to three, because only three of those chunks
+carry any signal in either channel. Each of those 7 pairs previously ranked a
+chunk first with sparse and dense scores both exactly `0.0`.
+
+Consequences, audited across the consumers of `retrieve()` and `pack()`:
+
+- `pack()` on an empty ranking yields a valid packet with zero items, zero
+  tokens, and its metadata intact. `ContextPacket` permits an empty `items`
+  tuple and its budget invariant holds trivially.
+- Evidence-page recall for an empty context is `0.0` against annotated gold
+  pages, not a vacuous `1.0`. The `1.0` branch in `evaluation/evidence.py` is
+  reached only when a question annotates no gold pages at all, which is a
+  property of the question and independent of retrieval.
+- `tokens_to_full_evidence` is `None` for an empty context, meaning full
+  evidence was never reached, and the summary's median skips it.
+- Redundancy over zero items is `0.0` by an explicit guard, not a division by
+  zero.
+- Reports render an empty cell numerically; `n/a` appears only where a metric
+  is genuinely undefined for every question in the cell.
+- Answer generation receives a prompt with an empty evidence section. A
+  grounded answer has nothing it may cite, so its citation validity and
+  citation support are `0.0`. This is the existing rule for an empty citation
+  list and is the intended reading: an uncited claim is ungrounded whatever
+  the reason.
 
 ### How much the sparse defect cost each arm
 

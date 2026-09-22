@@ -60,10 +60,18 @@ class FixtureProvider:
                 provider_usage={"total_tokens": 110},
             )
         return ProviderAnswer(
+            # Cite the first evidence item when there is one, and cite nothing
+            # when the packet is empty. Retrieval can legitimately return no
+            # evidence now that both channels refuse non-matches, so a packet
+            # with zero items reaches generation; this stub used to index
+            # ``evidence_ids[0]`` unconditionally and raised IndexError, which
+            # the runner converts into a whole-run GenerationError. A grounded
+            # model handed no evidence has nothing it may cite, so citing
+            # nothing is the behavior being modeled, not a workaround.
             text=json.dumps(
                 {
                     "answer": "revenue",
-                    "citations": [request.evidence_ids[0]],
+                    "citations": list(request.evidence_ids[:1]),
                 }
             ),
             model_id=config.model,
@@ -111,8 +119,24 @@ def test_generation_runner_reuses_immutable_contexts_and_writes_costs(
     assert len(provider.requests) == len(BenchmarkSystem)
     assert {record.system for record in result.records} == set(BenchmarkSystem)
     assert all(record.accuracy == 1 for record in result.records)
-    assert all(record.citation_validity == 1 for record in result.records)
-    assert all(record.citation_support == 1 for record in result.records)
+    # Split by whether the cell had anything to cite. The structural arm packs
+    # nothing at this 12-token budget: its one genuine chunk is 21 tokens, and
+    # the smaller chunks that used to fill the gap were non-matches the
+    # retrieval channels no longer rank. An answer that cites nothing scores
+    # zero on both citation metrics, which is the runner's existing rule for
+    # an empty citation list and is the right one -- an uncited claim is
+    # ungrounded whatever the reason. The cells that do carry evidence must
+    # still score a perfect 1, so this stays a real assertion rather than a
+    # relaxation to ">= 0".
+    cited = [record for record in result.records if record.citations]
+    uncited = [record for record in result.records if not record.citations]
+    assert {record.system for record in uncited} == {BenchmarkSystem.STRUCTURAL}
+    assert len(cited) == len(BenchmarkSystem) - 1
+    assert all(record.citation_validity == 1 for record in cited)
+    assert all(record.citation_support == 1 for record in cited)
+    assert all(record.citation_validity == 0 for record in uncited)
+    assert all(record.citation_support == 0 for record in uncited)
+    assert all(not record.citation_present for record in uncited)
     assert all(record.cost_usd == pytest.approx(0.00011) for record in result.records)
     assert len(result.summary.rows) == len(BenchmarkSystem)
     assert {path.name for path in result.path.iterdir()} == {

@@ -428,7 +428,8 @@ measurement. A 2026-09-21 code review found three shared retrieval and
 reporting defects: BM25 returning every chunk with a zero score into rank
 fusion, embedding and reranker models loaded without a pinned revision, and
 run manifests that do not record whether the worktree was dirty. All three are
-fixed on this branch. Nothing has been remeasured: every absolute figure and
+fixed on this branch, as is the fourth defect that review found in the dense
+channel. Nothing has been remeasured: every absolute figure and
 paired delta published on this page comes from a run made before those fixes
 and stays provisional until the affected runs are repeated. The BM25 defect
 did not cost every arm the same amount, which is why the paired deltas must be
@@ -438,31 +439,41 @@ retrieval fixture, and 15 of 20 on the structural one, where five queries had
 no genuine sparse hit at all and their whole sparse channel was noise ordered
 by chunk ID.
 
-One defect from that review is not fixed. The dense channel still awards rank
+The fourth defect was the dense channel's copy of the first. It awarded rank
 credit, and so reciprocal-rank-fusion credit, to chunks whose similarity to
-the query is exactly zero, in chunk-ID order, exactly as the sparse channel
-did before the BM25 fix; see
+the query is not positive, in chunk-ID order, exactly as the sparse channel
+did before the BM25 fix. It is now fixed the same way: `_dense_search` drops
+any chunk whose similarity is not strictly positive. Both channels now refuse
+what they did not score; see
 [the retrieval specification](docs/specs/retrieval.md).
 
 It does not block the rerun, and the earlier claim on this page that it moves
-published numbers was wrong. It has now been measured against the embedder the
+published numbers was wrong. It has been measured against the embedder the
 published runs actually used. Across all 31 cached indexes the stored
 `BAAI/bge-small-en-v1.5` vectors are mutually positive: 3,715,675,587 distinct
 chunk pairs, none with a cosine at or below zero, minimum `+0.1108`. Embedding
 the 24 `xldev24` questions at the pinned revision
 `5c38ec7c405ec4b44b94cc5a9bb96e735b38267a` and scoring them against those same
 stored vectors gives 6,928,752 query-chunk similarities, again none at or below
-zero, minimum `+0.1878`, and none inside any top-40. A positivity guard on the
-dense channel could therefore not have fired on any published run, so fixing it
-cannot move a published number. The defect is real and worth fixing, but it is
-reachable only under the offline `hash-256-v1` model used by fixtures, whose
-sign-bit vectors are sparse enough to make exact zeros routine.
+zero, minimum `+0.1878`, and none inside any top-40. The guard therefore could
+not have fired on any published run, and fixing it cannot move a published
+number. The defect was real and worth fixing, but it is reachable only under
+the offline `hash-256-v1` model used by fixtures, whose sign-bit vectors are
+sparse enough to make exact zeros routine.
 
-Fixing it is blocked on a research decision rather than on the rerun. Under the
-hash model a strict guard, combined with the BM25 guard already in place, can
-leave a query with no candidates at all rather than with hash-ordered
-non-matches: it empties 7 of the 20 fixture (arm, query) pairs outright. Whether
-an empty retrieval is the correct answer there, or needs a floor, is open.
+The research question that held the fix open has been decided: an empty
+retrieval is the correct answer. Under the hash model the guard, combined with
+the BM25 guard already in place, can leave a query with no candidates at all
+rather than with hash-ordered non-matches -- it empties 7 of the 20 fixture
+(arm, query) pairs outright, and shortens one row of the pinned offline
+ranking table from four results to three. A channel with no evidence returns
+nothing, which is what BM25 has already done since its own guard landed, and
+the asymmetry between the two channels was the defect rather than the
+emptiness. No floor is applied, because returning the top-k anyway would
+reinstate exactly the hash-ordered credit the guard removes. Downstream
+consumers were audited against this: an empty packet is a valid packet, scores
+recall `0.0` against annotated gold pages rather than a vacuous `1.0`, and
+yields an answer that cites nothing and so scores zero on citation validity.
 
 Pinning the model revisions changed the derived-index key, so all 31 cached
 indexes under `artifacts/indexes/` are now unreachable by key and must be

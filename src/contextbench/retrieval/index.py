@@ -545,10 +545,34 @@ class HybridIndex:
         if not len(indices):
             return []
         similarities = self._vectors[indices] @ query_vector
-        scores = [
-            (float(score), int(index))
-            for score, index in zip(similarities, indices, strict=True)
-        ]
+        scores: list[tuple[float, int]] = []
+        for similarity, index in zip(similarities, indices, strict=True):
+            score = float(similarity)
+            if score <= 0.0:
+                # A chunk with no positive similarity to the query is not a
+                # dense hit. Appending it anyway gave it a rank, and so
+                # reciprocal-rank-fusion credit, ordered by chunk id -- a hash,
+                # not relevance. This is the sparse guard in
+                # ``BM25Index.search`` applied to the dense channel, and the
+                # two channels must keep the same semantics: a channel holding
+                # no evidence returns nothing rather than hash-ordered filler.
+                #
+                # Stored vectors are L2-normalized, so ``score`` is a cosine
+                # and ``<= 0.0`` means at or beyond orthogonal: no shared
+                # direction left to rank on. The test is ``<= 0.0`` rather
+                # than ``== 0.0`` deliberately, because a negative cosine is
+                # weaker evidence than none at all, not stronger.
+                #
+                # Under the production embedder this branch is unreachable --
+                # every stored chunk pair and every measured query-chunk pair
+                # is strictly positive -- so it fires only under the offline
+                # ``hash-256-v1`` model, whose sign-bit vectors leave most
+                # chunks at exactly 0.0 against a short query. When both
+                # channels refuse, ``retrieve`` returns no candidates and
+                # ``pack`` yields an empty packet; that is the intended
+                # outcome, not a failure. See ``docs/specs/retrieval.md``.
+                continue
+            scores.append((score, int(index)))
         scores.sort(key=lambda pair: (-pair[0], self.chunks[pair[1]].id))
         return [(index, score) for score, index in scores[:limit]]
 

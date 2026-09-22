@@ -44,6 +44,34 @@ def retrieval_fixture(tmp_path: Path):
     return document, ir, config
 
 
+# The (arm, query) pairs that match nothing in either channel, and so
+# legitimately retrieve nothing now that both channels refuse non-matches.
+# Every one of these ranked a chunk first with sparse and dense both exactly
+# 0.0 before the dense positivity guard landed: rank 1 was awarded on
+# hash-ordered dense rank credit alone, over a chunk sharing no query term and
+# no vector direction with the query. Empty is the honest answer, and it is
+# what BM25 alone has returned for the sparse channel since its own guard.
+#
+# This list is the measured result, not a target: it is reachable only under
+# the offline ``hash-256-v1`` embedding, whose 256-dimension sign-bit vectors
+# leave most chunks at exactly 0.0 against a short query. Under the production
+# embedder no non-positive similarity occurs at all, so nothing is dropped
+# there (see ``docs/specs/retrieval.md``). If chunking, the fixture document,
+# or the embedding model changes, re-measure this list rather than editing it
+# to make the test pass.
+_FIXTURE_QUERIES_WITHOUT_EVIDENCE = frozenset(
+    {
+        (RetrievalArm.FIXED, "metrics"),
+        (RetrievalArm.FIXED, "growth conclusion"),
+        (RetrievalArm.STRUCTURAL, "quarterly report"),
+        (RetrievalArm.STRUCTURAL, "metrics"),
+        (RetrievalArm.STRUCTURAL, "methods"),
+        (RetrievalArm.STRUCTURAL, "report highlights"),
+        (RetrievalArm.STRUCTURAL, "growth conclusion"),
+    }
+)
+
+
 @pytest.mark.parametrize(
     "query",
     (
@@ -80,28 +108,41 @@ def test_fixture_queries_return_ranked_traceable_evidence(
     ranked = index.retrieve(query)
     packet = index.pack(query, token_budget=12)
 
+    # Invariants that hold for both halves of the split, including the empty
+    # one: the index is still built and saved, the packet is still a valid
+    # packet, and it still stays inside its budget. An empty retrieval must
+    # produce an empty packet rather than an error or a malformed one.
+    assert packet.token_count <= 12
+    assert packet.metadata["arm"] == arm.value
+    assert all(item.document_id == ir.id for item in packet.items)
+    assert list((tmp_path / "artifacts" / "indexes").glob("*/index.json"))
+
+    if (arm, query) in _FIXTURE_QUERIES_WITHOUT_EVIDENCE:
+        assert ranked == ()
+        assert packet.items == ()
+        assert packet.token_count == 0
+        return
+
     assert ranked
     assert ranked[0].rank == 1
     assert ranked[0].chunk.document_id == ir.id
     assert ranked[0].chunk.source_node_ids
     assert ranked[0].chunk.source_item_ids
-    assert ranked[0].scores.dense >= -1
-    # Deliberately not tightened to ``> 0``. BM25 no longer returns zero-score
-    # chunks, so a positive sparse score on the top hit would be the stronger
-    # claim -- but it is false here: 7 of these 20 (arm, query) pairs rank a
-    # chunk first with sparse and dense both exactly 0.0, reaching rank 1 on
-    # dense rank credit alone. (fixed: "metrics", "growth conclusion";
-    # structural: "quarterly report", "metrics", "methods", "report
-    # highlights", "growth conclusion".) Those are the dense-channel defect
-    # noted on ``test_unmatched_chunks_earn_no_sparse_fusion_credit``, and
-    # they are also why ``fused > 0`` below is weaker than it looks. Tighten
-    # this only once the dense channel filters non-matches too.
-    assert ranked[0].scores.sparse >= 0
+    # Now tightened to ``> 0`` on both channels, which the comment this
+    # replaced said to do once the dense channel filtered non-matches too.
+    # The 7 pairs that made the weaker ``>= 0`` necessary were exactly the
+    # ones reaching rank 1 on a zero score in both channels; they are the
+    # split above, and none of them lands here. For the 13 that remain, the
+    # top hit shares a query term and a vector direction with the query.
+    assert ranked[0].scores.sparse > 0
+    assert ranked[0].scores.dense > 0
     assert ranked[0].scores.fused > 0
-    assert packet.token_count <= 12
-    assert packet.metadata["arm"] == arm.value
-    assert all(item.document_id == ir.id for item in packet.items)
-    assert list((tmp_path / "artifacts" / "indexes").glob("*/index.json"))
+    # No candidate survives on hash-ordered filler: every returned chunk owes
+    # its rank to at least one channel that actually scored it.
+    assert all(
+        evidence.scores.sparse > 0 or evidence.scores.dense > 0
+        for evidence in ranked
+    )
 
 
 def test_fixed_chunks_overlap_and_packing_deduplicates_source_material(
@@ -406,6 +447,17 @@ def test_repeated_retrieval_reuses_query_reranking() -> None:
 
 
 def test_duplicate_search_text_does_not_consume_rerank_capacity() -> None:
+    """Collapsing duplicates must free a rerank slot for a different chunk.
+
+    The query gained the term ``evidence`` when the dense channel started
+    refusing non-matches. It had been ``same repeated boilerplate``, which the
+    ``unique`` chunk matches in neither channel: sparse 0.0, and dense exactly
+    0.0 against the hash embedding. That chunk was therefore filling the
+    second rerank slot on hash-ordered dense rank credit, so the test was
+    demonstrating its property with a candidate that had earned nothing. With
+    ``evidence`` in the query the same two chunks fill the same two slots,
+    both on genuine sparse matches, and the assertions below are unchanged.
+    """
     chunks = tuple(
         RetrievalChunk(
             id=f"duplicate-{index}",
@@ -438,7 +490,7 @@ def test_duplicate_search_text_does_not_consume_rerank_capacity() -> None:
     )
     index = HybridIndex(chunks, config=config, tokenizer=FixtureTokenCounter())
 
-    ranked = index.retrieve("same repeated boilerplate")
+    ranked = index.retrieve("same repeated boilerplate evidence")
 
     assert len(ranked) == 2
     assert {item.chunk.retrieval_text for item in ranked} == {
@@ -448,12 +500,25 @@ def test_duplicate_search_text_does_not_consume_rerank_capacity() -> None:
 
 
 def test_fixed_retrieval_capacity_keeps_budget_contexts_nested() -> None:
+    """A smaller budget must yield a prefix of the larger budget's packet.
+
+    The chunk text gained a hyphen when the dense channel started refusing
+    non-matches. It had been ``evidence0``, which BM25 tokenizes as the single
+    term ``evidence0`` -- so the query ``evidence`` matched no chunk at all,
+    and every one of these twenty candidates reached the pool on a dense rank
+    over a similarity of exactly 0.0, ordered by chunk id. The nesting
+    property was being demonstrated over a ranking that was entirely hash
+    order. ``evidence-0`` tokenizes as ``evidence`` and ``0``, so the query
+    now matches all twenty on the sparse side, while
+    ``FixtureTokenCounter`` still counts one whitespace-delimited token per
+    chunk, leaving the budget arithmetic below exactly as it was.
+    """
     chunks = tuple(
         RetrievalChunk(
             id=f"chunk-{index:02d}",
             arm=RetrievalArm.COMPILER,
             document_id="doc",
-            text=f"evidence{index}",
+            text=f"evidence-{index}",
             token_count=1,
             source_node_ids=(f"node-{index}",),
             source_item_ids=(f"item-{index}",),
@@ -560,6 +625,19 @@ def test_repeated_build_loads_verified_vectors_without_reembedding(
 
 
 def test_global_index_respects_per_question_document_scope(tmp_path: Path) -> None:
+    """Scoping must exclude another document's chunks from a shared index.
+
+    The query gained the term ``revenue`` when the dense channel started
+    refusing non-matches. It had been ``exclusive scope leak phrase``, a
+    phrase that appears only in the excluded document, so inside the allowed
+    scope it matched nothing in either channel and the packet is now empty.
+    An empty packet excludes the leak trivially, which would make this test
+    vacuous rather than failing. ``revenue`` appears in the allowed document,
+    so the scoped packet is non-empty and the exclusion is doing real work.
+    The unscoped packet below is checked too: it must surface the leak chunk,
+    which proves the scoped packet's silence comes from the document filter
+    and not from the query simply matching nothing anywhere.
+    """
     counter = FixtureTokenCounter()
     allowed_source = source_document()
     excluded_source = source_document()
@@ -585,14 +663,14 @@ def test_global_index_respects_per_question_document_scope(tmp_path: Path) -> No
         tokenizer=counter,
     )
 
-    packet = index.pack(
-        "exclusive scope leak phrase",
-        token_budget=100,
-        document_ids={allowed.id},
-    )
+    query = "exclusive scope leak phrase revenue"
+    packet = index.pack(query, token_budget=100, document_ids={allowed.id})
+    unscoped = index.pack(query, token_budget=100)
 
     assert packet.items
     assert {item.document_id for item in packet.items} == {allowed.id}
+    assert not any("exclusive scope leak" in item.content for item in packet.items)
+    assert any("exclusive scope leak" in item.content for item in unscoped.items)
 
 
 @dataclass(frozen=True)
@@ -763,25 +841,22 @@ def test_bm25_returns_only_chunks_that_match_a_query_term() -> None:
     }
 
 
-def test_unmatched_chunks_earn_no_sparse_fusion_credit() -> None:
-    """A non-matching chunk reaches fusion on its dense term alone.
+def test_fusion_credit_equals_the_ranks_each_channel_actually_awarded() -> None:
+    """Every fused candidate is paid for ranks a channel genuinely gave it.
 
-    Reciprocal-rank fusion pays ``1 / (rrf_k + rank)`` per channel, so a
-    zero-score sparse entry used to be worth as much as a genuine match at
-    the same rank. Any candidate that BM25 did not hit must now score exactly
-    its dense reciprocal-rank term and nothing more.
+    This test previously asserted the opposite shape: that a chunk BM25 had
+    refused still reached fusion on a dense term alone, scoring exactly
+    ``1 / (rrf_k + dense_rank)``. Its docstring recorded why that was a defect
+    rather than a design -- ``_dense_search`` had no positivity guard, so it
+    ranked zero-similarity chunks in ``chunk.id`` order and paid them full
+    reciprocal-rank credit -- and predicted this rewrite once the guard
+    landed. It has landed, so the one-sided case it described no longer
+    exists in this corpus, and asserting it would now assert a bug.
 
-    This describes current behavior; it does not endorse it. The dense channel
-    has the same defect BM25 just lost: ``HybridIndex._dense_search`` applies
-    no positivity guard, so it sorts every similarity including exactly 0.0
-    and negative ones, slices to the limit, and breaks ties by ``chunk.id``.
-    Zero-similarity chunks therefore still collect a dense rank in hash order
-    and full RRF credit for it -- and with short queries against 256
-    dimensions that is the common case, not a corner. The ``dense_rank`` term
-    asserted below is often exactly such a rank. Fixing the dense channel is
-    deliberately out of scope for the BM25 change, so if it is fixed later,
-    expect this assertion to need rewriting rather than treating a failure
-    here as a regression.
+    What replaces it is the positive claim. Both channels refuse non-matches,
+    so both return exactly the five ``zirconium`` chunks, and each candidate's
+    fused score is the sum of the two reciprocal-rank terms its own ranks
+    earned. No candidate is carried by a rank awarded on a hash.
     """
     chunks = _sparse_probe_corpus()
     config = RetrievalConfig(candidate_limit=10, rerank_limit=10)
@@ -792,12 +867,12 @@ def test_unmatched_chunks_earn_no_sparse_fusion_credit() -> None:
         reranker=LexicalOverlapReranker(),
         tokenizer=FixtureTokenCounter(),
     )
-    sparse_ids = {
-        chunks[position].id
-        for position, _score in index.sparse.search("zirconium", limit=10)
+    sparse_ranks = {
+        chunks[position].id: rank
+        for rank, (position, _score) in enumerate(
+            index.sparse.search("zirconium", limit=10), 1
+        )
     }
-
-    candidates = index.retrieve_candidates("zirconium")
     dense_ranks = {
         chunks[position].id: rank
         for rank, (position, _score) in enumerate(
@@ -805,13 +880,138 @@ def test_unmatched_chunks_earn_no_sparse_fusion_credit() -> None:
         )
     }
 
-    unmatched = [item for item in candidates if item.chunk.id not in sparse_ids]
-    assert unmatched, "the dense channel must surface at least one non-match"
-    for item in unmatched:
-        assert item.scores.sparse == 0.0
+    candidates = index.retrieve_candidates("zirconium")
+
+    matching = {
+        "sparse-chunk-00",
+        "sparse-chunk-02",
+        "sparse-chunk-04",
+        "sparse-chunk-06",
+        "sparse-chunk-08",
+    }
+    assert set(sparse_ranks) == matching
+    assert set(dense_ranks) == matching
+    assert {item.chunk.id for item in candidates} == matching
+    for item in candidates:
+        assert item.scores.sparse > 0.0
+        assert item.scores.dense > 0.0
         assert item.scores.fused == pytest.approx(
-            1 / (config.rrf_k + dense_ranks[item.chunk.id])
+            1 / (config.rrf_k + sparse_ranks[item.chunk.id])
+            + 1 / (config.rrf_k + dense_ranks[item.chunk.id])
         )
+
+
+def test_dense_search_returns_only_chunks_with_positive_similarity() -> None:
+    """A chunk with no positive similarity to the query is not a dense hit.
+
+    The dense analogue of the BM25 test above, over the same corpus and the
+    same query. Under the offline hash embedding the five
+    chunks with no ``zirconium`` token also share no sign-bit direction with
+    the query, leaving them at similarity exactly 0.0. Asking for ten results
+    must still yield five: returning the zeros gave them a dense rank ordered
+    among themselves by chunk id, which is a hash rather than relevance.
+    """
+    chunks = _sparse_probe_corpus()
+    config = RetrievalConfig(candidate_limit=10, rerank_limit=10)
+    index = HybridIndex(
+        chunks,
+        config=config,
+        embedder=HashEmbeddingModel(config.embedding_dimensions),
+        reranker=LexicalOverlapReranker(),
+        tokenizer=FixtureTokenCounter(),
+    )
+
+    hits = index._dense_search("zirconium", 10, allowed_indices=None)
+
+    assert len(hits) == 5
+    assert all(score > 0.0 for _position, score in hits)
+    assert {chunks[position].id for position, _score in hits} == {
+        "sparse-chunk-00",
+        "sparse-chunk-02",
+        "sparse-chunk-04",
+        "sparse-chunk-06",
+        "sparse-chunk-08",
+    }
+
+
+def test_chunks_absent_from_both_channels_earn_no_fusion_credit() -> None:
+    """A chunk neither channel scored must not reach fusion at all.
+
+    The five non-``zirconium`` chunks score 0.0 under BM25 and 0.0 under the
+    dense channel. With both guards in place neither channel ranks them, so
+    they earn no reciprocal-rank term from either side and must be absent
+    from the candidate pool entirely -- not present with a fused score of
+    0.0, which would still let them occupy a rerank slot and, at a smaller
+    ``rerank_limit``, displace a chunk that was genuinely scored.
+    """
+    chunks = _sparse_probe_corpus()
+    config = RetrievalConfig(candidate_limit=10, rerank_limit=10)
+    index = HybridIndex(
+        chunks,
+        config=config,
+        embedder=HashEmbeddingModel(config.embedding_dimensions),
+        reranker=LexicalOverlapReranker(),
+        tokenizer=FixtureTokenCounter(),
+    )
+    unscored = {
+        "sparse-chunk-01",
+        "sparse-chunk-03",
+        "sparse-chunk-05",
+        "sparse-chunk-07",
+        "sparse-chunk-09",
+    }
+
+    candidates = index.retrieve_candidates("zirconium")
+    ranked = index.retrieve("zirconium")
+    packet = index.pack("zirconium", token_budget=200)
+
+    assert not {item.chunk.id for item in candidates}.intersection(unscored)
+    assert not {item.chunk.id for item in ranked}.intersection(unscored)
+    assert not {
+        chunks[position].id
+        for position, _score in index.sparse.search("zirconium", limit=10)
+    }.intersection(unscored)
+    assert not {
+        chunks[position].id
+        for position, _score in index._dense_search(
+            "zirconium", 10, allowed_indices=None
+        )
+    }.intersection(unscored)
+    unscored_texts = {chunks[position].text for position in (1, 3, 5, 7, 9)}
+    assert not {item.content for item in packet.items}.intersection(unscored_texts)
+
+
+def test_a_query_matching_nothing_retrieves_nothing() -> None:
+    """When both channels refuse, retrieval and packing are empty, not filled.
+
+    This is the semantics the dense guard commits to: a channel with no
+    evidence returns nothing, so a query with no evidence in either channel
+    returns nothing. It previously returned a full pool of chunks ordered by
+    a hash of their ids. An empty packet must still be a valid packet -- zero
+    items, zero tokens, inside its budget, carrying its metadata -- because
+    every downstream consumer receives it.
+    """
+    chunks = _sparse_probe_corpus()
+    config = RetrievalConfig(candidate_limit=10, rerank_limit=10)
+    index = HybridIndex(
+        chunks,
+        config=config,
+        embedder=HashEmbeddingModel(config.embedding_dimensions),
+        reranker=LexicalOverlapReranker(),
+        tokenizer=FixtureTokenCounter(),
+    )
+
+    assert index.sparse.search("gallium", limit=10) == []
+    assert index._dense_search("gallium", 10, allowed_indices=None) == []
+    assert index.retrieve_candidates("gallium") == ()
+    assert index.retrieve("gallium") == ()
+
+    packet = index.pack("gallium", token_budget=200)
+
+    assert packet.items == ()
+    assert packet.token_count == 0
+    assert packet.token_budget == 200
+    assert packet.metadata["arm"] == RetrievalArm.FIXED.value
 
 
 _RANKING_CORPUS_TEXTS = (
@@ -877,20 +1077,24 @@ def _observed_rankings(index: HybridIndex) -> dict[str, tuple[tuple[str, int], .
 # Recapture the same way, from an extracted d7f427e tree, if the corpus or the
 # queries change; never by recording what the current code prints.
 #
-# One row is no longer a pure d7f427e capture. Stopping BM25 from returning
-# zero-score chunks moved ``quarterly metrics``; that row was re-derived from
-# the reciprocal-rank arithmetic, not re-recorded, and the derivation is on the
-# row itself.
+# Two rows are no longer pure d7f427e captures. Stopping BM25 from returning
+# zero-score chunks moved ``quarterly metrics``; adding the matching positivity
+# guard to the dense channel shortened ``region 42`` from four results to
+# three. Both were re-derived from the reciprocal-rank arithmetic, not
+# re-recorded, and each derivation sits on its own row.
 #
-# The other six rows still hold their d7f427e *values*, but two of them no
-# longer hold them for the d7f427e *reasons*. Three rows lost zero-score sparse
-# padding: ``quarterly metrics`` (moved), ``margin recovery`` (the padding
-# chunk sat below the top-four rerank cut either way, so nothing moved) and
-# ``region 42`` (the padding chunk was inside the pool and its slot now rests
-# on a different quantity -- see the note on that row). Treat an unchanged
-# value as evidence about the value only. If one of these rows later flips,
-# the first place to look is the derivation recorded beside it, not a
-# regression in a subsystem the row never depended on.
+# The other five rows still hold their d7f427e *values*, and after the dense
+# guard four of them hold them for unchanged reasons: ``revenue by region``,
+# ``north america growth``, ``margin recovery`` and ``europe costs
+# identifier`` have no non-positive similarity anywhere in their dense
+# top-five, so the guard discards nothing from them. ``europe costs`` lost
+# chunk-00 from dense rank 5 at similarity exactly 0.0; chunk-00 sat below the
+# top-four rerank cut either way, so nothing moved. ``margin recovery`` had
+# also lost zero-score sparse padding earlier, likewise below the cut.
+#
+# Treat an unchanged value as evidence about the value only. If one of these
+# rows later flips, the first place to look is the derivation recorded beside
+# it, not a regression in a subsystem the row never depended on.
 _RANKINGS_BEFORE_THE_REVISION_PIN = {
     "revenue by region": (
         ("ranking-chunk-00", 1),
@@ -924,30 +1128,52 @@ _RANKINGS_BEFORE_THE_REVISION_PIN = {
     # the padding chunk-00 keeps only dense rank 5, 1/65 = 0.015385, and loses
     # the slot to chunk-04, which earns 1/63 = 0.015873 from dense rank 3 on
     # its own. The first three places are sparse-and-dense hits and do not move.
+    #
+    # The dense guard then took chunk-00's remaining rank too: its similarity
+    # to this query is exactly 0.0, so it is no longer a dense hit and the
+    # pool is 07, 13, 10, 04 with no fifth entry to cut. The value is
+    # unchanged because chunk-00 had already lost the slot on the arithmetic
+    # above; what changed is that it now has no credit left at all. Chunk-04
+    # keeps dense rank 3 on a genuine 0.2236 similarity.
     "quarterly metrics": (
         ("ranking-chunk-07", 1),
         ("ranking-chunk-13", 2),
         ("ranking-chunk-10", 3),
         ("ranking-chunk-04", 4),
     ),
-    # Value unchanged from d7f427e, derivation changed. Only 12, 00 and 05
-    # contain "region" or "42" (08 has "regions", a different token), so the
-    # pre-fix sparse top-five padded itself with 01 and 02 at score 0.0, and
-    # both landed inside the rerank pool. Pre-fix the 4th entry, chunk-01, held
-    # its slot on sparse rank 4 plus dense rank 4, 1/64 + 1/64 = 0.031250,
-    # clear of chunk-02's 1/65 + 1/65 = 0.030769. Post-fix it is dense-only:
-    # 1/64 = 0.015625 against chunk-02's 1/65 = 0.015385. Same four chunks in
-    # the same order, but slot 4 now survives on a single dense rank. Note that
-    # both chunks have dense similarity exactly 0.0 here, so that surviving
-    # dense rank is itself awarded in chunk-id order -- the dense channel still
-    # does what BM25 stopped doing (see
-    # ``test_unmatched_chunks_earn_no_sparse_fusion_credit``). A one-rank
-    # margin on a hash-ordered tie is the whole reason this row holds.
+    # Re-derived, not re-recorded, when the dense channel gained the same
+    # positivity guard BM25 has. This is the deletion the previous note on
+    # this row predicted: it said slot 4 survived only on "a one-rank margin
+    # on a hash-ordered tie", and the guard removes exactly that.
+    #
+    # Only 12, 00 and 05 contain "region" or "42" -- 08 has "regions" and 06
+    # has "regional", both different tokens -- so sparse returns three hits:
+    # 12 at 4.0475, then 00 and 05 tied at 1.4605 and separated by chunk id,
+    # giving sparse ranks 12=1, 00=2, 05=3. Dense similarities are 12=0.5883,
+    # 05=0.2357, 00=0.2132 and exactly 0.0 for the other eleven chunks, so
+    # dense ranks are 12=1, 05=2, 00=3.
+    #
+    # Pre-guard, dense sliced its top five from the full sort, so the two
+    # lowest-id zeros took the remaining slots: chunk-01 at dense rank 4 and
+    # chunk-02 at dense rank 5, in chunk-id order. Neither matched a query
+    # term, so each held only its dense term: chunk-01 at 1/64 = 0.015625 and
+    # chunk-02 at 1/65 = 0.015385. That was enough for chunk-01 to take the
+    # fourth rerank slot ahead of chunk-02.
+    #
+    # Post-guard both are discarded before ranking and earn nothing, because
+    # 0.0 is not a positive similarity. Three candidates remain and rerank_limit
+    # of 4 cuts nothing:
+    #   12: 1/61 + 1/61 = 0.032787
+    #   00: 1/62 + 1/63 = 0.032002  (sparse rank 2, dense rank 3)
+    #   05: 1/63 + 1/62 = 0.032002  (sparse rank 3, dense rank 2)
+    # 00 and 05 tie exactly -- the same two reciprocal-rank terms swapped
+    # between channels -- and the tie breaks on chunk id, so 00 takes 2 and 05
+    # takes 3. The reranker leaves that order. The row is three entries, and
+    # every one of them is a hit in both channels.
     "region 42": (
         ("ranking-chunk-12", 1),
         ("ranking-chunk-00", 2),
         ("ranking-chunk-05", 3),
-        ("ranking-chunk-01", 4),
     ),
     # Fusion ranks these 09, 06, 03, 12; the reranker swaps the last two.
     "europe costs identifier": (
@@ -980,10 +1206,18 @@ def test_offline_index_rankings_are_unchanged_by_the_revision_pin() -> None:
     rerank cut even when the sparse top-five genuinely changes.
 
     Absorbing score-scaling is not absorbing everything. A change to which
-    chunks BM25 returns at all moves ranks rather than magnitudes, and those
-    the table does see: dropping zero-score chunks from the sparse hits left
-    ``europe costs identifier`` untouched, since all five of its hits score
-    above zero, and moved ``quarterly metrics`` instead.
+    chunks a channel returns at all moves ranks rather than magnitudes, and
+    those the table does see: dropping zero-score chunks from the sparse hits
+    left ``europe costs identifier`` untouched, since all five of its hits
+    score above zero, and moved ``quarterly metrics`` instead; dropping
+    non-positive similarities from the dense hits then shortened ``region 42``
+    from four results to three, because only three chunks in this corpus carry
+    any signal for that query in either channel.
+
+    A shorter row is a legitimate result, not a truncation. Both channels now
+    refuse to rank what they did not score, so a query with three hits yields
+    three results rather than padding to the rerank limit with chunks ordered
+    by a hash of their ids.
 
     So this is a cache-invalidation check over one small offline corpus, not a
     general scoring guard. A regression that preserves relative order at every
