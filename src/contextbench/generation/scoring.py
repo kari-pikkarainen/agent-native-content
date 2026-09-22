@@ -33,12 +33,18 @@ Counts over the 1345 released rows: ``casefold_exact_match`` 822,
 ``numeric_tolerance`` 276, ``exact_match`` 188, ``percentage_exact`` 43,
 ``choice_exact_match`` 16.
 
-This constant documents the closed set :func:`answer_type` was written against
-and is asserted by the test suite. It is deliberately *not* consulted at
-runtime: :func:`answer_type` must keep scoring whatever a future release hands
-it rather than raising mid-benchmark. A rule outside this set is unreviewed and
-may take a wrong path silently -- notably any rule containing ``"tolerance"``
-or ``"numeric"``, which is routed to the numeric path by substring test.
+This constant documents the closed set :func:`answer_type` was written against.
+It is deliberately *not* consulted at runtime: :func:`answer_type` must keep
+scoring whatever a future release hands it rather than raising mid-benchmark.
+
+The test suite only asserts that this constant and a literal table in
+``tests/unit/test_generation.py`` name the same rules. Both are literals in
+this repository: no test reads a ``verification_rule`` from the release, and
+none can, since ``data/raw/**`` is git-ignored and unit tests must not read
+``data/**``. A rule first appearing in a future release is therefore unreviewed
+*and* undetected, and may take a wrong path silently -- notably any rule
+containing ``"tolerance"`` or ``"numeric"``, which is routed to the numeric path
+by substring test.
 """
 
 NUMERIC_RELATIVE_TOLERANCE = 0.05
@@ -109,8 +115,16 @@ def accuracy_score(prediction: str, gold: str, kind: str) -> float:
       (:data:`NUMERIC_RELATIVE_TOLERANCE`), despite the released rule being
       named ``percentage_exact``.
     - ``entity`` (the fallback, reached by ``casefold_exact_match``) accepts a
-      gold-in-prediction substring hit *or* a Levenshtein ratio >= 0.8, which
-      is laxer than a casefolded exact match.
+      *non-empty* gold-in-prediction substring hit *or* a Levenshtein ratio
+      >= 0.8, which is laxer than a casefolded exact match. An empty normalized
+      gold skips the substring branch and is decided by Levenshtein alone.
+    - ``single_choice`` compares the **first** standalone ``A``-``D`` token of
+      the raw uppercased prediction with that of the gold, so surrounding prose
+      can produce both false negatives and false positives, and an option
+      letter beyond ``D`` scores 0.0.
+    - ``numeric`` and ``percentage`` compare whatever :func:`_extract_number`
+      finds: the first number *anywhere* in the text, with magnitude words and
+      ``%`` dropped.
     - An unrecognized ``kind`` falls through to the entity path.
 
     See "Released rule mapping and deviations" in ``docs/specs/evaluation.md``.

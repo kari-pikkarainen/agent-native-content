@@ -806,12 +806,18 @@ def _rule_question(
     answer_format: str,
     answerable: bool,
 ) -> BenchmarkQuestion:
-    """Build a question carrying one released rule, without reading `data/**`."""
+    """Build a question carrying one released rule, without reading `data/**`.
+
+    The released unanswerable rows are not null: all 188 carry
+    `answer.format == "None"` and `answer.value == "Not answerable"`, so that
+    literal string is the runtime gold. See deviation 4 in
+    `docs/specs/evaluation.md`.
+    """
     return BenchmarkQuestion(
         id=f"question-{verification_rule}",
         question="Which target increased?",
         document_ids=("dataset-doc-1",),
-        gold_answer=None if answer_format == "None" else "revenue",
+        gold_answer="Not answerable" if answer_format == "None" else "revenue",
         answer_format=answer_format,
         verification_rule=verification_rule,
         gold_evidence=(),
@@ -852,7 +858,15 @@ def test_released_verification_rules_map_to_expected_answer_type(
 
 
 def test_released_rule_mapping_covers_every_released_rule() -> None:
-    """A newly-seen rule must fail here, not silently take the entity default."""
+    """The table above and the shipped constant must name the same rules.
+
+    This detects an unreviewed edit to either literal. It **cannot** detect a
+    rule that first appears in the release data: both sides are literals in this
+    repository, `data/raw/**` is git-ignored, and no unit test may read
+    `data/**`. Such a rule would leave this suite green and be scored by
+    whichever branch its name selects. See the rule inventory in
+    `docs/specs/evaluation.md`.
+    """
     exercised = {rule for rule, _, _, _ in RELEASED_RULE_MAPPING}
     assert exercised == set(RELEASED_VERIFICATION_RULES)
 
@@ -901,8 +915,12 @@ def test_percentage_shares_the_numeric_relative_tolerance() -> None:
         assert accuracy_score("18.9", "20", kind) == 0.0  # -5.5%, outside
         # Relative, not absolute: the same 1.0 gap passes at 20 and fails at 2.
         assert accuracy_score("3", "2", kind) == 0.0
-        # Gold zero is special-cased to a near-exact absolute check.
+        # Gold zero is special-cased to a near-exact absolute check, pinned at
+        # its boundary so a looser epsilon cannot pass unnoticed.
         assert accuracy_score("0", "0", kind) == 1.0
+        assert accuracy_score("0.0000009", "0", kind) == 1.0  # 9e-7, inside
+        assert accuracy_score("0.000001", "0", kind) == 0.0  # 1e-6, not < 1e-6
+        assert accuracy_score("0.000002", "0", kind) == 0.0  # 2e-6, outside
         assert accuracy_score("0.1", "0", kind) == 0.0
     # The percentage path compares bare numbers, so a value and its percent
     # rendering are treated as equal.
@@ -922,19 +940,26 @@ def test_unanswerable_scoring_is_phrase_substring_matching() -> None:
         "There is not enough information",
         "INSUFFICIENT_EVIDENCE",
     ):
-        assert accuracy_score(phrase, "None", "unanswerable") == 1.0
+        assert accuracy_score(phrase, "Not answerable", "unanswerable") == 1.0
     # A confident wrong answer scores 1.0 whenever it embeds a listed phrase.
     assert (
         accuracy_score(
             "Revenue rose 12%, though some figures are unanswerable.",
-            "None",
+            "Not answerable",
             "unanswerable",
         )
         == 1.0
     )
     # A valid abstention phrased outside the list scores 0.0.
-    assert accuracy_score("The document does not say.", "None", "unanswerable") == 0.0
-    assert accuracy_score("N/A", "None", "unanswerable") == 0.0
+    assert (
+        accuracy_score("The document does not say.", "Not answerable", "unanswerable")
+        == 0.0
+    )
+    assert accuracy_score("N/A", "Not answerable", "unanswerable") == 0.0
+    # Gold is never read on this path: the released `Not answerable` value and
+    # any other gold string score identically.
+    assert accuracy_score("N/A", "", "unanswerable") == 0.0
+    assert accuracy_score("unanswerable", "", "unanswerable") == 1.0
 
 
 def test_entity_path_is_laxer_than_casefold_exact_match() -> None:
@@ -947,5 +972,82 @@ def test_entity_path_is_laxer_than_casefold_exact_match() -> None:
     assert accuracy_score("The answer is revenue increased", "revenue", "entity") == 1.0
     # Near-miss accepted by the 0.8 Levenshtein ratio.
     assert accuracy_score("revenu", "revenue", "entity") == 1.0
+    # The threshold is pinned from both sides, so neither raising nor lowering
+    # it leaves the suite green. Two edits in ten characters is a ratio of
+    # exactly 0.8 and passes; two in nine is 0.778 and fails.
+    assert accuracy_score("complionci", "compliance", "entity") == 1.0
+    assert accuracy_score("allowinci", "allowance", "entity") == 0.0
     # Far enough away to fail.
     assert accuracy_score("costs", "revenue", "entity") == 0.0
+
+
+def test_entity_path_scores_an_empty_gold_by_levenshtein_alone() -> None:
+    """Characterization: an empty normalized gold skips the substring branch.
+
+    `scoring.py:151` guards the substring test with `gold_norm and ...`, so an
+    empty gold does not match every prediction. It falls through to Levenshtein,
+    which scores 1.0 only against an equally empty prediction. `runner.py:170`
+    maps a missing gold to `""`, so this is reachable. See deviation 1 in
+    `docs/specs/evaluation.md`.
+    """
+    # Without the guard, "" is a substring of everything and this would be 1.0.
+    assert accuracy_score("revenue", "", "entity") == 0.0
+    assert accuracy_score("", "", "entity") == 1.0
+
+
+def test_single_choice_matches_the_first_option_letter() -> None:
+    """Characterization: `choice_exact_match` compares first `A`-`D` tokens.
+
+    The raw prediction and gold are uppercased and searched with
+    `\\b([A-D])\\b`; the first standalone letter on each side decides the
+    score. This is wrong in both directions on free-text answers and is pinned
+    so any change to the predicate is deliberate. See deviation 6 in
+    `docs/specs/evaluation.md`.
+    """
+    # The intended case: a bare or lightly wrapped option letter.
+    assert accuracy_score("C", "C", "single_choice") == 1.0
+    assert accuracy_score("The answer is A", "A", "single_choice") == 1.0
+    # False negative: reasoning that mentions another option first.
+    assert (
+        accuracy_score(
+            "Option A is ruled out, so the answer is C", "C", "single_choice"
+        )
+        == 0.0
+    )
+    # False positive: an incidental capital letter precedes the real answer.
+    assert (
+        accuracy_score("Annex A shows X, so the answer is B", "A", "single_choice")
+        == 1.0
+    )
+    # An option letter beyond `D` never matches and scores 0.0 silently, even
+    # against itself. All 16 released golds are bare `A`-`D`.
+    assert accuracy_score("E", "E", "single_choice") == 0.0
+    # No option letter at all scores 0.0.
+    assert accuracy_score("none of these", "A", "single_choice") == 0.0
+
+
+def test_numeric_extraction_takes_the_first_number_anywhere() -> None:
+    """Characterization: `_extract_number` is a first-number-anywhere scan.
+
+    The tolerance in deviation 3 is applied to whatever this extraction returns.
+    See deviation 7 in `docs/specs/evaluation.md`.
+    """
+    # First number anywhere wins, so a leading year defeats the real answer.
+    assert accuracy_score("In 2023, revenue was 4.5 billion", "4.5", "numeric") == 0.0
+    assert accuracy_score("In 2023, revenue was 4.5 billion", "2023", "numeric") == 1.0
+    # Magnitude words are ignored: 4.5 billion and 4.5 are indistinguishable.
+    assert accuracy_score("4.5 billion", "4.5", "numeric") == 1.0
+    # A `%` is dropped rather than converted, on both sides, so a gold written
+    # as a percentage does not match the same quantity written as a fraction.
+    assert accuracy_score("42.9", "42.9%", "percentage") == 1.0
+    assert accuracy_score("0.429", "42.9%", "percentage") == 0.0
+    # A comma before at most two digits is a decimal separator; otherwise it is
+    # a thousands separator.
+    assert accuracy_score("1,23", "1.23", "numeric") == 1.0
+    assert accuracy_score("1,234", "1234", "numeric") == 1.0
+    assert accuracy_score("1,234", "1.234", "numeric") == 0.0
+    # Powers and fractions are evaluated before the plain-number scan.
+    assert accuracy_score("2^3", "8", "numeric") == 1.0
+    assert accuracy_score("3/4", "0.75", "numeric") == 1.0
+    # Text with no number scores 0.0 rather than raising.
+    assert accuracy_score("no digits here", "4.5", "numeric") == 0.0
