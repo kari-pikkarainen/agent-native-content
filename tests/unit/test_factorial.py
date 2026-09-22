@@ -313,6 +313,58 @@ def test_heading_context_moves_the_structural_and_ir_units_only(
     assert record(ContentUnit.FIXED, True).evidence_quote_recall == 1.0
 
 
+def test_heading_context_keeps_ir_chunk_ids_identical_across_positions(
+    tmp_path: Path,
+) -> None:
+    """The factor must move what is indexed, never the candidate ids.
+
+    ``chunk.id`` is a deterministic tie-break sort key in the indexes and in
+    the coverage objective. While the IR node id payload embedded the indexed
+    string, toggling this factor permuted every IR id, so an IR heading-on/off
+    delta carried an id-permutation effect that the structural unit -- whose
+    id payload omits ``search_text`` -- does not have. That made the factor
+    arm-asymmetric in exactly the comparison it exists to enable.
+
+    Ids are now derived from content alone on both heading-bearing units, so
+    both positions of every unit agree on ids while still disagreeing on
+    ``search_text``. Cache isolation is unaffected: each position still gets
+    its own ``RetrievalConfig`` and its own derived-index key.
+    """
+    config = _ablation_config()
+    corpus = _heading_vocabulary_corpus(tmp_path)
+    documents = tuple(corpus.documents.values())
+    indexes = factorial_runner._build_factorial_indexes(
+        documents,
+        sources_by_ir_id={
+            document.id: corpus.source_documents[document_id]
+            for document_id, document in corpus.documents.items()
+        },
+        config=config,
+        artifacts_root=tmp_path / "id-identity-artifacts",
+        tokenizer=FixtureTokenCounter(),
+        embedder=HashEmbeddingModel(),
+        reranker=LexicalOverlapReranker(),
+    )
+
+    for unit in ContentUnit:
+        on = indexes[(unit, SelectionPolicy.RANKED, True)].chunks
+        off = indexes[(unit, SelectionPolicy.RANKED, False)].chunks
+        assert [chunk.id for chunk in on] == [chunk.id for chunk in off]
+        assert [chunk.text for chunk in on] == [chunk.text for chunk in off]
+
+    for unit in (ContentUnit.STRUCTURAL, ContentUnit.IR):
+        on = indexes[(unit, SelectionPolicy.RANKED, True)].chunks
+        off = indexes[(unit, SelectionPolicy.RANKED, False)].chunks
+        # The factor is not inert: the indexed string still differs.
+        assert all(chunk.search_text is None for chunk in off)
+        assert any(chunk.search_text not in (None, chunk.text) for chunk in on)
+
+    # The fixed unit does not read the factor at all.
+    fixed_on = indexes[(ContentUnit.FIXED, SelectionPolicy.RANKED, True)].chunks
+    fixed_off = indexes[(ContentUnit.FIXED, SelectionPolicy.RANKED, False)].chunks
+    assert fixed_on == fixed_off
+
+
 def test_default_heading_contexts_leave_the_cell_set_unchanged(
     tmp_path: Path,
 ) -> None:

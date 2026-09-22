@@ -333,6 +333,13 @@ def _evaluate_factorial_cells(
                 if policy == SelectionPolicy.RANKED:
                     ranked = index.rerank(question.question, candidates)
                 else:
+                    # ``config.faceting.retrieval`` still carries the *base*
+                    # ``heading_search_context``, not this cell's position.
+                    # That is inert today: ``retrieve_faceted`` reads only
+                    # ``rrf_k`` from it, and all retrieval goes through
+                    # ``index``, which was built from the cell's own config.
+                    # A future change that builds chunks from this config
+                    # would silently mix the two positions inside one cell.
                     ranked = retrieve_faceted(
                         index,
                         question.question,

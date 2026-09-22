@@ -35,17 +35,27 @@ def node_chunks(
             ):
                 continue
             # Search-only, exactly as on the structural unit: ``text`` and its
-            # token count are identical in both positions, and the id payload
-            # tracks the indexed string so the two positions cannot share a
-            # cached candidate id.
+            # token count are identical in both positions.
             search_text = (
                 contextual_search_text(node.text, node.heading_path)
                 if my_config.heading_search_context
                 else None
             )
+            # The id is derived from node text alone, never from the indexed
+            # string, so both positions of ``heading_search_context`` produce
+            # identical ids. ``chunk.id`` is a deterministic tie-break sort key
+            # in the indexes and in coverage packing, so letting it track
+            # ``search_text`` made toggling the factor permute ids and move IR
+            # results by a mechanism the structural unit does not have --
+            # arm-asymmetric contamination of the very comparison the factor
+            # exists to enable. Cache isolation does not need it: every
+            # position already rekeys derived indexes through
+            # ``RetrievalConfig``, and ``_chunk_from_nodes`` omits
+            # ``search_text`` from its payload for the same reason. The
+            # ``v3`` marker records that this derivation, not the ``v2`` one,
+            # produced the id.
             payload = (
-                f"compiler-node-v2\0{document.id}\0{node.id}\0"
-                f"{search_text if search_text is not None else node.text}"
+                f"compiler-node-v3\0{document.id}\0{node.id}\0{node.text}"
             ).encode()
             chunks.append(
                 RetrievalChunk(

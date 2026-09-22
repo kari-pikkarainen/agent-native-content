@@ -187,10 +187,12 @@ re-recorded, and the key name is the whole of the difference.
 The fix is search-only on both units. `retrieval_text` is `search_text or
 text`; the emitted chunk `text`, its `token_count`, provenance and every budget
 are byte-identical in both positions of the field, and the fixed and
-long-context arms are untouched. The compiler node candidate's **id** does move
-between the two positions, because its payload embeds the indexed string: the
-`True` position is byte-identical to the pre-rename behaviour, and the `False`
-position is a genuinely different candidate that must not share a cached id.
+long-context arms are untouched. **Chunk ids do not move between the two
+positions on either unit**: `compiler/candidates.py` derives the node
+candidate id from `document.id`, `node.id` and `node.text` alone, and
+`_chunk_from_nodes` likewise omits `search_text` from its payload. See
+"Removed artifact: the factor used to permute IR candidate ids" below for why
+that matters and what it used to do.
 
 This was a separate defect from the channel-positivity work above. It was not
 caused by either guard; the guards only made it visible.
@@ -287,6 +289,76 @@ key independently of what is indexed; none has been run. The same caveat
 applies to the compiler's node candidates now that they read the field: a
 single-factor delta there also carries both mechanisms, because
 `_unique_by_search_text` reads `retrieval_text` for every unit alike.
+
+**Third mechanism: the factor reaches the packing objective, not only
+retrieval.** `compiler/pack.py:122-129` derives both the coverage terms and
+the table references of every candidate from `candidate.chunk.retrieval_text`,
+which is `search_text or text`. Turning the factor off therefore removes
+heading vocabulary from the *selection objective* of every
+`FACETED_COVERAGE` cell on the two heading-bearing units, not merely from what
+the indexes match: a heading term in the query stops earning `new_terms`
+credit, and coverage picks different evidence for the same ranked pool. This
+is a **policy-side** effect of a factor that exists to isolate representation,
+and the two cannot be separated through this one field. It is an intrinsic
+consequence of `retrieval_text` being the single string the compiler reads
+downstream, not an artifact: any candidate whose indexed string differs from
+its body genuinely is different evidence to a coverage objective phrased over
+indexed terms. The `RANKED` policy never touches `retrieval_text` during
+packing, so it does not carry this mechanism. The generated factorial report
+mitigates the confusion by printing only `RANKED` cells in its
+heading-context bullets, so the printed contrast is clean; the faceted rows of
+the summary table are not, and must be read with this in mind.
+
+#### Removed artifact: the factor used to permute IR candidate ids
+
+The node candidate id payload used to embed the *indexed* string --
+`search_text` when the factor was on and `node.text` when it was off -- so
+toggling the factor permuted every IR chunk id. Chunk ids are deterministic
+tie-break sort keys in at least eight places (`retrieval/index.py` at the
+candidate, fusion, dedupe, rerank and packing sorts; the fused ordering in
+`compiler/facets.py`; and the coverage key in `compiler/pack.py`), so the
+permutation changed ranking order, and through order at a fixed budget it
+changed which evidence was packed. This is demonstrable with content and
+config held fixed: substituting only the heading-on ids into an otherwise
+heading-off candidate set reorders the returned top five -- one of four probe
+queries on the committed compiler fixture, and independent verification
+observed it on three of four of its own probe queries, there also pulling a
+page-2 chunk into a previously all-page-1 result. The size of the effect
+depends on how often scores tie; that it exists at all is the problem.
+
+The structural unit never had this: `_chunk_from_nodes` builds its id from the
+arm, document, ordinal, text and source refs, and has never read
+`search_text`. So an IR heading-on/off delta silently carried an
+id-permutation effect that the structural delta did not -- **arm-asymmetric
+contamination of exactly the IR-versus-structural comparison the factor exists
+to enable.** That is why it was an artifact rather than a consequence: it did
+not follow from what the factor represents, it followed from an incidental
+choice about what went into a hash, and one unit made that choice while the
+other did not.
+
+It is now removed. `node_chunks` derives the id from `document.id`, `node.id`
+and `node.text` alone, and the payload marker moved from `compiler-node-v2` to
+`compiler-node-v3` so that ids produced by the old derivation and the new one
+cannot be confused: without a bump the heading-off position would have kept
+its old ids unchanged while the heading-on position silently adopted them,
+making two differently-derived candidate sets share a namespace. Cache
+isolation never depended on the id: each position gets its own
+`RetrievalConfig`, which is part of the derived-index key payload, so no
+cached index is reused across the factor either way. The property is pinned by
+`test_node_candidate_ids_are_identical_across_heading_context` and, at the
+factorial-index level, by
+`test_heading_context_keeps_ir_chunk_ids_identical_across_positions`.
+
+Changing the derivation moved default-configuration IR numbers, because the
+ids it changed are tie-breaks. Over the committed fixtures: all fourteen IR
+chunk ids changed while no other chunk field did; IR retrieval returned the
+same candidate *set* on every probe query but a different order on three of
+six; compiler evidence ids changed everywhere, because the evidence id payload
+embeds the chunk id; packed item order moved on three of six queries and the
+packed *set* changed at one tight budget. Every factorial metric on the
+committed corpora was unchanged, and the structural and fixed units were
+byte-identical. Larger corpora may move metrics; published IR numbers do not
+carry across this change.
 
 **Blast radius beyond the retrieval arm.** The field is read wherever
 `structural_chunks` or `node_chunks` is called with an unpinned

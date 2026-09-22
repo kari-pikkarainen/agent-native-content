@@ -49,14 +49,49 @@ over every text-bearing IR node in ordinal order, title and heading nodes
 included, so heading vocabulary is already inside its chunk text in both
 positions. The generated report states this wherever it reports the factor.
 
-**A delta across this factor carries two mechanisms, not one.** Turning the
-field off both removes heading vocabulary from what is matched and narrows the
-candidate dedupe key, because `HybridIndex._unique_by_search_text` dedupes on
-`retrieval_text`. This is already recorded in `docs/specs/retrieval.md` for the
-structural unit and applies unchanged to the IR unit. Attributing a
-single-factor delta wholly to heading matching would be wrong; separating them
-needs a second ablation that varies the dedupe key independently, which has not
-been run.
+**A delta across this factor carries three mechanisms, not one.** Each is an
+intrinsic consequence of the field rather than an artifact, and all three are
+detailed in `docs/specs/retrieval.md`. Attributing a single-factor delta
+wholly to heading matching would be wrong; separating them needs further
+ablations that none of the runs so far provide.
+
+1. **Heading matchability.** Turning the field off removes heading vocabulary
+   from what the sparse, dense and reranking channels see.
+2. **Candidate dedupe scope.** `HybridIndex._unique_by_search_text` keys on
+   `retrieval_text` and runs on the sorted fused list *before* `rerank_limit`
+   is applied, so two chunks with identical bodies under different headings
+   collapse in the off position and both survive in the on position. This
+   changes results **even for queries containing no heading term at all**, and
+   it applies to the structural and IR units alike.
+3. **Coverage-selection terms.** `compiler/pack.py:122-129` derives the
+   coverage terms and the table references of each candidate from
+   `candidate.chunk.retrieval_text`, so turning the field off also removes
+   heading vocabulary from the *packing objective* of every
+   `FACETED_COVERAGE` cell on the two heading-bearing units. This is a
+   **policy-side** effect of a factor whose purpose is to isolate
+   representation, and it cannot be separated from the other two through this
+   one field. Mitigation, not a fix: the generated report's heading-context
+   bullets print only `RANKED` cells, and `RANKED` packing never reads
+   `retrieval_text`, so the printed contrast is clean -- but the
+   `faceted_coverage` rows of the summary table carry this mechanism and must
+   be read with it in mind.
+
+**The id-permutation artifact has been removed.** The IR node candidate id
+used to be derived from the indexed string, so toggling this factor permuted
+every IR chunk id; ids are deterministic tie-break sort keys throughout
+retrieval and coverage packing, so the IR delta silently included an
+id-permutation effect. The structural unit's id payload never read
+`search_text`, so the structural delta did not include it: the factor was
+arm-asymmetric in exactly the IR-versus-structural comparison it exists to
+enable. That made it an artifact, not a consequence -- it followed from an
+incidental choice about what went into a hash rather than from anything the
+factor represents. The node id is now derived from node text alone, under the
+marker `compiler-node-v3`, so both positions produce identical ids. Cache
+isolation is unaffected: each position still gets its own `RetrievalConfig`
+and its own derived-index key. Removing it moved default-configuration IR
+numbers, because the permuted ids were tie-breaks; see
+`docs/specs/retrieval.md` for what moved on the committed fixtures. Published
+IR results do not carry across that change.
 
 Why the factor exists on both heading-bearing units rather than one: the
 compiler's node candidates have always carried heading context unconditionally.
@@ -109,8 +144,9 @@ Consequences for this experiment:
 - Compare units and policies only within one heading-context position. The
   report's policy and IR contrasts are emitted per position for that reason.
 - Read the heading-context contrast as "heading matching plus dedupe scope",
-  and read the fixed unit's zero delta as "the factor does not apply", not as
-  a measurement.
+  and under `faceted_coverage` as those two plus a changed packing objective.
+  Read the fixed unit's zero delta as "the factor does not apply", not as a
+  measurement.
 
 The initial two-question table subset is diagnostic only. It keeps the full
 XLDev24 retrieval corpus fixed so index statistics and candidate competition
@@ -129,6 +165,17 @@ The safe defaults select those same files. Runs are atomically published under
 `artifacts/factorial-runs/<run-id>/` and contain a complete manifest,
 per-question metrics, contexts, summary, and Markdown report. Existing run IDs
 are never overwritten.
+
+**`eval-factorial` exposes no factorial factor at all.** The command builds
+`FactorialConfig` from `seed`, `retrieval` and `faceting` only, so
+`content_units`, `selection_policies`, `budgets` and `heading_contexts` are
+all unreachable from the CLI and always take their defaults --
+`heading_contexts` included, which means the command can only ever run the
+single-valued `(True,)` position. **Running the heading-context ablation
+therefore requires either a new CLI option or a dedicated entry point**;
+nothing in the shipped command can produce a two-position run. The
+`heading_contexts=(True, False)` path is exercised only from Python, in
+`tests/unit/test_factorial.py`.
 
 The shared evaluator reports both provenance page recall and conservative
 content-verified page recall. The latter credits a source node's pages only

@@ -35,6 +35,7 @@ from contextbench.retrieval import (
     RetrievalConfig,
     RetrievalScores,
 )
+from contextbench.retrieval.chunking import structural_chunks
 from contextbench.retrieval.index import HybridIndex
 from contextbench.retrieval.rerank import LexicalOverlapReranker
 
@@ -436,6 +437,62 @@ def test_node_candidates_exclude_furniture_and_search_with_headings(
         "Annual Report\nResults\nTarget revenue increased."
     )
     assert all(furniture.id not in chunk.source_node_ids for chunk in chunks)
+
+
+def test_node_candidate_ids_are_identical_across_heading_context(
+    compiler_fixture,
+) -> None:
+    """The heading-context factor must not permute IR candidate ids.
+
+    ``chunk.id`` is a deterministic tie-break sort key in ``retrieval/index``
+    and in the coverage objective in ``compiler/pack``. While the node id
+    payload embedded the *indexed* string, toggling
+    ``heading_search_context`` permuted every IR id and moved IR results by a
+    mechanism the structural unit does not have -- ``_chunk_from_nodes``
+    omits ``search_text`` from its payload -- so an IR heading-on/off delta
+    silently carried an arm-asymmetric id-permutation effect.
+
+    Deriving the id from node text alone removes it. Cache isolation does not
+    depend on it: each position gets its own ``RetrievalConfig`` and therefore
+    its own derived-index key. What the factor must still change, and does, is
+    ``search_text``.
+    """
+    source, ir, _scope, counter = compiler_fixture
+    on_config = RetrievalConfig(heading_search_context=True)
+    off_config = RetrievalConfig(heading_search_context=False)
+
+    on = node_chunks([ir], tokenizer=counter, config=on_config)
+    off = node_chunks([ir], tokenizer=counter, config=off_config)
+
+    assert [chunk.id for chunk in on] == [chunk.id for chunk in off]
+    # Everything a budget or a provenance check reads is identical too.
+    assert [
+        (chunk.text, chunk.token_count, chunk.source_node_ids, chunk.source_item_ids)
+        for chunk in on
+    ] == [
+        (chunk.text, chunk.token_count, chunk.source_node_ids, chunk.source_item_ids)
+        for chunk in off
+    ]
+
+    # The factor is not inert: what is indexed still differs.
+    assert all(chunk.search_text is None for chunk in off)
+    heading_bearing = [chunk for chunk in on if chunk.heading_path]
+    assert heading_bearing
+    assert any(chunk.search_text != chunk.text for chunk in heading_bearing)
+
+    # The same property on the structural unit, which is what IR now matches.
+    structural = {
+        heading_context: structural_chunks(
+            ir,
+            source,
+            config=RetrievalConfig(heading_search_context=heading_context),
+            tokenizer=counter,
+        )
+        for heading_context in (True, False)
+    }
+    assert [chunk.id for chunk in structural[True]] == [
+        chunk.id for chunk in structural[False]
+    ]
 
 
 def test_prebuilt_index_must_share_compiler_retrieval_config(
