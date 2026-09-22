@@ -385,18 +385,25 @@ gold pages or quotes, are defined in the
 - Six development questions have no annotated gold pages and therefore receive
   the protocol's identical vacuous-success score in every arm. Answerable-only
   and quote-eligible summaries are now computed and rendered alongside the
-  aggregate, and answerable-only eligibility now requires at least one
-  annotated gold page rather than keying on the answerable flag, so a question
-  with no gold pages is excluded from those columns and from the paired
-  intervals regardless of its answerable flag. The vacuous score is still
-  recorded per question and still enters the all-questions aggregate, which
-  this change deliberately leaves unchanged. The correction moves no `xldev24`
-  number, where all six zero-gold-page questions are already excluded as
-  unanswerable; one XL100 question (`adubench_single_001199`) is answerable
+  aggregate, and answerable-only eligibility now requires both the answerable
+  flag and at least one annotated gold page, so a question with no gold pages
+  is excluded from those columns and from the paired intervals even when it is
+  marked answerable. No question in the current release is unanswerable with
+  annotated gold pages, so the answerable-flag half of that conjunction moves
+  no number today; it keeps the `answerable_*` fields meaning what they are
+  named if a future release annotates such a question. The vacuous score is
+  still recorded per question and still enters the all-questions aggregate,
+  which this change deliberately leaves unchanged. The correction moves no
+  `xldev24` number, where all six zero-gold-page questions are already excluded
+  as unanswerable; one XL100 question (`adubench_single_001199`) is answerable
   with no gold pages and was previously counted. The canonical development and
   holdout reports predate both this reporting and this fix; only the
   [metric-audit rerun](results/retrieval/xlholdout6b-metric-audit/report.md)
-  publishes the answerable-only tables.
+  publishes the answerable-only tables, and its numbers do not move:
+  `xlholdout6b` contains no zero-gold-page and no unanswerable-with-gold-page
+  question, so recomputing that run's `summary.json` from its own records under
+  the new eligibility reproduces the published file byte for byte. Its
+  `report.md` keeps the legend wording of the run that produced it.
 - Evidence retrieval has been measured more thoroughly than end-to-end answer
   quality. No answer-generation or economic result exists yet.
 - Compiler retrieval is currently slower: about 4.7–5.4 seconds per holdout

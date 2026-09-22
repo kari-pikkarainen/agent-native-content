@@ -268,6 +268,68 @@ def test_answerable_summary_excludes_questions_without_gold_pages(
     assert row.answerable_mean_content_verified_page_recall == 0.0
 
 
+def test_answerable_summary_excludes_unanswerable_questions_with_gold_pages(
+    tmp_path: Path,
+) -> None:
+    result = _run(tmp_path, run_id="unanswerable-with-gold-pages")
+    answerable = result.records[0].model_copy(
+        update={
+            "evidence_page_recall": 0.0,
+            "content_verified_page_recall": 0.0,
+        }
+    )
+    unanswerable_with_gold = result.records[0].model_copy(
+        update={
+            "question_id": "unanswerable-with-gold-pages",
+            "answerable": False,
+            "evidence_page_recall": 1.0,
+            "full_evidence_coverage": True,
+            "content_verified_page_recall": 1.0,
+            "full_content_verified_coverage": True,
+        }
+    )
+
+    row = summarize(
+        "unanswerable-with-gold-pages",
+        (answerable, unanswerable_with_gold),
+    ).rows[0]
+
+    assert unanswerable_with_gold.gold_pages == {"dataset-doc-1": (1,)}
+    assert row.question_count == 2
+    assert row.mean_evidence_page_recall == 0.5
+    assert row.answerable_question_count == 1
+    assert row.answerable_mean_evidence_page_recall == 0.0
+    assert row.answerable_mean_content_verified_page_recall == 0.0
+
+
+def test_paired_intervals_skip_unanswerable_questions_with_gold_pages(
+    tmp_path: Path,
+) -> None:
+    result = _run(tmp_path, run_id="unanswerable-with-gold-pairs")
+    flagged = tuple(
+        record.model_copy(update={"answerable": False})
+        if record.token_budget == 12
+        else record
+        for record in result.records
+    )
+
+    summary = summarize("unanswerable-with-gold-pairs", flagged, bootstrap_resamples=10)
+
+    assert all(
+        record.gold_pages == {"dataset-doc-1": (1,)}
+        for record in flagged
+        if record.token_budget == 12
+    )
+    eligible = {
+        (interval.metric, interval.token_budget)
+        for interval in summary.paired_intervals
+    }
+    assert ("answerable_page_recall", 12) not in eligible
+    assert ("answerable_content_verified_page_recall", 12) not in eligible
+    assert ("quoted_exact_quote_recall", 12) in eligible
+    assert ("answerable_page_recall", 24) in eligible
+
+
 def test_paired_intervals_skip_questions_without_gold_pages(
     tmp_path: Path,
 ) -> None:

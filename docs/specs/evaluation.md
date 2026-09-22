@@ -116,12 +116,16 @@ or paragraph. It can under-credit synthetic or selectively rendered evidence,
 so it is reported with exact quote recall rather than treated as ground truth.
 
 Summary artifacts retain the registered all-question metrics for continuity
-and also report page metrics over answerable questions only and quote metrics
-over questions with at least one non-empty quote. Compiler deltas against each
-RAG baseline include descriptive paired 95% bootstrap intervals. Resampling is
-clustered by the sorted source-document scope, uses the registered seed, and
-defaults to 10,000 resamples. The intervals describe uncertainty in the sampled
-benchmark population; they are not a substitute for a larger holdout.
+and also report page metrics over questions that are marked answerable and
+carry at least one annotated gold page, and quote metrics over questions with
+at least one non-empty quote. A question with no annotated gold page is
+excluded from those page columns and from the paired intervals below even when
+it is marked answerable, because its vacuous `1.0` recall is identical in every
+arm. Compiler deltas against each RAG baseline include descriptive paired 95%
+bootstrap intervals. Resampling is clustered by the sorted source-document
+scope, uses the registered seed, and defaults to 10,000 resamples. The
+intervals describe uncertainty in the sampled benchmark population; they are
+not a substitute for a larger holdout.
 
 Tokens-to-full is the cumulative item-token count at the earliest ranked
 context prefix covering every gold page. It is null when the budget never

@@ -33,7 +33,9 @@ def summarize(
             for record in selected
             if record.tokens_to_full_evidence is not None
         ]
-        answerable = [record for record in selected if _has_gold_pages(record)]
+        answerable = [
+            record for record in selected if _is_answerable_with_pages(record)
+        ]
         quoted = [record for record in selected if record.gold_quote_count > 0]
         rows.append(
             RetrievalSummaryRow(
@@ -101,14 +103,18 @@ def summarize(
     )
 
 
-def _has_gold_pages(record: RetrievalEvaluationRecord) -> bool:
-    """Report whether the question has at least one annotated gold page.
+def _is_answerable_with_pages(record: RetrievalEvaluationRecord) -> bool:
+    """Report whether the question belongs in the answerable-only page views.
 
-    Answerable-only views use this rather than the answerable flag: a question
-    with no annotated gold pages scores a vacuous recall of 1.0 in every arm
-    (see ``evidence.evaluate_context``) and would contribute a meaningless tie.
+    Both conditions are required. The answerable flag keeps the fields named
+    ``answerable_*`` meaning what they say. The gold-page condition excludes a
+    question with no annotated gold pages, which scores a vacuous recall of
+    1.0 in every arm (see ``evidence.evaluate_context``) and would contribute a
+    meaningless tie. No question in the current release is unanswerable with
+    annotated gold pages, so the conjunction moves no published number; it
+    holds the contract if a future release annotates one.
     """
-    return any(pages for pages in record.gold_pages.values())
+    return record.answerable and any(pages for pages in record.gold_pages.values())
 
 
 def _mean_or_none(values: Iterable[float]) -> float | None:
@@ -195,7 +201,7 @@ def _paired_values(
         control = cells.get((question_id, baseline))
         if control is None:
             continue
-        if eligibility == "answerable" and not _has_gold_pages(treatment):
+        if eligibility == "answerable" and not _is_answerable_with_pages(treatment):
             continue
         if eligibility == "quoted" and treatment.gold_quote_count == 0:
             continue
@@ -298,13 +304,15 @@ def markdown_report(summary: RetrievalBenchmarkSummary) -> str:
             "",
             "## Audited metrics",
             "",
-            "Unanswerable questions are excluded from page metrics below. Quote "
-            "metrics include only questions with a non-empty gold quote. Content-"
-            "verified pages require the full normalized source-node text to be "
-            "present in the emitted context.",
+            "Page metrics below cover only questions that are marked "
+            "answerable and carry at least one annotated gold page; a question "
+            "with no annotated gold page is excluded even when it is marked "
+            "answerable. Quote metrics include only questions with a non-empty "
+            "gold quote. Content-verified pages require the full normalized "
+            "source-node text to be present in the emitted context.",
             "",
-            "| System | Budget | Answerable n | Page recall | Content-verified "
-            "recall | Quoted n | Exact quote recall |",
+            "| System | Budget | Answerable gold-page n | Page recall | "
+            "Content-verified recall | Quoted n | Exact quote recall |",
             "| --- | ---: | ---: | ---: | ---: | ---: | ---: |",
         ]
     )
