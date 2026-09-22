@@ -3,6 +3,8 @@
 import subprocess
 from pathlib import Path
 
+import pytest
+
 from contextbench.experiments import manifest
 from contextbench.experiments.manifest import current_git_commit, current_git_dirty
 
@@ -101,6 +103,44 @@ def test_supplied_commit_skips_the_worktree_check(monkeypatch) -> None:
 
     assert manifest.resolve_git_state(
         git_commit="c" * 40,
-        git_dirty=None,
+        git_dirty=False,
         allow_dirty=False,
     ) == ("c" * 40, False)
+    assert manifest.resolve_git_state(
+        git_commit="c" * 40,
+        git_dirty=True,
+        allow_dirty=True,
+    ) == ("c" * 40, True)
+
+
+def test_supplied_commit_without_dirty_state_is_refused(monkeypatch) -> None:
+    """A skipped worktree check must never be read as proof of cleanliness."""
+
+    def forbidden(*args: object, **kwargs: object) -> None:
+        raise AssertionError("a caller-supplied commit must not inspect the worktree")
+
+    monkeypatch.setattr(subprocess, "run", forbidden)
+    monkeypatch.setattr(manifest, "current_git_commit", forbidden)
+    monkeypatch.setattr(manifest, "current_git_dirty", forbidden)
+
+    with pytest.raises(ValueError, match="git_dirty must be supplied"):
+        manifest.resolve_git_state(
+            git_commit="c" * 40,
+            allow_dirty=False,
+            error=ValueError,
+        )
+
+    with pytest.raises(RuntimeError, match="git_dirty must be supplied"):
+        manifest.resolve_git_state(git_commit="c" * 40, allow_dirty=True)
+
+
+def test_dirty_refusal_names_both_the_cli_and_api_remedies(monkeypatch) -> None:
+    monkeypatch.setattr(manifest, "current_git_commit", lambda: "e" * 40)
+    monkeypatch.setattr(manifest, "current_git_dirty", lambda: True)
+
+    with pytest.raises(RuntimeError) as excinfo:
+        manifest.resolve_git_state(git_commit=None)
+
+    message = str(excinfo.value)
+    assert "--allow-dirty" in message
+    assert "allow_dirty=True" in message

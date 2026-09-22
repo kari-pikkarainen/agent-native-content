@@ -84,10 +84,15 @@ def run_gold_representation_benchmark(
     run_id: str | None = None,
     tokenizer: TokenCounter | None = None,
     git_commit: str | None = None,
+    git_dirty: bool | None = None,
     allow_dirty: bool = False,
     clock: Callable[[], datetime] = utc_now,
 ) -> RepresentationRun:
-    """Compare three encodings of identical gold evidence without retrieval."""
+    """Compare three encodings of identical gold evidence without retrieval.
+
+    Supplying ``git_commit`` means the caller owns the recorded provenance: the
+    worktree is not inspected, so ``git_dirty`` must be supplied too.
+    """
     counter = tokenizer or TiktokenTokenCounter(config.tokenizer_name)
     eligible = tuple(
         question for question in corpus.questions if _has_gold_pages(question)
@@ -124,6 +129,7 @@ def run_gold_representation_benchmark(
         raise RepresentationError(f"completed run already exists: {final_path}")
     resolved_commit, resolved_dirty = resolve_git_state(
         git_commit=git_commit,
+        git_dirty=git_dirty,
         allow_dirty=allow_dirty,
         error=RepresentationError,
     )

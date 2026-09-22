@@ -9,6 +9,7 @@ from test_evaluation import _corpus
 from test_ir import FixtureTokenCounter
 
 from contextbench.evaluation import EvaluationCorpus
+from contextbench.experiments import manifest
 from contextbench.generation import AnswerRequest, PricingMetadata, ProviderAnswer
 from contextbench.representation import (
     RepresentationCondition,
@@ -82,6 +83,7 @@ def test_gold_representation_runner_varies_encoding_not_source_nodes(
         run_id="representation-fixture",
         tokenizer=FixtureTokenCounter(),
         git_commit="c" * 40,
+        git_dirty=False,
         clock=lambda: datetime(2026, 9, 20, tzinfo=UTC),
     )
 
@@ -165,3 +167,35 @@ def test_representation_runner_requires_at_least_one_gold_page(
             run_id="no-gold",
             tokenizer=FixtureTokenCounter(),
         )
+
+
+def test_representation_dirty_worktree_is_refused_before_any_artifact_is_written(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    provider = RepresentationProvider()
+    artifacts_root = tmp_path / "artifacts"
+
+    monkeypatch.setattr(manifest, "current_git_commit", lambda: "d" * 40)
+    monkeypatch.setattr(manifest, "current_git_dirty", lambda: True)
+
+    with pytest.raises(RepresentationError, match="modified worktree"):
+        run_gold_representation_benchmark(
+            _corpus(tmp_path),
+            config=_config(),
+            provider=provider,
+            artifacts_root=artifacts_root,
+            dataset="fixture",
+            dataset_version="v1",
+            dataset_revision="revision-1",
+            subset_name="fixture-two",
+            subset_sha256="1" * 64,
+            run_id="representation-dirty",
+            tokenizer=FixtureTokenCounter(),
+            git_commit=None,
+            allow_dirty=False,
+            clock=lambda: datetime(2026, 9, 20, tzinfo=UTC),
+        )
+
+    assert provider.requests == []
+    assert not artifacts_root.exists()

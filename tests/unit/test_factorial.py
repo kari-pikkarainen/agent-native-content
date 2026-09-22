@@ -12,12 +12,14 @@ from contextbench.datasets.base import BenchmarkQuestion, EvidenceItem, GoldEvid
 from contextbench.evaluation import (
     ContentUnit,
     EvaluationCorpus,
+    EvaluationError,
     FactorialConfig,
     FactorialFacetConfig,
     SelectionPolicy,
     run_factorial_benchmark,
 )
 from contextbench.evaluation.factorial import _pack_factorial_context
+from contextbench.experiments import manifest
 from contextbench.ir import project_document
 from contextbench.retrieval import (
     HashEmbeddingModel,
@@ -94,6 +96,7 @@ def test_factorial_runner_crosses_every_unit_and_policy(tmp_path: Path) -> None:
         embedder=HashEmbeddingModel(),
         reranker=LexicalOverlapReranker(),
         git_commit="a" * 40,
+        git_dirty=False,
         clock=lambda: datetime(2026, 9, 21, tzinfo=UTC),
     )
 
@@ -175,3 +178,33 @@ def test_factorial_policies_share_provenance_deduplication() -> None:
 
     assert all(len(packet.items) == 1 for packet in packets)
     assert all(packet.items[0].source_item_ids == ("item",) for packet in packets)
+
+
+def test_factorial_dirty_worktree_is_refused_before_any_artifact_is_written(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(manifest, "current_git_commit", lambda: "d" * 40)
+    monkeypatch.setattr(manifest, "current_git_dirty", lambda: True)
+    artifacts_root = tmp_path / "artifacts"
+
+    with pytest.raises(EvaluationError, match="modified worktree"):
+        run_factorial_benchmark(
+            _corpus(tmp_path),
+            config=_config(),
+            artifacts_root=artifacts_root,
+            dataset="fixture",
+            dataset_version="v1",
+            dataset_revision="revision-1",
+            subset_name="fixture-one",
+            subset_sha256="1" * 64,
+            run_id="factorial-dirty",
+            tokenizer=FixtureTokenCounter(),
+            embedder=HashEmbeddingModel(),
+            reranker=LexicalOverlapReranker(),
+            git_commit=None,
+            allow_dirty=False,
+            clock=lambda: datetime(2026, 9, 21, tzinfo=UTC),
+        )
+
+    assert not artifacts_root.exists()

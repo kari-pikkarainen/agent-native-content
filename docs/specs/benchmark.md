@@ -822,6 +822,7 @@ Example:
 run_id
 timestamp
 git_commit
+git_dirty
 
 dataset
 dataset_revision
@@ -844,6 +845,10 @@ random_seed
 
 environment info
 ```
+
+`git_dirty` records whether the worktree differed from `git_commit`. A run
+from a modified worktree is refused unless it is explicitly stamped dirty,
+and a dirty run is not a reproducible result.
 
 Outputs should be immutable.
 

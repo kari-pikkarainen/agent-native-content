@@ -103,6 +103,7 @@ def _run(
         embedder=HashEmbeddingModel(),
         reranker=LexicalOverlapReranker(),
         git_commit="a" * 40,
+        git_dirty=False,
         clock=lambda: datetime(2026, 9, 19, tzinfo=UTC),
     )
 
@@ -310,6 +311,7 @@ def test_runner_rejects_questions_outside_declared_retrieval_corpus(
             embedder=HashEmbeddingModel(),
             reranker=LexicalOverlapReranker(),
             git_commit="a" * 40,
+            git_dirty=False,
             clock=lambda: datetime(2026, 9, 19, tzinfo=UTC),
         )
 
@@ -485,3 +487,18 @@ def test_allow_dirty_stamps_the_manifest_instead_of_hiding_the_state(
     written = json.loads((result.path / "manifest.json").read_text())
     assert written["git_commit"] == "d" * 40
     assert written["git_dirty"] is True
+
+
+def test_clean_worktree_run_completes_and_records_git_dirty_false(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    """A clean worktree must pass the gate, not merely fail to be refused."""
+    monkeypatch.setattr(manifest, "current_git_commit", lambda: "e" * 40)
+    monkeypatch.setattr(manifest, "current_git_dirty", lambda: False)
+
+    result = _run_from_worktree(tmp_path, run_id="clean-run", allow_dirty=False)
+
+    written = json.loads((result.path / "manifest.json").read_text())
+    assert written["git_commit"] == "e" * 40
+    assert written["git_dirty"] is False

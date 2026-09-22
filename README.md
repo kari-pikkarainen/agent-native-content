@@ -161,6 +161,10 @@ HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 \
 
 Run IDs are immutable; choose a new ID for every run.
 
+Every evaluation command refuses to run from a modified worktree, so that a
+result is always reproducible from the recorded Git SHA; pass `--allow-dirty`
+to run anyway and stamp the manifest with `git_dirty: true`.
+
 ## Causal factorial control
 
 The primary benchmark changes both representation and selection behavior. Use

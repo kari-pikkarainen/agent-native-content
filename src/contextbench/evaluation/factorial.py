@@ -81,10 +81,15 @@ def run_factorial_benchmark(
     embedder: EmbeddingModel | None = None,
     reranker: Reranker | None = None,
     git_commit: str | None = None,
+    git_dirty: bool | None = None,
     allow_dirty: bool = False,
     clock: Callable[[], datetime] = utc_now,
 ) -> FactorialRun:
-    """Run every configured content unit under every selection policy."""
+    """Run every configured content unit under every selection policy.
+
+    Supplying ``git_commit`` means the caller owns the recorded provenance: the
+    worktree is not inspected, so ``git_dirty`` must be supplied too.
+    """
     _validate_factorial_corpus(corpus)
     evaluated_question_ids = tuple(question.id for question in corpus.questions)
     corpus_question_ids = (
@@ -98,8 +103,6 @@ def run_factorial_benchmark(
         )
 
     counter = tokenizer or TiktokenTokenCounter(config.retrieval.tokenizer_name)
-    shared_embedder = embedder or embedding_model_from_config(config.retrieval)
-    shared_reranker = reranker or reranker_from_config(config.retrieval)
     created_at = clock()
     config_value = config.model_dump(mode="json")
     config_sha256 = _json_hash(config_value)
@@ -114,9 +117,16 @@ def run_factorial_benchmark(
         raise EvaluationError(f"completed run already exists: {final_path}")
     resolved_commit, resolved_dirty = resolve_git_state(
         git_commit=git_commit,
+        git_dirty=git_dirty,
         allow_dirty=allow_dirty,
         error=EvaluationError,
     )
+
+    # Built only after the worktree gate: constructing a sentence-transformer
+    # embedder or reranker can load or download model weights, and a refused
+    # run must fail in milliseconds.
+    shared_embedder = embedder or embedding_model_from_config(config.retrieval)
+    shared_reranker = reranker or reranker_from_config(config.retrieval)
 
     ordered_document_ids = sorted(corpus.documents)
     documents = tuple(

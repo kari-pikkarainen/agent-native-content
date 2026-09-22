@@ -100,12 +100,23 @@ def resolve_git_state(
 ) -> tuple[str, bool]:
     """Resolve the provenance recorded in a manifest and refuse dirty runs.
 
-    A caller that supplies ``git_commit`` owns the provenance it records, so the
-    worktree is not inspected at all and ``git_dirty`` defaults to ``False``.
+    A caller that supplies ``git_commit`` owns the provenance it records: the
+    worktree is never inspected, so the caller must state ``git_dirty`` in the
+    same call. Omitting it is refused rather than defaulted in either
+    direction, because defaulting to ``False`` would let an uninspected
+    worktree assert a cleanliness nobody checked.
+
     Otherwise both values are read from the worktree, and a dirty worktree
     raises ``error`` unless ``allow_dirty`` is set.
     """
     if git_commit is not None:
+        if git_dirty is None:
+            raise error(
+                "git_dirty must be supplied alongside git_commit: a "
+                "caller-supplied commit bypasses the worktree check, so the "
+                "caller owns the provenance and has to state whether the "
+                "worktree was clean"
+            )
         return git_commit, bool(git_dirty)
 
     resolved_commit = current_git_commit()
@@ -114,7 +125,9 @@ def resolve_git_state(
         raise error(
             "refusing to record a benchmark run from a modified worktree: "
             "commit or stash the changes so the result is reproducible from "
-            f"{resolved_commit}, or pass --allow-dirty to stamp the run as dirty"
+            f"{resolved_commit}, or stamp the run as dirty by passing "
+            "--allow-dirty on the command line or allow_dirty=True to the "
+            "run function"
         )
     return resolved_commit, resolved_dirty
 

@@ -9,6 +9,7 @@ import pytest
 from test_evaluation import _corpus, _run
 
 from contextbench.evaluation import BenchmarkSystem
+from contextbench.experiments import manifest
 from contextbench.generation import (
     GenerationConfig,
     GenerationError,
@@ -92,6 +93,7 @@ def test_generation_runner_reuses_immutable_contexts_and_writes_costs(
         artifacts_root=tmp_path / "artifacts",
         run_id="generation-fixture",
         git_commit="b" * 40,
+        git_dirty=False,
         clock=lambda: datetime(2026, 9, 20, tzinfo=UTC),
     )
 
@@ -158,6 +160,7 @@ def test_optional_same_model_citation_entailment_is_costed(tmp_path: Path) -> No
         artifacts_root=tmp_path / "artifacts",
         run_id="generation-entailment",
         git_commit="b" * 40,
+        git_dirty=False,
     )
 
     record = result.records[0]
@@ -260,3 +263,32 @@ def test_openai_provider_maps_responses_usage_without_importing_sdk() -> None:
     assert result.model_id == "resolved-model"
     assert result.cached_input_tokens == 40
     assert result.reasoning_tokens == 5
+
+
+def test_generation_dirty_worktree_is_refused_before_any_provider_call(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    """A refused generation run must not spend money on a provider call."""
+    retrieval = _run(tmp_path, run_id="retrieval-dirty-gate")
+    provider = FixtureProvider()
+    artifacts_root = tmp_path / "generation-artifacts"
+
+    monkeypatch.setattr(manifest, "current_git_commit", lambda: "d" * 40)
+    monkeypatch.setattr(manifest, "current_git_dirty", lambda: True)
+
+    with pytest.raises(GenerationError, match="modified worktree"):
+        run_generation_benchmark(
+            retrieval.path,
+            _corpus(tmp_path).questions,
+            config=_generation_config(),
+            provider=provider,
+            artifacts_root=artifacts_root,
+            run_id="generation-dirty",
+            git_commit=None,
+            allow_dirty=False,
+            clock=lambda: datetime(2026, 9, 20, tzinfo=UTC),
+        )
+
+    assert provider.requests == []
+    assert not artifacts_root.exists()
