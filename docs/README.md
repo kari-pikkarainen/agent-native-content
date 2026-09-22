@@ -23,3 +23,5 @@ decision gates.
   development decisions.
 - [Canonical results](../results/README.md) contain the small, published result
   set used by the README's current claims.
+- [Plans](plans/2026-09-21-improvement-plan.md) set out the phased path from
+  the current low-budget advantage to a validated or rejected thesis.
