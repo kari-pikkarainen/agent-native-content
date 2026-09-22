@@ -105,6 +105,8 @@ def run_retrieval_benchmark(
     tokenizer: TokenCounter | None = None,
     embedder: EmbeddingModel | None = None,
     reranker: Reranker | None = None,
+    embedding_revision: str | None = None,
+    reranker_revision: str | None = None,
     git_commit: str | None = None,
     git_dirty: bool | None = None,
     allow_dirty: bool = False,
@@ -114,6 +116,12 @@ def run_retrieval_benchmark(
 
     Supplying ``git_commit`` means the caller owns the recorded provenance: the
     worktree is not inspected, so ``git_dirty`` must be supplied too.
+
+    ``embedding_revision`` and ``reranker_revision`` pin the hub model weights
+    used when this run constructs its own models; they are required for
+    hub-backed models and ignored by the offline ones. A caller that supplies
+    ``embedder`` or ``reranker`` already owns that choice, and the manifest
+    records the revision each supplied model reports.
     """
     _validate_corpus(corpus)
     evaluated_question_ids = tuple(question.id for question in corpus.questions)
@@ -148,8 +156,14 @@ def run_retrieval_benchmark(
     # Built only after the worktree gate: constructing a sentence-transformer
     # embedder or reranker can load or download model weights, and a refused
     # run must fail in milliseconds.
-    shared_embedder = embedder or embedding_model_from_config(config.retrieval)
-    shared_reranker = reranker or reranker_from_config(config.retrieval)
+    shared_embedder = embedder or embedding_model_from_config(
+        config.retrieval,
+        revision=embedding_revision,
+    )
+    shared_reranker = reranker or reranker_from_config(
+        config.retrieval,
+        revision=reranker_revision,
+    )
 
     ordered_document_ids = sorted(corpus.documents)
     documents = [corpus.documents[document_id] for document_id in ordered_document_ids]
@@ -224,8 +238,10 @@ def run_retrieval_benchmark(
         config_sha256=config_sha256,
         embedding_model=shared_embedder.name,
         embedding_version=shared_embedder.version,
+        embedding_revision=shared_embedder.revision,
         reranker_model=shared_reranker.name,
         reranker_version=shared_reranker.version,
+        reranker_revision=shared_reranker.revision,
         tokenizer=counter.name,
         tokenizer_version=counter.version,
         python_version=python_version,

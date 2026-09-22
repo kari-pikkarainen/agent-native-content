@@ -36,6 +36,8 @@ def run_xl_retrieval(
     artifacts_root: Path,
     config: RetrievalBenchmarkConfig,
     docling_artifacts_dir: Path | None = None,
+    embedding_revision: str | None = None,
+    reranker_revision: str | None = None,
     run_id: str | None = None,
     allow_dirty: bool = False,
     progress: ProgressCallback | None = None,
@@ -120,6 +122,8 @@ def run_xl_retrieval(
         ),
         run_id=run_id,
         tokenizer=tokenizer,
+        embedding_revision=embedding_revision,
+        reranker_revision=reranker_revision,
         allow_dirty=allow_dirty,
     )
 

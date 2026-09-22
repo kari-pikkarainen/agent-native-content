@@ -135,8 +135,10 @@ class HybridIndex:
                 chunks=chunks,
                 embedding_model=dense_model.name,
                 embedding_version=dense_model.version,
+                embedding_revision=dense_model.revision,
                 reranker_model=ranking_model.name,
                 reranker_version=ranking_model.version,
+                reranker_revision=ranking_model.revision,
                 tokenizer=counter.name,
                 tokenizer_version=counter.version,
             )
@@ -177,8 +179,10 @@ class HybridIndex:
         expected_metadata = {
             "embedding_model": embedder.name,
             "embedding_version": embedder.version,
+            "embedding_revision": embedder.revision,
             "reranker_model": reranker.name,
             "reranker_version": reranker.version,
+            "reranker_revision": reranker.revision,
             "tokenizer": tokenizer.name,
             "tokenizer_version": tokenizer.version,
         }
@@ -495,8 +499,10 @@ class HybridIndex:
             chunks=self.chunks,
             embedding_model=self.embedder.name,
             embedding_version=self.embedder.version,
+            embedding_revision=self.embedder.revision,
             reranker_model=self.reranker.name,
             reranker_version=self.reranker.version,
+            reranker_revision=self.reranker.revision,
             tokenizer=self.tokenizer.name,
             tokenizer_version=self.tokenizer.version,
         )
@@ -513,8 +519,10 @@ class HybridIndex:
             },
             "embedding_model": self.embedder.name,
             "embedding_version": self.embedder.version,
+            "embedding_revision": self.embedder.revision,
             "reranker_model": self.reranker.name,
             "reranker_version": self.reranker.version,
+            "reranker_revision": self.reranker.revision,
             "tokenizer": self.tokenizer.name,
             "tokenizer_version": self.tokenizer.version,
         }
@@ -690,18 +698,38 @@ def _rerank_cache_key(
     )
 
 
-def embedding_model_from_config(config: RetrievalConfig) -> EmbeddingModel:
-    """Construct the configured dense model lazily."""
+def embedding_model_from_config(
+    config: RetrievalConfig,
+    *,
+    revision: str | None = None,
+) -> EmbeddingModel:
+    """Construct the configured dense model lazily at a pinned revision.
+
+    ``revision`` is the model-weight commit for hub-backed models and is
+    required for them; the offline hash model has no hub identity and ignores
+    it. The pin stays out of ``RetrievalConfig`` on purpose: the config is part
+    of the index key, so putting it there would rekey the offline fixtures too.
+    """
     if config.embedding_model.startswith("hash-"):
         return HashEmbeddingModel(config.embedding_dimensions)
-    return SentenceTransformerEmbeddingModel(config.embedding_model)
+    return SentenceTransformerEmbeddingModel(
+        config.embedding_model,
+        revision=revision,
+    )
 
 
-def reranker_from_config(config: RetrievalConfig) -> Reranker:
-    """Construct the configured reranker lazily."""
+def reranker_from_config(
+    config: RetrievalConfig,
+    *,
+    revision: str | None = None,
+) -> Reranker:
+    """Construct the configured reranker lazily at a pinned revision."""
     if config.reranker_model == "lexical-overlap-v1":
         return LexicalOverlapReranker()
-    return SentenceTransformerCrossEncoderReranker(config.reranker_model)
+    return SentenceTransformerCrossEncoderReranker(
+        config.reranker_model,
+        revision=revision,
+    )
 
 
 def _config_hash(config: RetrievalConfig) -> str:
@@ -719,8 +747,10 @@ def _index_key(
     chunks: Sequence[RetrievalChunk],
     embedding_model: str,
     embedding_version: str,
+    embedding_revision: str | None,
     reranker_model: str,
     reranker_version: str,
+    reranker_revision: str | None,
     tokenizer: str,
     tokenizer_version: str,
 ) -> str:
@@ -731,8 +761,10 @@ def _index_key(
         "chunks": [chunk.id for chunk in chunks],
         "embedding_model": embedding_model,
         "embedding_version": embedding_version,
+        "embedding_revision": embedding_revision,
         "reranker_model": reranker_model,
         "reranker_version": reranker_version,
+        "reranker_revision": reranker_revision,
         "tokenizer": tokenizer,
         "tokenizer_version": tokenizer_version,
     }

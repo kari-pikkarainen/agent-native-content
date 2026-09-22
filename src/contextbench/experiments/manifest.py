@@ -47,8 +47,10 @@ class RunManifest(BaseModel):
     config_sha256: str
     embedding_model: str
     embedding_version: str
+    embedding_revision: str | None
     reranker_model: str
     reranker_version: str
+    reranker_revision: str | None
     tokenizer: str
     tokenizer_version: str
     python_version: str

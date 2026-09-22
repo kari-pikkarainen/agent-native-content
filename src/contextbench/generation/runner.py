@@ -313,6 +313,11 @@ def run_generation_benchmark(
         "git_dirty": resolved_dirty,
         "retrieval_run_id": retrieval_run_id,
         "retrieval_artifact_sha256": _artifact_hash(manifest_path, contexts_path),
+        # Carried from the retrieval manifest so a generation run states which
+        # model weights produced the contexts it answered from, without a
+        # reader having to open the upstream run.
+        "embedding_revision": manifest.get("embedding_revision"),
+        "reranker_revision": manifest.get("reranker_revision"),
         "provider": provider.name,
         "provider_version": provider.version,
         "prompt_sha256": hashlib.sha256(

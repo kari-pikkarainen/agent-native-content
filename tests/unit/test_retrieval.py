@@ -1,5 +1,7 @@
 """Acceptance tests for deterministic retrieval Arms A and B."""
 
+import json
+from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
@@ -10,13 +12,17 @@ from contextbench.ir.models import IRNodeKind
 from contextbench.retrieval import (
     HashEmbeddingModel,
     HybridIndex,
+    LexicalOverlapReranker,
     RetrievalArm,
     RetrievalChunk,
     RetrievalConfig,
+    SentenceTransformerCrossEncoderReranker,
+    SentenceTransformerEmbeddingModel,
     long_context_chunks,
     pack_evidence,
     rank_long_context,
 )
+from contextbench.retrieval.index import _index_key
 
 
 @pytest.fixture
@@ -576,3 +582,270 @@ def test_global_index_respects_per_question_document_scope(tmp_path: Path) -> No
 
     assert packet.items
     assert {item.document_id for item in packet.items} == {allowed.id}
+
+
+@dataclass(frozen=True)
+class _Identified:
+    """Stand-in for a document or chunk: the index key reads only the id."""
+
+    id: str
+
+
+_KEY_DOCUMENTS = (_Identified("ir-doc-a"), _Identified("ir-doc-b"))
+_KEY_CHUNKS = (_Identified("chunk-a"), _Identified("chunk-b"))
+
+
+def _key(**overrides: object) -> str:
+    arguments: dict[str, object] = {
+        "arm": RetrievalArm.FIXED,
+        "config": RetrievalConfig(),
+        "chunks": _KEY_CHUNKS,
+        "embedding_model": "BAAI/bge-small-en-v1.5",
+        "embedding_version": "5.7.0",
+        "embedding_revision": "5c38ec7c405ec4b44b94cc5a9bb96e735b38267a",
+        "reranker_model": "cross-encoder/ms-marco-MiniLM-L-6-v2",
+        "reranker_version": "5.7.0",
+        "reranker_revision": "233902d25c440f23af6f7d6e94d2946bac0bee0a",
+        "tokenizer": "o200k_base",
+        "tokenizer_version": "0.12.0",
+    }
+    arguments.update(overrides)
+    return _index_key(_KEY_DOCUMENTS, **arguments)
+
+
+def test_index_key_changes_with_model_revision() -> None:
+    """A moved hub branch must rekey even when every other input is identical."""
+    pinned = _key()
+
+    assert _key(embedding_revision="0" * 40) != pinned
+    assert _key(reranker_revision="0" * 40) != pinned
+    assert _key(embedding_revision=None) != pinned
+    assert _key() == pinned
+
+
+def test_index_key_is_stable_for_a_fixed_revision() -> None:
+    """Pin the key for one fixed input so a payload change cannot pass silently.
+
+    The literal was produced by this payload and nothing else. Any accidental
+    change to the key payload, its field names, or the retrieval config
+    defaults would strand every cached index under a new key, so that change
+    has to be made deliberately.
+    """
+    assert _key(
+        embedding_model="hash-256-v1",
+        embedding_version="1",
+        embedding_revision=None,
+        reranker_model="lexical-overlap-v1",
+        reranker_version="1",
+        reranker_revision=None,
+    ) == "09fca44765c922c8ba0b5a1812ae172ab0a578842a7e52ff1887a14e40bdf99e"
+
+    assert _key() == "fcafc11e9de5b97151c6b0bb473435f3fd6196e6e7fe3d247403fdb7b5c2e927"
+
+
+def test_configured_hub_model_requires_a_revision() -> None:
+    """Hub-backed adapters must refuse to resolve the moving default branch.
+
+    An injected loader keeps ``sentence_transformers`` out of the test run;
+    the refusal has to happen before any weights are touched, so the loader
+    must never be called.
+    """
+    calls: list[tuple[str, object]] = []
+
+    def loader(model_name: str, *, revision: str) -> object:
+        calls.append((model_name, revision))
+        return object()
+
+    for revision in (None, "", "   "):
+        with pytest.raises(ValueError, match="pinned model revision is required"):
+            SentenceTransformerEmbeddingModel(
+                "BAAI/bge-small-en-v1.5",
+                revision=revision,
+                loader=loader,
+            )
+        with pytest.raises(ValueError, match="pinned model revision is required"):
+            SentenceTransformerCrossEncoderReranker(
+                "cross-encoder/ms-marco-MiniLM-L-6-v2",
+                revision=revision,
+                loader=loader,
+            )
+    assert calls == []
+
+    embedder = SentenceTransformerEmbeddingModel(
+        "BAAI/bge-small-en-v1.5",
+        revision="5c38ec7c405ec4b44b94cc5a9bb96e735b38267a",
+        loader=loader,
+    )
+    reranker = SentenceTransformerCrossEncoderReranker(
+        "cross-encoder/ms-marco-MiniLM-L-6-v2",
+        revision="233902d25c440f23af6f7d6e94d2946bac0bee0a",
+        loader=loader,
+    )
+
+    assert calls == [
+        ("BAAI/bge-small-en-v1.5", "5c38ec7c405ec4b44b94cc5a9bb96e735b38267a"),
+        (
+            "cross-encoder/ms-marco-MiniLM-L-6-v2",
+            "233902d25c440f23af6f7d6e94d2946bac0bee0a",
+        ),
+    ]
+    assert embedder.revision == "5c38ec7c405ec4b44b94cc5a9bb96e735b38267a"
+    assert reranker.revision == "233902d25c440f23af6f7d6e94d2946bac0bee0a"
+
+
+def test_offline_hash_models_report_no_revision() -> None:
+    """Deterministic offline models have no hub identity to pin."""
+    assert HashEmbeddingModel(256).revision is None
+    assert LexicalOverlapReranker().revision is None
+
+
+_RANKING_CORPUS_TEXTS = (
+    "Revenue increased strongly across every reported region this quarter.",
+    "Revenue in North America grew by eleven percent year over year.",
+    "Revenue in Europe declined slightly against the prior quarter.",
+    "Operating margin improved once the restructuring charge cleared.",
+    "The regional revenue table lists North America, Europe, and Asia.",
+    "North America headcount grew faster than any other region.",
+    "Asia revenue remained flat while regional costs rose.",
+    "Quarterly highlights cover revenue, margin, and regional growth.",
+    "The methodology section explains how reporting regions are defined.",
+    "Costs rose across Europe because of higher energy prices.",
+    "Growth in this quarterly report is measured year over year.",
+    "The conclusion notes revenue growth and margin recovery.",
+    "Region 42 is an internal identifier and not a reporting region.",
+    "Reported metrics include revenue, margin, headcount, and growth.",
+)
+
+_UNCHANGED_RANKING_QUERIES = (
+    "revenue by region",
+    "north america growth",
+    "europe costs",
+    "margin recovery",
+    "quarterly metrics",
+    "region 42",
+)
+
+
+def _ranking_corpus() -> tuple[RetrievalChunk, ...]:
+    """Build a corpus where dense, sparse, and reranked orders disagree."""
+    return tuple(
+        RetrievalChunk(
+            id=f"ranking-chunk-{position:02d}",
+            arm=RetrievalArm.FIXED,
+            document_id="ranking-doc",
+            text=chunk_text,
+            token_count=len(chunk_text.split()),
+            source_node_ids=(f"ranking-node-{position:02d}",),
+            source_item_ids=(f"ranking-item-{position:02d}",),
+        )
+        for position, chunk_text in enumerate(_RANKING_CORPUS_TEXTS)
+    )
+
+
+def _ranking_config() -> RetrievalConfig:
+    return RetrievalConfig(candidate_limit=5, rerank_limit=4)
+
+
+def _observed_rankings(index: HybridIndex) -> dict[str, tuple[tuple[str, int], ...]]:
+    return {
+        query: tuple((item.chunk.id, item.rank) for item in index.retrieve(query))
+        for query in _UNCHANGED_RANKING_QUERIES
+    }
+
+
+# Captured from the pre-pin implementation at d7f427e, before the embedding and
+# reranker revisions entered the index key, so the rekey is provably a cache
+# invalidation rather than a change in results.
+_RANKINGS_BEFORE_THE_REVISION_PIN = {
+    "revenue by region": (
+        ("ranking-chunk-00", 1),
+        ("ranking-chunk-01", 2),
+        ("ranking-chunk-12", 3),
+        ("ranking-chunk-06", 4),
+    ),
+    "north america growth": (
+        ("ranking-chunk-05", 1),
+        ("ranking-chunk-04", 2),
+        ("ranking-chunk-01", 3),
+        ("ranking-chunk-07", 4),
+    ),
+    "europe costs": (
+        ("ranking-chunk-09", 1),
+        ("ranking-chunk-06", 2),
+        ("ranking-chunk-02", 3),
+        ("ranking-chunk-04", 4),
+    ),
+    "margin recovery": (
+        ("ranking-chunk-11", 1),
+        ("ranking-chunk-03", 2),
+        ("ranking-chunk-07", 3),
+        ("ranking-chunk-13", 4),
+    ),
+    "quarterly metrics": (
+        ("ranking-chunk-07", 1),
+        ("ranking-chunk-13", 2),
+        ("ranking-chunk-10", 3),
+        ("ranking-chunk-00", 4),
+    ),
+    "region 42": (
+        ("ranking-chunk-12", 1),
+        ("ranking-chunk-00", 2),
+        ("ranking-chunk-05", 3),
+        ("ranking-chunk-01", 4),
+    ),
+}
+
+
+def test_offline_index_rankings_are_unchanged_by_the_revision_pin() -> None:
+    """Threading revisions through must invalidate caches, not reorder evidence.
+
+    Every cached index rekeys because the key payload gained two fields, so a
+    key assertion alone cannot tell a cache invalidation from a regression.
+    This compares the ranking itself: for each query the ordered
+    ``(chunk.id, rank)`` pairs must equal what the pre-pin code produced from
+    the same corpus. The corpus is built so dense, sparse, and reranked orders
+    disagree, so a change in chunk selection, BM25 scoring, RRF fusion,
+    reranking, candidate limits, or tie-breaking reorders or drops a pair and
+    fails elementwise.
+    """
+    index = HybridIndex(
+        _ranking_corpus(),
+        config=_ranking_config(),
+        embedder=HashEmbeddingModel(256),
+        reranker=LexicalOverlapReranker(),
+        tokenizer=FixtureTokenCounter(),
+    )
+
+    assert index.embedder.revision is None
+    assert index.reranker.revision is None
+    assert _observed_rankings(index) == _RANKINGS_BEFORE_THE_REVISION_PIN
+
+
+def test_rekeyed_index_artifacts_still_round_trip(
+    tmp_path: Path, retrieval_fixture
+) -> None:
+    """The index saved under the revision-aware key must load back unchanged."""
+    source, ir, config = retrieval_fixture
+    artifacts_root = tmp_path / "artifacts"
+    built = HybridIndex.build(
+        [ir],
+        arm=RetrievalArm.FIXED,
+        config=config,
+        source_documents={ir.id: source},
+        tokenizer=FixtureTokenCounter(),
+        artifacts_root=artifacts_root,
+    )
+    reloaded = HybridIndex.build(
+        [ir],
+        arm=RetrievalArm.FIXED,
+        config=config,
+        source_documents={ir.id: source},
+        tokenizer=FixtureTokenCounter(),
+        artifacts_root=artifacts_root,
+    )
+
+    artifact = next((artifacts_root / "indexes").iterdir()) / "index.json"
+    stored = json.loads(artifact.read_text(encoding="utf-8"))
+    assert stored["embedding_revision"] is None
+    assert stored["reranker_revision"] is None
+    assert built.retrieve("revenue results") == reloaded.retrieve("revenue results")

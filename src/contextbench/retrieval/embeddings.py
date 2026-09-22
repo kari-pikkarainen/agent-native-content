@@ -3,9 +3,9 @@
 import hashlib
 import math
 import re
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from importlib.metadata import version
-from typing import Protocol
+from typing import Any, Protocol
 
 
 class EmbeddingModel(Protocol):
@@ -19,6 +19,11 @@ class EmbeddingModel(Protocol):
     @property
     def version(self) -> str:
         """Implementation version."""
+        ...
+
+    @property
+    def revision(self) -> str | None:
+        """Pinned model-weight commit, or None for offline deterministic models."""
         ...
 
     def embed(self, texts: Sequence[str]) -> list[list[float]]:
@@ -40,6 +45,11 @@ class HashEmbeddingModel:
     def version(self) -> str:
         return "1"
 
+    @property
+    def revision(self) -> str | None:
+        """Report no hub identity: the weights are computed, not downloaded."""
+        return None
+
     def embed(self, texts: Sequence[str]) -> list[list[float]]:
         return [self._one(text) for text in texts]
 
@@ -58,17 +68,40 @@ class HashEmbeddingModel:
 class SentenceTransformerEmbeddingModel:
     """Lazy SentenceTransformers adapter for benchmark model runs."""
 
-    def __init__(self, model_name: str, *, batch_size: int = 32) -> None:
-        try:
-            from sentence_transformers import SentenceTransformer
-        except ImportError as exc:
-            raise RuntimeError(
-                "SentenceTransformers is required for configured dense model "
-                f"{model_name!r}; install the retrieval extras"
-            ) from exc
+    def __init__(
+        self,
+        model_name: str,
+        *,
+        revision: str | None,
+        batch_size: int = 32,
+        loader: Callable[..., Any] | None = None,
+    ) -> None:
+        """Load a hub model at an explicitly pinned commit.
+
+        ``revision`` is required and must be non-empty. Resolving the hub
+        default branch instead would let an upstream weight update silently
+        change embeddings while every recorded identity stayed the same, so
+        an absent pin fails here rather than producing an unreproducible run.
+        """
+        if revision is None or not revision.strip():
+            raise ValueError(
+                "a pinned model revision is required for hub-backed dense "
+                f"model {model_name!r}: pass the resolved commit hash so the "
+                "run stays reproducible when the hub branch moves"
+            )
+        if loader is None:
+            try:
+                from sentence_transformers import SentenceTransformer
+            except ImportError as exc:
+                raise RuntimeError(
+                    "SentenceTransformers is required for configured dense model "
+                    f"{model_name!r}; install the retrieval extras"
+                ) from exc
+            loader = SentenceTransformer
         self._model_name = model_name
+        self._revision = revision
         self._batch_size = batch_size
-        self._model = SentenceTransformer(model_name)
+        self._model = loader(model_name, revision=revision)
 
     @property
     def name(self) -> str:
@@ -77,6 +110,10 @@ class SentenceTransformerEmbeddingModel:
     @property
     def version(self) -> str:
         return version("sentence-transformers")
+
+    @property
+    def revision(self) -> str | None:
+        return self._revision
 
     def embed(self, texts: Sequence[str]) -> list[list[float]]:
         values = self._model.encode(

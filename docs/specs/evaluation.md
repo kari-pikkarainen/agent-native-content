@@ -160,8 +160,11 @@ report.md           registered and audited metrics, intervals, and deltas
 ```
 
 Derived indexes live under `artifacts/indexes/<sha256>/`; their key includes
-source/chunk identities, retrieval configuration, and resolved model and
-tokenizer versions.
+source/chunk identities, retrieval configuration, resolved model and tokenizer
+versions, and the pinned embedding and reranker model revisions. Hub-backed
+models must be loaded at an explicit revision, so an upstream weight change
+rekeys the index and is recorded in the run manifest instead of silently
+mixing weights.
 
 Run the registered experiment with:
 

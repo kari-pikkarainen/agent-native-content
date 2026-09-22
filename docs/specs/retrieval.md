@@ -38,7 +38,10 @@ downloads and make repeated fixture runs byte-stable.
 
 Benchmark runs can select SentenceTransformers models by setting
 `RetrievalConfig.embedding_model` and `reranker_model` to model names and
-installing the optional dependency:
+installing the optional dependency. A model name alone names a moving Hugging
+Face branch, so a hub-backed model must also be given a pinned revision
+(`--embedding-revision` / `--reranker-revision`); loading one without a
+revision fails rather than resolving whatever `main` points at.
 
 ```shell
 uv sync --extra retrieval

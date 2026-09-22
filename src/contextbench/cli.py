@@ -29,6 +29,12 @@ DEFAULT_XLDEV24 = Path("benchmarks/xl-docbench/subsets/xldev24.json")
 DEFAULT_ARTIFACTS_ROOT = Path("artifacts")
 DEFAULT_EMBEDDING_MODEL = "BAAI/bge-small-en-v1.5"
 DEFAULT_RERANKER_MODEL = "cross-encoder/ms-marco-MiniLM-L-6-v2"
+# Hugging Face commits the model IDs above resolved to when these defaults were
+# pinned. A model ID alone names a moving branch, so a run configured with only
+# the ID is not reproducible: the pin lives here, in configuration, rather than
+# in the retrieval library.
+DEFAULT_EMBEDDING_REVISION = "5c38ec7c405ec4b44b94cc5a9bb96e735b38267a"
+DEFAULT_RERANKER_REVISION = "233902d25c440f23af6f7d6e94d2946bac0bee0a"
 
 
 def version_callback(value: bool) -> None:
@@ -188,10 +194,18 @@ def evaluate_retrieval(
         str,
         typer.Option(help="SentenceTransformers embedding model ID."),
     ] = DEFAULT_EMBEDDING_MODEL,
+    embedding_revision: Annotated[
+        str,
+        typer.Option(help="Pinned Hugging Face commit for the embedding model."),
+    ] = DEFAULT_EMBEDDING_REVISION,
     reranker_model: Annotated[
         str,
         typer.Option(help="SentenceTransformers cross-encoder model ID."),
     ] = DEFAULT_RERANKER_MODEL,
+    reranker_revision: Annotated[
+        str,
+        typer.Option(help="Pinned Hugging Face commit for the cross-encoder."),
+    ] = DEFAULT_RERANKER_REVISION,
     seed: Annotated[
         int,
         typer.Option(help="Recorded benchmark seed."),
@@ -294,6 +308,8 @@ def evaluate_retrieval(
             artifacts_root=artifacts_root,
             docling_artifacts_dir=docling_artifacts_dir,
             config=config,
+            embedding_revision=embedding_revision,
+            reranker_revision=reranker_revision,
             run_id=run_id,
             allow_dirty=allow_dirty,
             progress=lambda message: typer.echo(message, err=True),
@@ -353,10 +369,18 @@ def evaluate_factorial(
         str,
         typer.Option(help="SentenceTransformers embedding model ID."),
     ] = DEFAULT_EMBEDDING_MODEL,
+    embedding_revision: Annotated[
+        str,
+        typer.Option(help="Pinned Hugging Face commit for the embedding model."),
+    ] = DEFAULT_EMBEDDING_REVISION,
     reranker_model: Annotated[
         str,
         typer.Option(help="SentenceTransformers cross-encoder model ID."),
     ] = DEFAULT_RERANKER_MODEL,
+    reranker_revision: Annotated[
+        str,
+        typer.Option(help="Pinned Hugging Face commit for the cross-encoder."),
+    ] = DEFAULT_RERANKER_REVISION,
     seed: Annotated[
         int,
         typer.Option(help="Recorded experiment seed."),
@@ -421,6 +445,8 @@ def evaluate_factorial(
             artifacts_root=artifacts_root,
             docling_artifacts_dir=docling_artifacts_dir,
             config=config,
+            embedding_revision=embedding_revision,
+            reranker_revision=reranker_revision,
             run_id=run_id,
             allow_dirty=allow_dirty,
             progress=lambda message: typer.echo(message, err=True),

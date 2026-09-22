@@ -243,3 +243,74 @@ def test_eval_factorial_defaults_to_small_fixed_corpus(
     assert config.budgets == (2048, 4096, 8192, 16384)
     assert set(config.content_units) == {"fixed", "structural", "ir"}
     assert set(config.selection_policies) == {"ranked", "faceted_coverage"}
+
+
+def test_eval_commands_forward_pinned_model_revisions(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """The pin lives in CLI configuration, so it has to reach the runner.
+
+    Both model defaults name a moving Hugging Face branch. If the revision
+    stopped being forwarded, a run would resolve whatever the branch points at
+    while the recorded configuration still looked pinned.
+    """
+    captured: dict[str, dict] = {}
+
+    def fake_run_xl_retrieval(**kwargs):
+        captured["retrieval"] = kwargs
+        return SimpleNamespace(
+            path=tmp_path / "artifacts" / "runs" / "run-1",
+            manifest=SimpleNamespace(run_id="run-1"),
+        )
+
+    def fake_run_xl_factorial(**kwargs):
+        captured["factorial"] = kwargs
+        return SimpleNamespace(
+            path=tmp_path / "artifacts" / "factorial-runs" / "run-2",
+            manifest=SimpleNamespace(run_id="run-2"),
+        )
+
+    monkeypatch.setattr(
+        "contextbench.evaluation.xl_docbench.run_xl_retrieval",
+        fake_run_xl_retrieval,
+    )
+    monkeypatch.setattr(
+        "contextbench.evaluation.factorial_xl.run_xl_factorial",
+        fake_run_xl_factorial,
+    )
+
+    retrieval_result = runner.invoke(
+        app,
+        [
+            "eval-retrieval",
+            "--artifacts-root",
+            str(tmp_path / "artifacts"),
+            "--run-id",
+            "run-1",
+        ],
+    )
+    factorial_result = runner.invoke(
+        app,
+        [
+            "eval-factorial",
+            "--artifacts-root",
+            str(tmp_path / "artifacts"),
+            "--run-id",
+            "run-2",
+            "--embedding-revision",
+            "a" * 40,
+        ],
+    )
+
+    assert retrieval_result.exit_code == 0, retrieval_result.output
+    assert factorial_result.exit_code == 0, factorial_result.output
+    assert captured["retrieval"]["embedding_revision"] == (
+        "5c38ec7c405ec4b44b94cc5a9bb96e735b38267a"
+    )
+    assert captured["retrieval"]["reranker_revision"] == (
+        "233902d25c440f23af6f7d6e94d2946bac0bee0a"
+    )
+    assert captured["factorial"]["embedding_revision"] == "a" * 40
+    assert captured["factorial"]["reranker_revision"] == (
+        "233902d25c440f23af6f7d6e94d2946bac0bee0a"
+    )
