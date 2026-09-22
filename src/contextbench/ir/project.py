@@ -14,6 +14,7 @@ from docling_core.types.doc import (
     TableItem,
     TextItem,
 )
+from docling_core.types.doc.common.content_layer import ContentLayer
 from docling_core.types.doc.labels import DocItemLabel, GroupLabel
 
 from contextbench.ingest.cache import IngestMetadata
@@ -108,18 +109,50 @@ def project_document(
 
 
 def _ordered_items(document: DoclingDocument) -> Iterable[NodeItem]:
+    """Yield every source item once, in the document's own reading order.
+
+    ``ordinal`` is assigned from this sequence, so anything this walk fails to
+    reach is appended by the sweep below and lands after the whole document
+    regardless of the page it is on. Two ``iterate_items`` defaults each hide
+    part of the tree and both have to be overridden:
+
+    * ``included_content_layers`` defaults to ``{BODY}``. Docling still
+      *descends* through a furniture item, it just does not yield it, so a
+      running header inside the body tree is invisible to the walk.
+    * ``traverse_pictures`` defaults to ``False``. The text items Docling
+      nests under a full-page ``PictureItem`` -- which is how a scanned or
+      image-first page is represented -- are skipped apart from captions.
+
+    Measured over the 28 cached benchmark documents, those two defaults hid
+    29,785 of 72,745 items (40.9%), in every document, up to 69.8% in one:
+    24,025 under pictures and 5,760 furniture in the body tree. The sweep then
+    re-appended them in collection order, which put one page inversion in each
+    document at that boundary and gave fixed windows page spans of up to 306
+    pages. This is not a Docling limitation -- Docling yields all of it in
+    order once asked -- so the repair is to ask.
+    """
     seen: set[str] = set()
     # Docling retains the legacy furniture root as a deprecated model field.
     # Read the stored value directly so older artifacts remain fully traversable.
     furniture = document.__dict__.get("furniture")
     roots = (document.body,) if furniture is None else (document.body, furniture)
     for root in roots:
-        for item, _level in document.iterate_items(root=root, with_groups=True):
+        for item, _level in document.iterate_items(
+            root=root,
+            with_groups=True,
+            traverse_pictures=True,
+            included_content_layers=set(ContentLayer),
+        ):
             if item.self_ref in _ROOT_REFS or item.self_ref in seen:
                 continue
             seen.add(item.self_ref)
             yield item
 
+    # Retained as a safety net, not as a routine path. It should now yield
+    # nothing for a well-formed document; anything it does yield is an item no
+    # root reaches, and dropping it instead would lose content from the IR.
+    # Such an item still gets a trailing ordinal, which is the best available
+    # answer when the source gives no position for it.
     collections = (
         document.groups,
         document.texts,

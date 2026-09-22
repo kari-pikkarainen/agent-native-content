@@ -72,11 +72,23 @@ def fixed_chunks(
     config: RetrievalConfig,
     tokenizer: TokenCounter | None = None,
 ) -> tuple[RetrievalChunk, ...]:
-    """Create overlapping fixed-token windows over source nodes in ordinal order."""
+    """Create overlapping fixed-token windows over body nodes in ordinal order.
+
+    Furniture -- running headers, footers, page numbers -- is excluded, which
+    is what every other retrieval surface already does: ``node_chunks`` for the
+    compiler, ``long_context``, the representation runner, the agentdoc bundle,
+    and Docling's own ``HybridChunker`` behind ``structural_chunks``, whose
+    traversal is body-only by default. Fixed windows were the one surface
+    carrying it, so the exemption ran the wrong way: the baseline paid for
+    text the compiler never had to. Across the 28 cached documents furniture
+    is 5,804 nodes and 40,132 tokens, 1.9% of text, and reads like
+    ``'2018 l Annual Report'`` repeated once per page. The nodes stay in the
+    IR with their provenance; this is a retrieval-surface decision only.
+    """
     counter = tokenizer or TiktokenTokenCounter(config.tokenizer_name)
     streams: list[tuple[list[Any], str]] = []
     for node in document.nodes:
-        if node.text:
+        if node.text and node.content_layer != "furniture":
             encoded = _encode(node.text, counter)
             streams.append((encoded, node.id))
     if not streams:

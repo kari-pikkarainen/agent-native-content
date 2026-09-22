@@ -80,10 +80,32 @@ node ID = "node_" + sha256("contextbench-ir-v1\0" + document_id + "\0" + source_
 ```
 
 This makes IDs stable across repeated projections of the same authoritative
-source structure without depending on Python hash randomization. Body nodes
-are traversed depth-first in Docling child order, followed by legacy furniture
-nodes. Any source items not reachable from those roots are retained afterward
-in deterministic Docling collection order.
+source structure without depending on Python hash randomization. Node identity
+does not depend on `ordinal`, so a change to traversal order leaves every node
+ID unchanged.
+
+**`ordinal` must reflect source order.** Nodes are traversed depth-first in
+Docling child order from the body root, then from the legacy furniture root.
+The traversal asks Docling for *everything*: `traverse_pictures=True`, so the
+text items nested under a full-page `PictureItem` are reached, and all content
+layers, so furniture inside the body tree is reached. Both are non-default in
+`iterate_items` and both hide content that the document itself places in the
+middle of a page.
+
+This matters because consumers read `document.nodes` as a stream. `fixed_chunks`
+concatenates node text in ordinal order, and `_chunk_from_nodes` reports a
+window's page span as the min and max page of the nodes it touches, so an item
+delivered out of order splices unrelated pages into one window and inflates its
+claimed span. Before this was repaired, 29,785 of 72,745 items across the 28
+cached benchmark documents (40.9%, in every document, up to 69.8% in one) were
+reached only after the walk, giving each document a page inversion at that
+boundary and 445 of 4,895 fixed windows a claimed span over three pages, one of
+them the full 314 pages of its source.
+
+Any source item still not reachable from either root is retained afterward in
+deterministic Docling collection order and receives a trailing ordinal. That
+path is a safety net against content loss, not a routine one: it should yield
+nothing for a well-formed document.
 
 ## Hierarchy and heading paths
 
@@ -97,6 +119,12 @@ Docling heading levels, rather than only by following parent links. A heading
 at a level replaces the active heading at that level and all deeper headings.
 An active title prefixes the path. Furniture nodes receive an empty heading
 path.
+
+Furniture is projected, never dropped. Running headers, footers and page
+numbers keep their text, provenance and node IDs in the IR; which retrieval
+surfaces index them is a separate decision, recorded in
+`docs/specs/retrieval.md`. Excluding them at ingestion instead would make the
+choice unauditable and irreversible.
 
 ## Text and tables
 

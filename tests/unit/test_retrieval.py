@@ -9,7 +9,9 @@ from docling_core.types.doc import DoclingDocument
 from docling_core.types.doc.base import Size
 from docling_core.types.doc.labels import DocItemLabel
 from test_ir import (
+    PAGE_HEADER,
     FixtureTokenCounter,
+    hidden_layer_source,
     ingest_metadata,
     provenance,
     source_document,
@@ -30,7 +32,11 @@ from contextbench.retrieval import (
     pack_evidence,
     rank_long_context,
 )
-from contextbench.retrieval.chunking import contextual_search_text
+from contextbench.retrieval.chunking import (
+    contextual_search_text,
+    fixed_chunks,
+    structural_chunks,
+)
 from contextbench.retrieval.index import _index_key
 from contextbench.retrieval.sparse import BM25Index
 
@@ -234,6 +240,82 @@ def test_fixed_chunks_overlap_and_packing_deduplicates_source_material(
     packet = index.pack("term20", token_budget=30)
     assert packet.token_count <= 30
     assert len(packet.items) == len({item.source_item_ids for item in packet.items})
+
+
+def test_fixed_windows_follow_source_page_order(tmp_path: Path) -> None:
+    """A window stream over source-ordered text cannot walk back a page.
+
+    ``fixed_chunks`` concatenates node text in ordinal order and reports
+    ``page_start``/``page_end`` as the min and max page of the nodes a window
+    touches. So if ordinals put page 1 content behind page 2 content, a window
+    splices unrelated pages and claims a span covering both. ``_page_range_distance``
+    in ``compiler/expand.py`` reads exactly those two fields, which is how an
+    over-wide span turns a window into a page neighbour of every anchor.
+    """
+    counter = FixtureTokenCounter()
+    ir = project_document(
+        hidden_layer_source(),
+        ingest_metadata(tmp_path),
+        tokenizer=counter,
+    )
+    config = RetrievalConfig(fixed_chunk_tokens=8, fixed_overlap_tokens=0)
+
+    chunks = fixed_chunks(ir, config=config, tokenizer=counter)
+
+    assert len(chunks) > 1
+    starts = [chunk.page_start for chunk in chunks]
+    ends = [chunk.page_end for chunk in chunks]
+    assert all(page is not None for page in (*starts, *ends))
+    assert starts == sorted(starts)
+    assert ends == sorted(ends)
+    # No window claims more of the document than it actually crosses.
+    assert all(end - start <= 1 for start, end in zip(starts, ends, strict=True))
+
+
+def test_fixed_windows_exclude_furniture_without_dropping_it_from_the_ir(
+    tmp_path: Path,
+) -> None:
+    """Running headers are a retrieval-surface exclusion, not an ingest one."""
+    counter = FixtureTokenCounter()
+    ir = project_document(
+        hidden_layer_source(),
+        ingest_metadata(tmp_path),
+        tokenizer=counter,
+    )
+    config = RetrievalConfig(fixed_chunk_tokens=8, fixed_overlap_tokens=0)
+    furniture = next(node for node in ir.nodes if node.content_layer == "furniture")
+
+    chunks = fixed_chunks(ir, config=config, tokenizer=counter)
+
+    assert chunks
+    assert all(PAGE_HEADER not in chunk.text for chunk in chunks)
+    assert all(furniture.id not in chunk.source_node_ids for chunk in chunks)
+    # Body text on the same page is still there, so this is a filter and not a
+    # truncation of the stream.
+    assert any("First page body sentence" in chunk.text for chunk in chunks)
+    # And the node itself survives projection with its provenance intact.
+    assert furniture.text == PAGE_HEADER
+    assert furniture.bounding_boxes
+
+
+def test_structural_chunks_exclude_furniture(tmp_path: Path) -> None:
+    """Docling's chunker is body-only; pin it so that cannot drift silently.
+
+    This surface was already clean -- measured across the 28 cached benchmark
+    documents, ``structural_chunks`` emitted 7,570 chunks and not one of them
+    referenced a furniture node. Nothing in this repository enforced it.
+    """
+    counter = FixtureTokenCounter()
+    source = hidden_layer_source()
+    ir = project_document(source, ingest_metadata(tmp_path), tokenizer=counter)
+    config = RetrievalConfig(structural_chunk_tokens=64)
+    furniture = next(node for node in ir.nodes if node.content_layer == "furniture")
+
+    chunks = structural_chunks(ir, source, config=config, tokenizer=counter)
+
+    assert chunks
+    assert all(PAGE_HEADER not in chunk.text for chunk in chunks)
+    assert all(furniture.id not in chunk.source_node_ids for chunk in chunks)
 
 
 def test_long_context_preserves_body_source_order_without_retrieval(

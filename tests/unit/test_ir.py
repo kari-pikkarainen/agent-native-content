@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 from docling_core.types.doc import DoclingDocument
 from docling_core.types.doc.base import BoundingBox, Size
+from docling_core.types.doc.common.content_layer import ContentLayer
 from docling_core.types.doc.document import ProvenanceItem, TableCell, TableData
 from docling_core.types.doc.labels import DocItemLabel
 from pydantic import ValidationError
@@ -98,6 +99,54 @@ def source_document() -> DoclingDocument:
         "print('measured')",
         parent=methods,
         prov=provenance(2, "print('measured')", 710),
+    )
+    return document
+
+
+PAGE_HEADER = "Quarterly Report l 2026 Annual"
+PICTURE_CHILD = "Figure caption text lives under the picture."
+
+
+def hidden_layer_source() -> DoclingDocument:
+    """Body-tree content Docling's ``iterate_items`` defaults do not yield.
+
+    Two things here are invisible to a default walk: a furniture item inside
+    the body tree, and a text item nested under a picture. Both sit on page 1,
+    before the page 2 body text, so if either is recovered after the walk
+    instead of during it, its ordinal lands after the whole document.
+    """
+    document = DoclingDocument(name="hidden-layers")
+    document.add_page(1, Size(width=612, height=792))
+    document.add_page(2, Size(width=612, height=792))
+    document.add_text(
+        label=DocItemLabel.PAGE_HEADER,
+        text=PAGE_HEADER,
+        content_layer=ContentLayer.FURNITURE,
+        prov=provenance(1, PAGE_HEADER, 780),
+    )
+    heading = document.add_heading(
+        "Results",
+        level=1,
+        prov=provenance(1, "Results", 750),
+    )
+    document.add_text(
+        label=DocItemLabel.TEXT,
+        text="First page body sentence about revenue.",
+        parent=heading,
+        prov=provenance(1, "First page body sentence about revenue.", 720),
+    )
+    picture = document.add_picture(parent=heading, prov=provenance(1, "picture", 690))
+    document.add_text(
+        label=DocItemLabel.TEXT,
+        text=PICTURE_CHILD,
+        parent=picture,
+        prov=provenance(1, PICTURE_CHILD, 660),
+    )
+    document.add_text(
+        label=DocItemLabel.TEXT,
+        text="Second page body sentence about costs.",
+        parent=heading,
+        prov=provenance(2, "Second page body sentence about costs.", 720),
     )
     return document
 
@@ -333,3 +382,50 @@ def test_validation_rejects_inconsistent_graph_or_provenance(
 
     with pytest.raises(ValidationError, match=message):
         IRDocument.model_validate(value)
+
+
+def hidden_layer_ir(tmp_path: Path) -> IRDocument:
+    return project_document(
+        hidden_layer_source(),
+        ingest_metadata(tmp_path),
+        tokenizer=FixtureTokenCounter(),
+    )
+
+
+def test_ordinals_follow_source_order_past_furniture_and_pictures(
+    tmp_path: Path,
+) -> None:
+    """Ordinals must place every item where the source puts it.
+
+    A furniture item in the body tree and a text item nested under a picture
+    are both invisible to Docling's default ``iterate_items``. Recovering them
+    from the flat collections afterwards gives them an ordinal after the whole
+    document, so page 1 content lands behind page 2 content and every
+    downstream consumer that reads ``document.nodes`` in order sees a document
+    that jumps backwards.
+    """
+    ir = hidden_layer_ir(tmp_path)
+
+    # Nothing is dropped and nothing is duplicated by reaching further.
+    assert len(ir.nodes) == 6
+    assert len({node.id for node in ir.nodes}) == 6
+    assert [node.ordinal for node in ir.nodes] == list(range(6))
+
+    furniture = node_with_text(ir, PAGE_HEADER)
+    picture_child = node_with_text(ir, PICTURE_CHILD)
+    # Furniture is projected, not discarded: excluding it is a retrieval-surface
+    # decision taken later, and its provenance has to survive to be excludable.
+    assert furniture.content_layer == "furniture"
+    assert furniture.page_start == 1
+    assert furniture.bounding_boxes
+    assert furniture.source_item_ids
+    assert picture_child.content_layer == "body"
+    assert picture_child.page_start == 1
+
+    # The page a node sits on never goes backwards as ordinals advance.
+    pages = [node.page_start for node in ir.nodes if node.page_start is not None]
+    assert pages == sorted(pages)
+    # Specifically, page 1 items are not parked behind the page 2 body text.
+    page_two = node_with_text(ir, "Second page body sentence about costs.")
+    assert furniture.ordinal < page_two.ordinal
+    assert picture_child.ordinal < page_two.ordinal

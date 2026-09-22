@@ -16,6 +16,27 @@ Docling source item references emitted by the chunker and then to IR nodes.
 Both limits and all retrieval parameters are fields of `RetrievalConfig`; tests
 use smaller values only to keep fixtures compact.
 
+### No retrieval surface indexes furniture
+
+Running headers, footers and page numbers stay in the IR with full provenance
+(`docs/specs/content-ir.md`) and are excluded from every surface a query can
+reach: `fixed_chunks` for Arm A, Docling's body-only chunker traversal behind
+`structural_chunks` for Arm B, `node_chunks` for the compiler, page-neighbor
+windows (which are fixed windows and inherit Arm A's filter), `long_context`,
+the representation runner, and the agentdoc bundle.
+
+Until compiler 0.10.0 this held everywhere except Arm A, which is the arm the
+compiler is measured against. Furniture is 5,804 nodes and 40,132 tokens across
+the 28 cached documents — 1.9% of text, in strings like `'2018 l Annual
+Report'` repeated once per page — so the baseline was paying budget for text
+the compiler was never charged for. Correcting a source-order defect in the
+same release made this larger, not smaller: with furniture interleaved in
+reading order rather than appended in one block, it would have touched 2,617 of
+4,895 fixed windows instead of 235.
+
+Any new retrieval surface must apply the same exclusion. It is a property of
+the arms being comparable, not an optimization.
+
 ## Shared retrieval pipeline
 
 Both arms run the same deterministic stages:

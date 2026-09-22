@@ -7,7 +7,13 @@ from docling_core.types.doc import DoclingDocument
 from docling_core.types.doc.base import Size
 from docling_core.types.doc.document import TableCell, TableData
 from docling_core.types.doc.labels import DocItemLabel
-from test_ir import FixtureTokenCounter, ingest_metadata, provenance
+from test_ir import (
+    PAGE_HEADER,
+    FixtureTokenCounter,
+    hidden_layer_source,
+    ingest_metadata,
+    provenance,
+)
 
 import contextbench.compiler.expand as compiler_expand
 from contextbench.compiler import (
@@ -1598,6 +1604,42 @@ def test_page_neighbor_windows_rank_after_joins_and_core_evidence_at_16k(
     assert any("Joined table key:" in content for content in contents)
     assert any(PROSE_BESIDE_JOINED_TABLES in content for content in contents)
     assert any("Model | Retention" in content for content in contents)
+    assert packet.token_count <= budget
+
+
+def test_page_neighbor_windows_carry_no_furniture(tmp_path: Path) -> None:
+    """Page neighbours are fixed windows, so they inherit the window filter.
+
+    Nothing in ``_page_neighbor_candidates`` filters content layers; it reranks
+    whatever ``fixed_chunks`` produced. That is the whole of the guarantee, so
+    the test runs end to end rather than against the chunker.
+    """
+    source = hidden_layer_source()
+    counter = FixtureTokenCounter()
+    ir = project_document(source, ingest_metadata(tmp_path), tokenizer=counter)
+    scope = DocumentScope.from_documents([ir], source_documents={ir.id: source})
+    budget = 16384
+
+    packet, trace = compile_context_with_trace(
+        "page body sentence about revenue and costs",
+        scope,
+        budget,
+        compiler_config(),
+        tokenizer=counter,
+        reranker=LexicalOverlapReranker(),
+    )
+
+    # Premise: page neighbours really were built for this query.
+    assert "page_neighbor" in packet.metadata["active_operators"]
+    windows = [
+        candidate
+        for candidate in trace.expanded_candidates
+        if candidate.operator == "page_neighbor"
+    ]
+    assert windows
+
+    assert all(PAGE_HEADER not in window.chunk.text for window in windows)
+    assert all(PAGE_HEADER not in item.content for item in packet.items)
     assert packet.token_count <= budget
 
 

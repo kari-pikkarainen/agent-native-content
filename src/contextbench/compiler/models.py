@@ -23,7 +23,15 @@ from contextbench.retrieval.models import (
 # archived packets from either side of such a change stay distinguishable by
 # their own metadata alone. Bump it whenever that is true; leave it alone for
 # refactors, comments, and anything a config already records.
-COMPILER_VERSION = "0.9.0"
+#
+# An IR-level change can trip this criterion without being a compiler change at
+# all: 0.10.0 is a repair to ``ir/project.py`` ordinals, which moves heading
+# paths for the nodes whose position changed and rebuilds every page-neighbor
+# window. The compiler's own chunk ids are derived from node id and text, so
+# they do not move and cannot signal it. The criterion is still the right one
+# to bump on -- packet contents can differ -- but it does not describe the
+# change; the fixed arm moves too and this constant says nothing about that.
+COMPILER_VERSION = "0.10.0"
 
 # ``priority_tier`` states a candidate's class and nothing else. It must never
 # depend on what an expansion happened to produce for one query, because
