@@ -291,9 +291,11 @@ single-factor delta there also carries both mechanisms, because
 `_unique_by_search_text` reads `retrieval_text` for every unit alike.
 
 **Third mechanism: the factor reaches the packing objective, not only
-retrieval.** `compiler/pack.py:122-129` derives both the coverage terms and
-the table references of every candidate from `candidate.chunk.retrieval_text`,
-which is `search_text or text`. Turning the factor off therefore removes
+retrieval.** `compiler/pack.py:124` derives the coverage terms of every
+candidate from `candidate.chunk.retrieval_text` and `compiler/pack.py:128`
+derives its table references from the same string; both sit in the `prepared`
+comprehension that begins at `compiler/pack.py:120`. `retrieval_text` is
+`search_text or text`. Turning the factor off therefore removes
 heading vocabulary from the *selection objective* of every
 `FACETED_COVERAGE` cell on the two heading-bearing units, not merely from what
 the indexes match: a heading term in the query stops earning `new_terms`
@@ -353,12 +355,48 @@ Changing the derivation moved default-configuration IR numbers, because the
 ids it changed are tie-breaks. Over the committed fixtures: all fourteen IR
 chunk ids changed while no other chunk field did; IR retrieval returned the
 same candidate *set* on every probe query but a different order on three of
-six; compiler evidence ids changed everywhere, because the evidence id payload
-embeds the chunk id; packed item order moved on three of six queries and the
-packed *set* changed at one tight budget. Every factorial metric on the
-committed corpora was unchanged, and the structural and fixed units were
-byte-identical. Larger corpora may move metrics; published IR numbers do not
-carry across this change.
+six; and compiler evidence ids changed everywhere, because the evidence id
+payload embeds the chunk id. Every factorial metric on the committed corpora
+was unchanged, and the structural and fixed units were byte-identical. Larger
+corpora may move metrics; published IR numbers do not carry across this
+change.
+
+**What the packed set did, stated by budget rather than by count.** Packed
+content moved on two of the six probe queries, and the packed *set* -- not
+merely its order -- changed over contiguous budget bands rather than at a
+single budget. On the committed compiler fixture with
+`candidate_limit=20, rerank_limit=10`, the query `"target"` packed `Target
+revenue increased.` under the old ids and `Context before target.` under the
+new ones at **every budget from 7 to 13 tokens**, budgets 8 and 12 included;
+from 14 tokens up the same multiset was packed in a different order. The query
+`"revenue table"` changed its packed set at budgets **32-34 and 49-69**, where
+the heading node `Results` takes the place of `Measurements were audited.`,
+and moved order only at 35-48 and from 70 up. The other four probe queries
+packed byte-identical content at every budget from 1 to 120. An earlier
+statement here that the set changed "at one tight budget" was an artifact of a
+sparse budget grid and understated the effect.
+
+**Sparse and dense scores are unchanged; fused values are not.** The channel
+scores are functions of text alone, so every sparse score, every dense score
+and every reranker score is identical across the two derivations. The fused
+value is not a score over text: `retrieval/index.py:317-328` sums
+`1 / (rrf_k + rank)` over the per-channel ranks, and `retrieval/index.py:576`
+assigns those ranks with the key `(-score, chunk.id)`. Changing an id
+therefore re-partitions the ranks *inside* a score tie and changes the fused
+sum. On the compiler fixture with the query `"target"`, where all three body
+sentences carry the same sparse score, ranks 2 and 3 moved from
+`0.03225806451612903` (`2/62`) and `0.031746031746031744` (`2/63`) to
+`0.03200204813108039` for both -- `1/62 + 1/63`, the tie-averaged value that
+follows from one candidate taking sparse rank 2 with dense rank 3 and the
+other the reverse. On `"revenue table"` a fused value likewise moves from
+`1/71` to `1/70`. This is a downstream consequence of the id tie-break, not a
+change in scoring logic, and **no metric consumes the fused value**: it is an
+ordering key (`retrieval/index.py:330`, `compiler/expand.py:293` and
+`:415`) and a recorded diagnostic. One field does follow it -- `retrieve`
+seeds `RetrievalScores.reranked` with the fused value at
+`retrieval/index.py:356`, so that seed moves until a reranker overwrites it.
+Any earlier statement that retrieval scores were unchanged is false as
+written; it holds for the sparse, dense and reranked scores only.
 
 **Blast radius beyond the retrieval arm.** The field is read wherever
 `structural_chunks` or `node_chunks` is called with an unpinned

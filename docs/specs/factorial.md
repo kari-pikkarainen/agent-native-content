@@ -63,9 +63,11 @@ ablations that none of the runs so far provide.
    collapse in the off position and both survive in the on position. This
    changes results **even for queries containing no heading term at all**, and
    it applies to the structural and IR units alike.
-3. **Coverage-selection terms.** `compiler/pack.py:122-129` derives the
-   coverage terms and the table references of each candidate from
-   `candidate.chunk.retrieval_text`, so turning the field off also removes
+3. **Coverage-selection terms.** `compiler/pack.py:124` derives each
+   candidate's coverage terms from `candidate.chunk.retrieval_text` and
+   `compiler/pack.py:128` derives its table references from the same string,
+   both inside the `prepared` comprehension that begins at
+   `compiler/pack.py:120`, so turning the field off also removes
    heading vocabulary from the *packing objective* of every
    `FACETED_COVERAGE` cell on the two heading-bearing units. This is a
    **policy-side** effect of a factor whose purpose is to isolate
