@@ -246,8 +246,20 @@ def _build_factorial_indexes(
     """
     chunks_by_cell: dict[tuple[ContentUnit, bool], tuple[RetrievalChunk, ...]] = {}
     configs_by_heading = {
+        # One position of the factor sets *both* heading-search-context fields
+        # to the same value, on purpose. ``RetrievalConfig`` splits them so a
+        # benchmark run can give the structural arm heading context while the
+        # compiler's node candidates go without, but this ablation exists to
+        # contrast the IR unit against the structural one, and a factor that
+        # moved one unit and not the other would confound that contrast with
+        # the unit difference it is measuring. Setting only one field here
+        # would silently make the arms asymmetric; assert the symmetry rather
+        # than trusting this comment.
         heading_context: config.retrieval.model_copy(
-            update={"heading_search_context": heading_context}
+            update={
+                "structural_heading_search_context": heading_context,
+                "compiler_node_heading_search_context": heading_context,
+            }
         )
         for heading_context in config.heading_contexts
     }
@@ -334,7 +346,7 @@ def _evaluate_factorial_cells(
                     ranked = index.rerank(question.question, candidates)
                 else:
                     # ``config.faceting.retrieval`` still carries the *base*
-                    # ``heading_search_context``, not this cell's position.
+                    # heading-search-context fields, not this cell's position.
                     # That is inert today: ``retrieve_faceted`` reads only
                     # ``rrf_k`` from it, and all retrieval goes through
                     # ``index``, which was built from the cell's own config.
@@ -563,11 +575,14 @@ def factorial_markdown_report(summary: FactorialSummary) -> str:
                 "## Heading-context factor",
                 "",
                 "Rows are reported separately for each position of "
-                "`heading_contexts`. The factor sets "
-                "`RetrievalConfig.heading_search_context`, which only the "
-                "structural and IR units read. The fixed unit does not read "
-                "it -- its windows already concatenate heading nodes -- so its "
-                "`heading-on` and `heading-off` rows are identical by "
+                "`heading_contexts`. One position sets both "
+                "`RetrievalConfig.structural_heading_search_context` and "
+                "`RetrievalConfig.compiler_node_heading_search_context` to "
+                "that value, so the structural and IR units move together and "
+                "the contrast between them is not confounded by one arm "
+                "changing and the other not. The fixed unit reads neither "
+                "field -- its windows already concatenate heading nodes -- so "
+                "its `heading-on` and `heading-off` rows are identical by "
                 "construction and an unchanged fixed row is not evidence about "
                 "heading context.",
                 "",

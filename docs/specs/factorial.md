@@ -24,15 +24,27 @@ provenance deduplication before packing.
 
 `FactorialConfig.heading_contexts` is a tuple of booleans crossed with
 `content_units` and `selection_policies` exactly as those are crossed with each
-other. Each value sets `RetrievalConfig.heading_search_context` for the index
-the cell retrieves from, so each position gets its own chunks and its own
-derived-index key and no cached index is reused across the factor. The value is
+other. Each value sets **both**
+`RetrievalConfig.structural_heading_search_context` and
+`RetrievalConfig.compiler_node_heading_search_context` for the index the cell
+retrieves from, so each position gets its own chunks and its own derived-index
+key and no cached index is reused across the factor. The value is
 recorded in every record, summary row and context, in the packet metadata, and
 in the manifest's system names as `unit:policy:heading-on|heading-off`.
 
 It defaults to `(True,)`. Single-valued, the cell set and every cell's metrics
 are identical to a run without the factor, so nothing already measured moves
 until the ablation is asked for. `(True, False)` doubles the cell count.
+
+**The factor sets both fields together, on purpose.** `RetrievalConfig` keeps
+one heading-search-context field per content unit, so a benchmark run can give
+the structural baseline heading context while the compiler's node candidates go
+without. This factor does not inherit that freedom: it exists to contrast the
+IR unit against the structural one, and a factor that moved one unit and left
+the other would confound that contrast with the unit difference it is
+measuring. `test_heading_context_factor_moves_both_units_together` asserts the
+symmetry on the config each index is built from, rather than leaving it to this
+paragraph.
 
 What the factor controls, by unit:
 
@@ -95,13 +107,14 @@ numbers, because the permuted ids were tie-breaks; see
 `docs/specs/retrieval.md` for what moved on the committed fixtures. Published
 IR results do not carry across that change.
 
-Why the factor exists on both heading-bearing units rather than one: the
+Why the factor moves both heading-bearing units rather than one: the
 compiler's node candidates have always carried heading context unconditionally.
 While only the structural unit could be ablated, "IR nodes beat structural
 chunks" could not be told apart from "IR nodes carry heading context". The
 compiler's oversized-table fragments keep their own pin
-(`heading_search_context=False` in `compiler/expand.py`) in both positions;
-that pin protects rendered fragment text and is not part of this factor.
+(`structural_heading_search_context=False` in `compiler/expand.py`) in both
+positions; that pin protects rendered fragment text and is not part of this
+factor.
 
 The enhanced policy uses deterministic lexical facets and the existing
 coverage objective. It does not use structural expansion, heading injection,
@@ -112,8 +125,8 @@ backfill, or an answer model.
 
 The `Docling structural chunks` row is built by `evaluation/factorial.py`
 through `structural_chunks` with no pin, so it reads
-`RetrievalConfig.heading_search_context` at whatever value its cell was
-assigned, and at the live default when the factor is single-valued. That
+`RetrievalConfig.structural_heading_search_context` at whatever value its cell
+was assigned, and at the live default when the factor is single-valued. That
 default changed from off to on, which gives structural chunks a `search_text`
 of their heading trail above their body. The field changes two things at once:
 heading vocabulary becomes matchable, and the candidate dedupe key widens so
@@ -131,10 +144,12 @@ Consequences for this experiment:
   rekeys cached indexes in either direction and no stale index is reused.
 - A run that deliberately reproduces the old state must set
   `heading_contexts=(False,)` -- `--heading-context off` -- and record that it
-  did. Since the field now also reaches the IR unit, that run reproduces the
-  old *structural* state while also removing heading context from the IR unit,
+  did. Since this factor sets both units' fields, that run reproduces the old
+  *structural* state while also removing heading context from the IR unit,
   which the published IR rows had. The two old states cannot be reproduced
-  separately through this field.
+  separately through this factor; reproducing one alone means setting the two
+  `RetrievalConfig` fields directly, which only `eval-retrieval` exposes and
+  only for the compiler field.
 
 ## Interpretation
 

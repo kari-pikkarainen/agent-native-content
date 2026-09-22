@@ -59,12 +59,17 @@ class FactorialConfig(BaseModel):
     content_units: tuple[ContentUnit, ...] = tuple(ContentUnit)
     selection_policies: tuple[SelectionPolicy, ...] = tuple(SelectionPolicy)
     # Crossed with the other two factors. Single-valued by default so the cell
-    # set is unchanged until the ablation is asked for. Each value sets
-    # ``RetrievalConfig.heading_search_context`` for the index that cell
-    # retrieves from, which applies to the structural and IR units. The fixed
-    # unit does not read the field -- its windows concatenate every node,
-    # heading nodes included -- so its rows are constant across this factor and
-    # an unchanged fixed row is not evidence about heading context.
+    # set is unchanged until the ablation is asked for. Each value sets *both*
+    # ``RetrievalConfig.structural_heading_search_context`` and
+    # ``RetrievalConfig.compiler_node_heading_search_context`` to that value for
+    # the index the cell retrieves from, which is what makes this factor
+    # arm-symmetric: the structural and IR units move together, so the
+    # IR-versus-structural contrast is never confounded by one arm changing and
+    # the other not. Those two fields are separate on ``RetrievalConfig`` so a
+    # benchmark run can set them independently; this factor deliberately does
+    # not. The fixed unit reads neither field -- its windows concatenate every
+    # node, heading nodes included -- so its rows are constant across this
+    # factor and an unchanged fixed row is not evidence about heading context.
     heading_contexts: tuple[bool, ...] = (True,)
     seed: int = 20260919
     retrieval: RetrievalConfig = Field(default_factory=RetrievalConfig)

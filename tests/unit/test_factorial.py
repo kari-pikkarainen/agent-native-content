@@ -365,6 +365,61 @@ def test_heading_context_keeps_ir_chunk_ids_identical_across_positions(
     assert fixed_on == fixed_off
 
 
+def test_heading_context_factor_moves_both_units_together(tmp_path: Path) -> None:
+    """One position of the factor must set both heading fields to that value.
+
+    ``RetrievalConfig`` carries a heading-search-context field per content unit
+    so a benchmark run can give the structural baseline heading context while
+    the compiler's node candidates go without. This factor must not inherit
+    that freedom. It exists to contrast the IR unit against the structural one,
+    and a factor that moved one unit and left the other would confound that
+    contrast with the very unit difference it is measuring -- the arm asymmetry
+    the factor was built to avoid.
+
+    Asserted on the config each index was actually built from, not on the
+    chunks, because a split that wired only one field would still leave the
+    other unit's chunks *looking* correct in the on position; the defect shows
+    up only in the off position and only on the unwired unit. Both fields are
+    read off the index at both positions, so wiring either one alone fails
+    here.
+    """
+    config = _ablation_config()
+    assert config.heading_contexts == (True, False)
+    corpus = _heading_vocabulary_corpus(tmp_path)
+    documents = tuple(corpus.documents.values())
+    indexes = factorial_runner._build_factorial_indexes(
+        documents,
+        sources_by_ir_id={
+            document.id: corpus.source_documents[document_id]
+            for document_id, document in corpus.documents.items()
+        },
+        config=config,
+        artifacts_root=tmp_path / "symmetry-artifacts",
+        tokenizer=FixtureTokenCounter(),
+        embedder=HashEmbeddingModel(),
+        reranker=LexicalOverlapReranker(),
+    )
+
+    for unit in ContentUnit:
+        for policy in SelectionPolicy:
+            for heading_context in (True, False):
+                cell = indexes[(unit, policy, heading_context)].config
+                assert (
+                    cell.structural_heading_search_context is heading_context
+                ), (unit, policy, heading_context)
+                assert (
+                    cell.compiler_node_heading_search_context is heading_context
+                ), (unit, policy, heading_context)
+
+    # Stated as the property itself: the two fields are never split by this
+    # factor, whatever else the cell configures.
+    assert all(
+        index.config.structural_heading_search_context
+        is index.config.compiler_node_heading_search_context
+        for index in indexes.values()
+    )
+
+
 def test_default_heading_contexts_leave_the_cell_set_unchanged(
     tmp_path: Path,
 ) -> None:

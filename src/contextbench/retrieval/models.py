@@ -22,16 +22,31 @@ class RetrievalConfig(BaseModel):
     fixed_chunk_tokens: int = Field(default=512, ge=1)
     fixed_overlap_tokens: int = Field(default=64, ge=0)
     structural_chunk_tokens: int = Field(default=512, ge=1)
-    # Default on: this is the fix for the structural arm's inability to
-    # retrieve heading vocabulary. Off reproduces the pre-fix behaviour
-    # exactly, leaving ``search_text`` as ``None``, which is what keeps the
-    # ablation measurable. Read by both heading-bearing content units -- the
-    # structural chunker and the compiler's IR-node candidates -- so an
-    # ablation can toggle the factor on both and separate representation from
-    # heading context. The fixed unit does not read it: its windows already
-    # include heading nodes incidentally. Neither position changes emitted
-    # chunk text or token counts; see ``docs/specs/retrieval.md``.
-    heading_search_context: bool = True
+    # Heading search context, one field per heading-bearing content unit.
+    #
+    # Both default on, which is exactly what the single ``heading_search_context``
+    # field they replace did, so every default run is unchanged. They were split
+    # because the development factorial measured the factor to be *asymmetric*:
+    # heading context costs the compiler's IR-node unit page recall at every
+    # budget while helping structural chunks at the smaller budgets. One field
+    # made the useful configuration -- structural on, IR nodes off --
+    # unreachable. Splitting makes it reachable; it does not choose it. Neither
+    # default moves here.
+    #
+    # Neither position changes emitted chunk text or token counts on either
+    # unit: both only fill ``search_text``, which is what the indexes read and
+    # what a model never sees. The fixed unit reads neither field -- its windows
+    # already include heading nodes incidentally -- so it is constant across
+    # both. See ``docs/specs/retrieval.md``.
+
+    # Read by ``retrieval/chunking.structural_chunks``. Off reproduces the
+    # pre-fix structural behaviour exactly, leaving ``search_text`` as ``None``
+    # on every structural chunk, which is what keeps the ablation measurable.
+    structural_heading_search_context: bool = True
+    # Read by ``compiler/candidates.node_chunks``. Off leaves ``search_text``
+    # as ``None`` on every IR-node candidate; ``chunk.id`` is derived from node
+    # text alone, so neither position permutes candidate ids.
+    compiler_node_heading_search_context: bool = True
     sparse_k1: float = Field(default=1.5, gt=0)
     sparse_b: float = Field(default=0.75, ge=0, le=1)
     rrf_k: int = Field(default=60, ge=1)

@@ -205,6 +205,63 @@ def test_eval_retrieval_disables_keyed_table_joins(
     assert not captured["config"].compiler.keyed_table_join_enabled
 
 
+def test_eval_retrieval_exposes_the_compiler_node_heading_search_context(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """The asymmetric configuration has to be reachable from the command.
+
+    The factorial measured heading search context to cost the compiler's
+    IR-node unit page recall at every budget while helping structural chunks at
+    the smaller budgets, so the configuration worth measuring is structural on
+    and compiler nodes off. One ``RetrievalConfig`` is shared by every arm and
+    by the compiler, so the flag has to land on the compiler field *only* --
+    checked on both ``config.retrieval`` and ``config.compiler.retrieval``,
+    since the benchmark reads heading context through both.
+
+    Omitting the flag must reproduce the all-on default exactly: this phase
+    makes the configuration reachable and does not choose it.
+    """
+    captured: dict[str, dict] = {}
+
+    def fake_run_xl_retrieval(**kwargs):
+        captured[kwargs["run_id"]] = kwargs
+        return SimpleNamespace(
+            path=tmp_path / "artifacts" / "runs" / kwargs["run_id"],
+            manifest=SimpleNamespace(run_id=kwargs["run_id"]),
+        )
+
+    monkeypatch.setattr(
+        "contextbench.evaluation.xl_docbench.run_xl_retrieval",
+        fake_run_xl_retrieval,
+    )
+
+    asymmetric = runner.invoke(
+        app,
+        [
+            "eval-retrieval",
+            "--no-compiler-node-heading-search-context",
+            "--run-id",
+            "asymmetric",
+        ],
+    )
+    default = runner.invoke(app, ["eval-retrieval", "--run-id", "default"])
+
+    assert asymmetric.exit_code == 0, asymmetric.output
+    assert default.exit_code == 0, default.output
+
+    config = captured["asymmetric"]["config"]
+    for retrieval in (config.retrieval, config.compiler.retrieval):
+        assert retrieval.compiler_node_heading_search_context is False
+        # The structural baseline keeps heading access, which it needs to stay
+        # a fair baseline. The flag must not touch it.
+        assert retrieval.structural_heading_search_context is True
+
+    default_config = captured["default"]["config"]
+    for retrieval in (default_config.retrieval, default_config.compiler.retrieval):
+        assert retrieval.compiler_node_heading_search_context is True
+        assert retrieval.structural_heading_search_context is True
+
+
 def test_eval_factorial_defaults_to_small_fixed_corpus(
     tmp_path: Path, monkeypatch
 ) -> None:

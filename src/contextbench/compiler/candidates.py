@@ -19,10 +19,15 @@ def node_chunks(
 ) -> tuple[RetrievalChunk, ...]:
     """Represent each content-bearing IR node as a retrieval candidate.
 
-    ``config.heading_search_context`` is the same factor the structural
-    chunker reads, so an ablation can turn heading context off on both
-    heading-bearing content units rather than on one of them. It defaults on,
-    which is what the compiler has always done.
+    ``config.compiler_node_heading_search_context`` governs this unit only.
+    The structural chunker reads its own
+    ``config.structural_heading_search_context``: the two were split once the
+    factorial measured heading context to help structural chunks at the
+    smaller budgets while costing this unit page recall at every budget, which
+    a single shared field made impossible to act on. Both default on, so the
+    compiler still does what it has always done unless a run says otherwise.
+    ``FactorialConfig.heading_contexts`` deliberately sets both fields from one
+    position, so the ablation that produced that finding stays arm-symmetric.
     """
     my_config = config or RetrievalConfig()
     chunks: list[RetrievalChunk] = []
@@ -38,11 +43,11 @@ def node_chunks(
             # token count are identical in both positions.
             search_text = (
                 contextual_search_text(node.text, node.heading_path)
-                if my_config.heading_search_context
+                if my_config.compiler_node_heading_search_context
                 else None
             )
             # The id is derived from node text alone, never from the indexed
-            # string, so both positions of ``heading_search_context`` produce
+            # string, so both positions of the field above produce
             # identical ids. ``chunk.id`` is a deterministic tie-break sort key
             # in the indexes and in coverage packing, so letting it track
             # ``search_text`` made toggling the factor permute ids and move IR

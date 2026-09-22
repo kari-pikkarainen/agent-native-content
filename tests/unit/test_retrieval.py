@@ -317,7 +317,7 @@ def _structural_index(
         [ir],
         arm=RetrievalArm.STRUCTURAL,
         config=config.model_copy(
-            update={"heading_search_context": heading_context}
+            update={"structural_heading_search_context": heading_context}
         ),
         source_documents={ir.id: source},
         tokenizer=FixtureTokenCounter(),
@@ -334,7 +334,7 @@ def test_structural_chunks_index_heading_vocabulary_when_enabled(
     ``methods`` appears in the fixture as a level-1 heading and nowhere in any
     chunk body: the chunk under it carries only ``print('measured')``. So a hit
     here can only have come from ``search_text`` carrying the heading trail,
-    which is what ``heading_search_context`` turns on.
+    which is what ``structural_heading_search_context`` turns on.
     """
     index = _structural_index(tmp_path, retrieval_fixture, heading_context=True)
 
@@ -491,7 +491,7 @@ def test_heading_context_widens_candidate_dedupe_scope(tmp_path: Path) -> None:
             [ir],
             arm=RetrievalArm.STRUCTURAL,
             config=config.model_copy(
-                update={"heading_search_context": heading_context}
+                update={"structural_heading_search_context": heading_context}
             ),
             source_documents={ir.id: source},
             tokenizer=counter,
@@ -994,6 +994,34 @@ def test_index_key_changes_with_model_revision() -> None:
     assert _key() == pinned
 
 
+def test_index_key_separates_both_heading_search_context_fields() -> None:
+    """Each heading field must rekey on its own, and not collide with the other.
+
+    Derived indexes are cached under this key, and both fields change what a
+    unit indexes, so a run with either one off must never reuse an index built
+    with it on. Turning them off produces three distinct configurations --
+    structural only, compiler only, both -- and all four keys have to differ:
+    if only one field reached the key, two of these would collide and a cached
+    index would silently be reused across the setting the run was made to
+    change.
+    """
+    both_on = _key()
+    structural_off = _key(
+        config=RetrievalConfig(structural_heading_search_context=False)
+    )
+    nodes_off = _key(
+        config=RetrievalConfig(compiler_node_heading_search_context=False)
+    )
+    both_off = _key(
+        config=RetrievalConfig(
+            structural_heading_search_context=False,
+            compiler_node_heading_search_context=False,
+        )
+    )
+
+    assert len({both_on, structural_off, nodes_off, both_off}) == 4
+
+
 def test_index_key_is_stable_for_a_fixed_revision() -> None:
     """Pin the key for one fixed input so a payload change cannot pass silently.
 
@@ -1002,25 +1030,36 @@ def test_index_key_is_stable_for_a_fixed_revision() -> None:
     defaults would strand every cached index under a new key, so that change
     has to be made deliberately.
 
-    Both literals moved once when ``RetrievalConfig`` gained
-    ``structural_heading_search_context``, and again when that field was
-    renamed to ``heading_search_context`` so both heading-bearing content
-    units could read it. The key payload embeds
-    ``config.model_dump(mode="json")``, so a renamed config field rekeys every
-    cached index -- which is correct here, because the flag changes what the
-    structural and IR units index and a stale index must not be reused across
-    it.
+    Both literals have moved three times, each time because
+    ``RetrievalConfig`` changed shape: when it gained
+    ``structural_heading_search_context``; when that field was renamed to
+    ``heading_search_context`` so both heading-bearing content units read it;
+    and now that the one field is split back into
+    ``structural_heading_search_context`` and
+    ``compiler_node_heading_search_context``, one per unit. The key payload
+    embeds ``config.model_dump(mode="json")``, so any config field change
+    rekeys every cached index -- which is correct here, because these fields
+    change what the structural and IR units index and a stale index must not be
+    reused across either of them. That is the property the split has to
+    preserve: each field reaches the key on its own, so a run that turns one
+    off cannot reuse the index of a run that left it on.
 
-    Derived rather than re-recorded, at both steps. For the rename: rebuilding
-    this exact payload with the one config key renamed back to
-    ``structural_heading_search_context`` and hashing it the same way
-    reproduces the previous literals byte for byte --
+    Derived rather than re-recorded, at every step. For the split: rebuilding
+    this exact payload with the two config keys collapsed back into the single
+    ``heading_search_context`` they replace, value unchanged, and hashing it
+    the same way reproduces the previous literals byte for byte --
+    ``1df0d2dc8403e51f8e109387922e7a4fabafc38abd5787b174b726addf17d449``
+    offline and ``5d6ebb7ee0a00513a67ad06516d9ab2e1215a55df13389fc66442d5e9841
+    baf6`` hub-backed -- and the symmetric difference of the two config dumps is
+    exactly those three key names, with no shared key differing in value. The
+    split is therefore the whole of the difference.
+
+    For the rename before it: renaming the one key back to
+    ``structural_heading_search_context`` reproduced
     ``3dff8843ce030b48bd9ff9ca59eec5826e2be6c9d62409dfc9ae1b7f9e15d105``
     offline and ``8bc92172223a345ab003704cf6081998ac06d393fadf012cd30eb285f44
-    17b23`` hub-backed -- and the symmetric difference of the two config dumps
-    is exactly the old and new key names with an unchanged value. The rename is
-    therefore the whole of the difference. For the field's introduction before
-    it: deleting the key entirely reproduced
+    17b23`` hub-backed. For the field's introduction before that: deleting the
+    key entirely reproduced
     ``09fca44765c922c8ba0b5a1812ae172ab0a578842a7e52ff1887a14e40bdf99e``
     offline and ``fcafc11e9de5b97151c6b0bb473435f3fd6196e6e7fe3d247403fdb7b5
     c2e927`` hub-backed.
@@ -1032,9 +1071,9 @@ def test_index_key_is_stable_for_a_fixed_revision() -> None:
         reranker_model="lexical-overlap-v1",
         reranker_version="1",
         reranker_revision=None,
-    ) == "1df0d2dc8403e51f8e109387922e7a4fabafc38abd5787b174b726addf17d449"
+    ) == "f7d25a102c55a27ea2cd7eae004c2adcf1448b4e327c4a4c34495169282ff4d3"
 
-    assert _key() == "5d6ebb7ee0a00513a67ad06516d9ab2e1215a55df13389fc66442d5e9841baf6"
+    assert _key() == "034f7f527f5a306b5ebce87cc4c61edabc0917e15ac0d9642632487b8881388b"
 
 
 def test_configured_hub_model_requires_a_revision() -> None:

@@ -98,11 +98,12 @@ def expand_candidates(
                         # fragment scores 0.0 with this pin and 1.0 without it.
                         #
                         # This pin is about table *fragments*, not about the
-                        # compiler's node candidates. The node candidates read
-                        # ``heading_search_context`` so the factorial can
-                        # ablate heading context on the IR unit; this call site
-                        # stays pinned regardless of that factor, because the
-                        # stale-``search_text`` defect below is a separate
+                        # compiler's node candidates. These fragments come from
+                        # ``structural_chunks``, so the pin is on the structural
+                        # field; the node candidates read their own
+                        # ``compiler_node_heading_search_context``. This call
+                        # site stays pinned regardless of either field, because
+                        # the stale-``search_text`` defect below is a separate
                         # concern from what the node index matches on.
                         #
                         # The sharper reason is that the pin also keeps
@@ -126,7 +127,7 @@ def expand_candidates(
                         # The compiler adds heading context to the rendered
                         # fragment itself through ``include_heading_context``,
                         # so nothing is lost by pinning this off.
-                        "heading_search_context": False,
+                        "structural_heading_search_context": False,
                     }
                 )
                 table_chunks = structural_chunks(

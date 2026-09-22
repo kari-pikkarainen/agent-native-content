@@ -447,8 +447,8 @@ def test_node_candidate_ids_are_identical_across_heading_context(
     ``chunk.id`` is a deterministic tie-break sort key in ``retrieval/index``
     and in the coverage objective in ``compiler/pack``. While the node id
     payload embedded the *indexed* string, toggling
-    ``heading_search_context`` permuted every IR id and moved IR results by a
-    mechanism the structural unit does not have -- ``_chunk_from_nodes``
+    ``compiler_node_heading_search_context`` permuted every IR id and moved IR
+    results by a mechanism the structural unit does not have -- ``_chunk_from_nodes``
     omits ``search_text`` from its payload -- so an IR heading-on/off delta
     silently carried an arm-asymmetric id-permutation effect.
 
@@ -458,8 +458,8 @@ def test_node_candidate_ids_are_identical_across_heading_context(
     ``search_text``.
     """
     source, ir, _scope, counter = compiler_fixture
-    on_config = RetrievalConfig(heading_search_context=True)
-    off_config = RetrievalConfig(heading_search_context=False)
+    on_config = RetrievalConfig(compiler_node_heading_search_context=True)
+    off_config = RetrievalConfig(compiler_node_heading_search_context=False)
 
     on = node_chunks([ir], tokenizer=counter, config=on_config)
     off = node_chunks([ir], tokenizer=counter, config=off_config)
@@ -485,7 +485,9 @@ def test_node_candidate_ids_are_identical_across_heading_context(
         heading_context: structural_chunks(
             ir,
             source,
-            config=RetrievalConfig(heading_search_context=heading_context),
+            config=RetrievalConfig(
+                structural_heading_search_context=heading_context
+            ),
             tokenizer=counter,
         )
         for heading_context in (True, False)
@@ -493,6 +495,54 @@ def test_node_candidate_ids_are_identical_across_heading_context(
     assert [chunk.id for chunk in structural[True]] == [
         chunk.id for chunk in structural[False]
     ]
+
+
+def test_heading_search_context_fields_are_independent_per_content_unit(
+    compiler_fixture,
+) -> None:
+    """Each unit must read only its own field, in both directions.
+
+    The two units shared one ``heading_search_context`` until the development
+    factorial measured the factor to be asymmetric -- heading context costs the
+    IR-node unit page recall at every budget while helping structural chunks at
+    2K and 4K -- which made the useful configuration, structural on and IR
+    nodes off, unreachable. It is reachable only if turning one field off is
+    genuinely inert on the other unit, so both directions are asserted against
+    the all-on baseline rather than only against each other.
+    """
+    source, ir, _scope, counter = compiler_fixture
+
+    def indexed(config: RetrievalConfig) -> tuple[list, list]:
+        return (
+            [chunk.search_text for chunk in structural_chunks(
+                ir, source, config=config, tokenizer=counter
+            )],
+            [chunk.search_text for chunk in node_chunks(
+                [ir], tokenizer=counter, config=config
+            )],
+        )
+
+    both_on = RetrievalConfig()
+    structural_on, nodes_on = indexed(both_on)
+    # The baseline has to be heading-bearing on both units or the assertions
+    # below would hold vacuously.
+    assert any(text is not None for text in structural_on)
+    assert any(text is not None for text in nodes_on)
+
+    # Compiler field off: IR nodes stop indexing headings, structural chunks
+    # are untouched.
+    structural_text, node_text = indexed(
+        both_on.model_copy(update={"compiler_node_heading_search_context": False})
+    )
+    assert structural_text == structural_on
+    assert node_text == [None] * len(nodes_on)
+
+    # And the reverse.
+    structural_text, node_text = indexed(
+        both_on.model_copy(update={"structural_heading_search_context": False})
+    )
+    assert structural_text == [None] * len(structural_on)
+    assert node_text == nodes_on
 
 
 def test_prebuilt_index_must_share_compiler_retrieval_config(
@@ -916,19 +966,20 @@ def test_oversized_table_uses_reranked_docling_chunks(tmp_path: Path) -> None:
     assert "109" in packet.items[0].content
 
 
-def test_table_fragments_pin_heading_search_context_off(
+def test_table_fragments_pin_structural_heading_search_context_off(
     tmp_path: Path,
 ) -> None:
     """The pin at the table-fragment call site is load-bearing; keep it.
 
     ``expand_candidates`` builds table fragments with ``structural_chunks``,
-    and pins ``heading_search_context`` off there so that giving the
+    and pins ``structural_heading_search_context`` off there so that giving the
     structural arm heading context does not move the compiler. Delete the pin
     and this test fails on both assertions below.
 
     The pin is about table *fragments* and is independent of the compiler's
-    node candidates, which read the same field so the factorial can ablate
-    heading context on the IR unit. This call site stays pinned either way.
+    node candidates, which read their own
+    ``compiler_node_heading_search_context``. This call site stays pinned
+    either way.
 
     Two distinct effects, both measured on this fixture with the query
     ``"Results"`` -- the heading the table sits under:

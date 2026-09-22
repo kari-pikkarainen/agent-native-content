@@ -277,6 +277,17 @@ def evaluate_retrieval(
         str,
         typer.Option(help="Compiler packing strategy: ranked or coverage."),
     ] = "coverage",
+    compiler_node_heading_search_context: Annotated[
+        bool,
+        typer.Option(
+            "--compiler-node-heading-search-context"
+            "/--no-compiler-node-heading-search-context",
+            help=(
+                "Index the heading trail with each compiler IR-node candidate. "
+                "Off leaves the structural arm's heading context untouched."
+            ),
+        ),
+    ] = True,
     run_id: Annotated[
         str | None,
         typer.Option(help="Optional immutable run identifier."),
@@ -307,9 +318,16 @@ def evaluate_retrieval(
         reranker_model=reranker_model,
         reranker_revision=reranker_revision,
     )
+    # One ``RetrievalConfig`` is shared by every arm and by the compiler, so the
+    # asymmetric configuration the development factorial pointed at -- heading
+    # context for the structural baseline, none for the compiler's node
+    # candidates -- is reachable only because those are two fields. The
+    # structural field has no flag: this phase makes the asymmetry reachable
+    # without moving any default.
     retrieval = RetrievalConfig(
         embedding_model=embedding_model,
         reranker_model=reranker_model,
+        compiler_node_heading_search_context=compiler_node_heading_search_context,
     )
     config = RetrievalBenchmarkConfig(
         seed=seed,
