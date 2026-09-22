@@ -93,9 +93,31 @@ def expand_candidates(
                         # are scored by the reranker, which reads
                         # ``retrieval_text``; leaving the flag at its new
                         # default would change table fragment scores here as a
-                        # side effect of a change scoped to Arm B. The compiler
-                        # adds heading context to the rendered fragment itself
-                        # through ``include_heading_context``.
+                        # side effect of a change scoped to Arm B. Measured on
+                        # the oversized-table fixture, query "Results": every
+                        # fragment scores 0.0 with this pin and 1.0 without it.
+                        #
+                        # The sharper reason is that the pin also keeps
+                        # ``search_text`` out of the *expanded* candidate. The
+                        # reranker scores the raw structural chunks below,
+                        # before they are rendered, and the rendered string
+                        # then replaces ``text`` via ``model_copy``, which
+                        # carries ``search_text`` across unchanged. Without the
+                        # pin the emitted candidate keeps a stale
+                        # ``search_text`` -- the heading trail above the
+                        # *un-rendered* fragment body -- and since
+                        # ``retrieval_text`` is ``search_text or text``, that
+                        # stale string shadows the rendered text for every
+                        # downstream reader of ``retrieval_text``, including
+                        # the coverage and table-reference terms in
+                        # ``compiler/pack.py``. Measured on the same fixture,
+                        # the stale string omits the rendered header row that
+                        # ``text`` carries, so coverage would be scored against
+                        # a string the model never sees.
+                        #
+                        # The compiler adds heading context to the rendered
+                        # fragment itself through ``include_heading_context``,
+                        # so nothing is lost by pinning this off.
                         "structural_heading_search_context": False,
                     }
                 )

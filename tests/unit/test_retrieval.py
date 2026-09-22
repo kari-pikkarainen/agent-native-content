@@ -5,7 +5,15 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
-from test_ir import FixtureTokenCounter, ingest_metadata, source_document
+from docling_core.types.doc import DoclingDocument
+from docling_core.types.doc.base import Size
+from docling_core.types.doc.labels import DocItemLabel
+from test_ir import (
+    FixtureTokenCounter,
+    ingest_metadata,
+    provenance,
+    source_document,
+)
 
 from contextbench.ir import project_document
 from contextbench.ir.models import IRNodeKind
@@ -22,6 +30,7 @@ from contextbench.retrieval import (
     pack_evidence,
     rank_long_context,
 )
+from contextbench.retrieval.chunking import contextual_search_text
 from contextbench.retrieval.index import _index_key
 from contextbench.retrieval.sparse import BM25Index
 
@@ -394,7 +403,22 @@ def test_structural_heading_context_changes_no_emitted_text_or_token_count(
 
     assert emitted(on) == emitted(off)
     assert [chunk.search_text for chunk in off.chunks] == [None] * len(off.chunks)
-    assert all(chunk.search_text is not None for chunk in on.chunks)
+    # Stated as the exact per-chunk expectation rather than ``is not None``.
+    # ``chunking.py`` guards on ``and heading_path``, so a chunk with an empty
+    # trail correctly keeps ``search_text is None`` even with the flag on; a
+    # blanket ``is not None`` would hold here only because every chunk of this
+    # fixture happens to sit under a heading, and would fail spuriously the day
+    # one does not. This form is strictly stronger -- it pins the string, not
+    # just its presence -- while staying true for a heading-less chunk.
+    assert [chunk.search_text for chunk in on.chunks] == [
+        contextual_search_text(chunk.text, chunk.heading_path)
+        if chunk.heading_path
+        else None
+        for chunk in on.chunks
+    ]
+    # ...and not vacuous: at least one chunk must actually gain a trail, or the
+    # comparison above would pass against two lists of ``None``.
+    assert any(chunk.search_text is not None for chunk in on.chunks)
 
     packed_on = on.pack("measured", token_budget=12)
     packed_off = off.pack("measured", token_budget=12)
@@ -402,6 +426,109 @@ def test_structural_heading_context_changes_no_emitted_text_or_token_count(
         item.content for item in packed_off.items
     ]
     assert packed_on.token_count == packed_off.token_count
+
+
+def duplicate_body_source() -> DoclingDocument:
+    """Two identical paragraph bodies under two different level-1 headings."""
+    document = DoclingDocument(name="duplicate-body")
+    document.add_page(1, Size(width=612, height=792))
+    title = document.add_title(
+        "Annual Review",
+        prov=provenance(1, "Annual Review", 750),
+    )
+    body = "Revenue increased strongly."
+    for name, top in (("North", 700), ("South", 600)):
+        heading = document.add_heading(
+            name,
+            level=1,
+            parent=title,
+            prov=provenance(1, name, top),
+        )
+        document.add_text(
+            label=DocItemLabel.TEXT,
+            text=body,
+            parent=heading,
+            prov=provenance(1, body, top - 20),
+        )
+    return document
+
+
+def test_heading_context_widens_candidate_dedupe_scope(tmp_path: Path) -> None:
+    """Heading context also widens the dedupe key, for queries with no headings.
+
+    ``HybridIndex._unique_by_search_text`` dedupes on ``retrieval_text``, and it
+    runs on the sorted fused candidate list *before* ``rerank_limit`` is
+    applied. With the flag off, two chunks whose bodies are identical under
+    different headings share a dedupe key and collapse to one candidate: the
+    second is dropped, and with it its heading and its provenance. With the flag
+    on, the key is the heading trail above the body, so both survive into the
+    rerank pool and both consume a rerank slot.
+
+    This is a **second, independent mechanism** by which the flag moves
+    structural numbers. It is not heading-vocabulary matching: the query
+    asserted below shares no term with any heading in the fixture, and the
+    result still differs between the two positions of the flag. An ablation
+    that toggles this one flag therefore measures heading matching *and* dedupe
+    scope together, which is why the difference is recorded in
+    ``docs/specs/retrieval.md`` rather than left to be attributed to matching.
+
+    The widening is the correct behaviour and is not being changed here: two
+    passages under different headings are different evidence with different
+    provenance, and it makes the structural arm consistent with the compiler
+    arm, whose candidates have always carried heading-bearing ``search_text``.
+    """
+    source = duplicate_body_source()
+    counter = FixtureTokenCounter()
+    ir = project_document(source, ingest_metadata(tmp_path), tokenizer=counter)
+    config = RetrievalConfig(
+        structural_chunk_tokens=24,
+        candidate_limit=10,
+        rerank_limit=5,
+    )
+
+    def index(heading_context: bool) -> HybridIndex:
+        return HybridIndex.build(
+            [ir],
+            arm=RetrievalArm.STRUCTURAL,
+            config=config.model_copy(
+                update={"structural_heading_search_context": heading_context}
+            ),
+            source_documents={ir.id: source},
+            tokenizer=counter,
+            embedder=HashEmbeddingModel(config.embedding_dimensions),
+            artifacts_root=tmp_path / f"dedupe-artifacts-{heading_context}",
+        )
+
+    on = index(heading_context=True)
+    off = index(heading_context=False)
+
+    # Same chunks, same emitted text, in both positions: only the key differs.
+    assert [chunk.text for chunk in on.chunks] == [chunk.text for chunk in off.chunks]
+    assert len(on.chunks) == 2
+    assert on.chunks[0].text == on.chunks[1].text
+    assert on.chunks[0].heading_path != on.chunks[1].heading_path
+
+    # The query carries no heading vocabulary at all, which is the point.
+    query = "revenue"
+    headings = {
+        term
+        for chunk in on.chunks
+        for heading in chunk.heading_path
+        for term in heading.casefold().split()
+    }
+    assert not headings & set(query.casefold().split())
+
+    on_candidates = on.retrieve_candidates(query)
+    off_candidates = off.retrieve_candidates(query)
+
+    assert len(on_candidates) == 2
+    assert {evidence.chunk.heading_path for evidence in on_candidates} == {
+        ("Annual Review", "North"),
+        ("Annual Review", "South"),
+    }
+    assert len(off_candidates) == 1
+    assert len(on.retrieve(query)) == 2
+    assert len(off.retrieve(query)) == 1
 
 
 def test_token_budget_expands_rerank_pool_by_candidate_token_mass() -> None:

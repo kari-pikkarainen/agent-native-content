@@ -25,6 +25,29 @@ coverage objective. It does not use structural expansion, heading injection,
 sibling or list expansion, table preservation, keyed table joins, page-neighbor
 backfill, or an answer model.
 
+### The structural unit moved: published factorial numbers do not carry across
+
+The `Docling structural chunks` row is built by `evaluation/factorial.py`
+through `structural_chunks(config=config.retrieval)` with no pin, so it reads
+`RetrievalConfig.structural_heading_search_context` at its live default. That
+default changed from off to on, which gives structural chunks a `search_text`
+of their heading trail above their body. The field changes two things at once:
+heading vocabulary becomes matchable, and the candidate dedupe key widens so
+that identical bodies under different headings no longer collapse. Both are
+detailed in `docs/specs/retrieval.md`.
+
+Consequences for this experiment:
+
+- Every published structural-unit cell -- both policies -- was measured in the
+  old state and cannot be carried across, and neither can the representation
+  or policy comparisons drawn against it. The fixed-chunk and IR-node rows are
+  unaffected, so a partial rerun that refreshes only the structural row would
+  compare cells measured under two different behaviours.
+- `RetrievalConfig` is part of the derived-index key payload, so the change
+  rekeys cached indexes in either direction and no stale index is reused.
+- A run that deliberately reproduces the old state must set
+  `structural_heading_search_context=False` and record that it did.
+
 ## Interpretation
 
 - Compare IR with the better fixed/structural unit under the same policy to

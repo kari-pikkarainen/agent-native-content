@@ -19,7 +19,7 @@ from contextbench.compiler import (
     compile_context_with_trace,
 )
 from contextbench.compiler.candidates import node_chunks
-from contextbench.compiler.expand import _penalize
+from contextbench.compiler.expand import _penalize, expand_candidates
 from contextbench.compiler.joins import (
     _key_columns,
     _row_keys,
@@ -857,6 +857,83 @@ def test_oversized_table_uses_reranked_docling_chunks(tmp_path: Path) -> None:
     assert "Revenue" in packet.items[0].content
     assert "District9" in packet.items[0].content
     assert "109" in packet.items[0].content
+
+
+def test_table_fragments_pin_structural_heading_search_context_off(
+    tmp_path: Path,
+) -> None:
+    """The pin at the table-fragment call site is load-bearing; keep it.
+
+    ``expand_candidates`` builds table fragments with ``structural_chunks``,
+    and pins ``structural_heading_search_context`` off there so that giving the
+    structural arm heading context does not move the compiler. Delete the pin
+    and this test fails on both assertions below.
+
+    Two distinct effects, both measured on this fixture with the query
+    ``"Results"`` -- the heading the table sits under:
+
+    1. The reranker scores the raw structural chunks *before* they are
+       rendered, and it reads ``retrieval_text``. Without the pin the heading
+       trail is in that string, so every fragment scores 1.0 instead of 0.0 and
+       the fragment ordering inside the table changes for any query phrased in
+       heading vocabulary.
+    2. Worse, the rendered string replaces ``text`` through ``model_copy``,
+       which carries ``search_text`` across unchanged. Without the pin the
+       expanded candidate therefore keeps a **stale** ``search_text`` -- the
+       heading trail above the *un-rendered* fragment body -- and since
+       ``retrieval_text`` is ``search_text or text``, that stale string shadows
+       the rendered text for everything downstream that reads it, including the
+       coverage and table-reference terms in ``compiler/pack.py``. The rendered
+       header row is in ``text`` and absent from the stale ``search_text``.
+
+    The pin is not a no-op and is not cosmetic: it is what keeps a change
+    scoped to Arm B out of the compiler arm.
+    """
+    source = oversized_table_source()
+    counter = FixtureTokenCounter()
+    ir = project_document(source, ingest_metadata(tmp_path), tokenizer=counter)
+    config = compiler_config(
+        retrieval=RetrievalConfig(candidate_limit=5, rerank_limit=5),
+        include_heading_context=False,
+        table_chunk_tokens=12,
+    )
+    index = HybridIndex(
+        node_chunks([ir], tokenizer=counter),
+        config=config.retrieval,
+        tokenizer=counter,
+    )
+    query = "Results"
+
+    candidates = expand_candidates(
+        query,
+        index.retrieve(query),
+        [ir],
+        source_documents={ir.id: source},
+        token_budget=17,
+        config=config,
+        tokenizer=counter,
+        reranker=LexicalOverlapReranker(),
+    )
+
+    fragments = [
+        candidate
+        for candidate in candidates
+        if candidate.operator == "table_fragment"
+    ]
+    assert len(fragments) > 1
+    # No stale search_text: what the compiler reads downstream is the rendered
+    # string and nothing else.
+    assert all(fragment.chunk.search_text is None for fragment in fragments)
+    assert all(
+        fragment.chunk.retrieval_text == fragment.chunk.text
+        for fragment in fragments
+    )
+    assert all("District | Revenue" in fragment.chunk.text for fragment in fragments)
+    # The fragments carry no heading vocabulary, so the heading query scores
+    # zero against every one of them. Without the pin these are all 1.0.
+    assert [fragment.scores.reranked for fragment in fragments] == [0.0] * len(
+        fragments
+    )
 
 
 def test_keyed_table_join_selects_constraint_row_and_preserves_provenance(

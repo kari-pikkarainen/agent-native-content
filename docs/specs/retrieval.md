@@ -243,6 +243,49 @@ arms; a run that deliberately reproduces the old state must set
 cached index rekeys across the change in either direction -- a stale index is
 never reused across it.
 
+**The field moves structural numbers by two independent mechanisms, not one.**
+The first is the one described above: heading vocabulary becomes matchable. The
+second is dedupe scope. `HybridIndex._unique_by_search_text` dedupes on
+`retrieval_text`, and it runs on the sorted fused candidate list *before*
+`rerank_limit` is applied. With the field off, two chunks whose body text is
+identical under two *different* headings share a dedupe key and collapse into a
+single candidate; the second is discarded along with its heading and its
+provenance. With the field on the key is the heading trail above the body, so
+both survive, both enter the rerank pool, and both consume a rerank slot --
+which displaces whatever would otherwise have occupied it. **This operates
+independently of heading-vocabulary matching: it changes results for queries
+containing no heading term at all**, and it is exercised as such by
+`test_heading_context_widens_candidate_dedupe_scope`. The wider scope is the
+correct behaviour and is deliberate -- two passages under different headings
+are different evidence with different provenance, and it puts the structural
+arm on the same footing as the compiler arm, whose candidates have always
+carried heading-bearing `search_text`. It is recorded here because an ablation
+toggling this one field measures **heading matching plus dedupe scope
+together**, and attributing the whole of the resulting delta to matching would
+be wrong. Separating the two requires a second ablation that varies the dedupe
+key independently of what is indexed; none has been run.
+
+**Blast radius beyond the retrieval arm.** The field is read wherever
+`structural_chunks` is called with an unpinned `RetrievalConfig`. That includes
+`evaluation/factorial.py`, which builds the `ContentUnit.STRUCTURAL` index
+through `structural_chunks(config=config.retrieval)` with no pin, so the new
+default changes the factorial's structural-unit cells too. Published
+**factorial** structural-unit results, and the unit and policy comparisons
+drawn from them, carry the old behaviour exactly as the retrieval arm's numbers
+do and cannot be carried across either. See `docs/specs/factorial.md`.
+
+**The compiler arm is untouched because of an explicit pin, not automatically.**
+`compiler/expand.py` builds oversized-table fragments with `structural_chunks`
+and pins `structural_heading_search_context=False` at that one call site. That
+pin is the whole of the isolation: remove it and table fragment reranker scores
+move, and the expanded candidate also keeps a stale `search_text` -- the
+heading trail above the *un-rendered* fragment body -- which shadows the
+rendered `text` for every downstream reader of `retrieval_text`, including the
+coverage and table-reference terms in `compiler/pack.py`. The pin is covered by
+`test_table_fragments_pin_structural_heading_search_context_off`. Any new
+`structural_chunks` call site inside the compiler needs the same pin, or the
+change stops being scoped to Arm B.
+
 ### How much the sparse defect cost each arm
 
 The share of the sparse channel that was noise was measured before the fix,
