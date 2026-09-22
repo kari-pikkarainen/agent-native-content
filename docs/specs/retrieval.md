@@ -34,8 +34,17 @@ same release made this larger, not smaller: with furniture interleaved in
 reading order rather than appended in one block, it would have touched 2,617 of
 4,895 fixed windows instead of 235.
 
-Any new retrieval surface must apply the same exclusion. It is a property of
-the arms being comparable, not an optimization.
+**The rule is an allowlist: index `content_layer == "body"`.** Not "everything
+except furniture". Both spellings select the same nodes today — `IRNode.content_layer`
+is `Literal["body", "furniture"]`, enforced at validation, so no IR node can
+hold a third value — but they diverge the moment a layer is added, and only the
+allowlist fails safe. Every surface listed above now spells it that way; until
+compiler 0.10.0, `fixed_chunks` and `node_chunks` used the denylist form while
+the other four used the allowlist, which left this paragraph's requirement
+written against two rules at once.
+
+Any new retrieval surface must apply that rule. It is a property of the arms
+being comparable, not an optimization.
 
 ## Shared retrieval pipeline
 

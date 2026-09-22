@@ -35,7 +35,8 @@ def node_chunks(
         for node in document.nodes:
             if (
                 not node.text.strip()
-                or node.content_layer == "furniture"
+                # Allowlist, matching every other retrieval surface.
+                or node.content_layer != "body"
                 or node.kind in _NON_EVIDENCE_GROUPS
             ):
                 continue

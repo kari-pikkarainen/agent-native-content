@@ -141,7 +141,19 @@ def _ordered_items(document: DoclingDocument) -> Iterable[NodeItem]:
             root=root,
             with_groups=True,
             traverse_pictures=True,
-            included_content_layers=set(ContentLayer),
+            # Named explicitly rather than ``set(ContentLayer)``, which asks
+            # for five layers the projection cannot represent:
+            # ``IRNode.content_layer`` is ``Literal["body", "furniture"]`` and
+            # ``_project_node`` raises ``IRProjectionError`` on anything else.
+            # Asking for all of them declared an intent the code refuses. This
+            # is not a behaviour change in either direction -- the collections
+            # sweep below reads ``document.texts``, which holds every layer, so
+            # a BACKGROUND item reached ``_project_node`` and raised there too,
+            # and the 28 cached documents contain only these two layers and
+            # project 72,745 items under either spelling. What it buys is that
+            # a sixth layer in a future docling-core is ignored here instead of
+            # being silently pulled into the walk.
+            included_content_layers={ContentLayer.BODY, ContentLayer.FURNITURE},
         ):
             if item.self_ref in _ROOT_REFS or item.self_ref in seen:
                 continue

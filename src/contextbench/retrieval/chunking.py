@@ -84,11 +84,21 @@ def fixed_chunks(
     is 5,804 nodes and 40,132 tokens, 1.9% of text, and reads like
     ``'2018 l Annual Report'`` repeated once per page. The nodes stay in the
     IR with their provenance; this is a retrieval-surface decision only.
+
+    The rule is an allowlist -- index ``body``, not "everything except
+    furniture" -- and it is stated once in ``docs/specs/retrieval.md`` under
+    "No retrieval surface indexes furniture". Both spellings select the same
+    nodes today, because ``IRNode.content_layer`` is
+    ``Literal["body", "furniture"]``, so there is no third value an IR node
+    can hold. They stop agreeing the moment a layer is added, and then the
+    allowlist is the one that fails safe.
     """
     counter = tokenizer or TiktokenTokenCounter(config.tokenizer_name)
     streams: list[tuple[list[Any], str]] = []
     for node in document.nodes:
-        if node.text and node.content_layer != "furniture":
+        # Allowlist, matching every other retrieval surface. See the spec
+        # section named in the docstring for why the rule is stated this way.
+        if node.text and node.content_layer == "body":
             encoded = _encode(node.text, counter)
             streams.append((encoded, node.id))
     if not streams:

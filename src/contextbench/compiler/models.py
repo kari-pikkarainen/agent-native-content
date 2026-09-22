@@ -31,6 +31,28 @@ from contextbench.retrieval.models import (
 # they do not move and cannot signal it. The criterion is still the right one
 # to bump on -- packet contents can differ -- but it does not describe the
 # change; the fixed arm moves too and this constant says nothing about that.
+#
+# There is no companion IR projection version, and there should not be. The
+# 0.10.0 commit message says one "is proposed there and not implemented"; that
+# is wrong, nothing was proposed here, and the correction is this paragraph.
+# A hand-maintained projection constant would be redundant against
+# ``resolve_git_state``, which pins the commit and refuses a dirty worktree, so
+# the recorded SHA already pins ``ir/project.py`` byte for byte. Worse, it
+# would be unchecked: a projection change with a forgotten bump asserts a
+# sameness nobody verified, which is a weaker guarantee than the SHA it
+# duplicates.
+#
+# The real gap is the derived-index key. ``_index_key`` hashes chunk *ids*,
+# and a compiler node chunk's id covers document, node id and text but not
+# ``heading_path`` or ``search_text``. Measured on the first cached document
+# across the 0.10.0 change, 119 of 1,034 node chunks kept their id while their
+# heading path moved. The ``xldev24`` rerun was not served stale vectors
+# because ordinals also permuted the id list and the key is an ordered list, so
+# the key moved anyway; that is luck, not a guarantee. It is not silent, which
+# is the part that matters: ``HybridIndex.load`` compares full ``RetrievalChunk``
+# models, so a key collision with different content raises rather than serving
+# the wrong vectors. Rekeying on chunk content belongs in its own commit, since
+# it invalidates every index artifact at once.
 COMPILER_VERSION = "0.10.0"
 
 # ``priority_tier`` states a candidate's class and nothing else. It must never
