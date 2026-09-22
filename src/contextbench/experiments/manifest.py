@@ -100,14 +100,17 @@ def resolve_git_state(
 ) -> tuple[str, bool]:
     """Resolve the provenance recorded in a manifest and refuse dirty runs.
 
-    A caller that supplies ``git_commit`` owns the provenance it records: the
-    worktree is never inspected, so the caller must state ``git_dirty`` in the
-    same call. Omitting it is refused rather than defaulted in either
-    direction, because defaulting to ``False`` would let an uninspected
-    worktree assert a cleanliness nobody checked.
+    There are exactly two modes, selected by ``git_commit`` and ``git_dirty``
+    together. Supply both and the caller owns the whole record: the worktree
+    is never inspected. Supply neither and both values are read from the
+    worktree, and a dirty worktree raises ``error`` unless ``allow_dirty`` is
+    set.
 
-    Otherwise both values are read from the worktree, and a dirty worktree
-    raises ``error`` unless ``allow_dirty`` is set.
+    Half a pair is refused rather than filled in. A commit without a
+    cleanliness claim would let an uninspected worktree assert a cleanliness
+    nobody checked; a cleanliness claim without a commit would be stamped
+    beside an inspected commit, producing a manifest that looks inspected
+    throughout but is not.
     """
     if git_commit is not None:
         if git_dirty is None:
@@ -119,8 +122,17 @@ def resolve_git_state(
             )
         return git_commit, bool(git_dirty)
 
+    if git_dirty is not None:
+        raise error(
+            "git_commit must be supplied alongside git_dirty: without a "
+            "caller-supplied commit the worktree is inspected, and pairing "
+            "an inspected commit with an uninspected cleanliness claim would "
+            "record provenance that was never fully checked; pass both to "
+            "own the record, or neither to have both values inspected"
+        )
+
     resolved_commit = current_git_commit()
-    resolved_dirty = current_git_dirty() if git_dirty is None else bool(git_dirty)
+    resolved_dirty = current_git_dirty()
     if resolved_dirty and not allow_dirty:
         raise error(
             "refusing to record a benchmark run from a modified worktree: "

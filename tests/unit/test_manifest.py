@@ -134,6 +134,36 @@ def test_supplied_commit_without_dirty_state_is_refused(monkeypatch) -> None:
         manifest.resolve_git_state(git_commit="c" * 40, allow_dirty=True)
 
 
+def test_supplied_dirty_state_without_a_commit_is_refused(monkeypatch) -> None:
+    """A cleanliness claim must not be stamped beside an inspected commit."""
+
+    def forbidden(*args: object, **kwargs: object) -> None:
+        raise AssertionError("a half-supplied provenance pair must be refused")
+
+    monkeypatch.setattr(subprocess, "run", forbidden)
+    monkeypatch.setattr(manifest, "current_git_commit", forbidden)
+    monkeypatch.setattr(manifest, "current_git_dirty", forbidden)
+
+    with pytest.raises(ValueError, match="git_commit must be supplied"):
+        manifest.resolve_git_state(
+            git_commit=None,
+            git_dirty=False,
+            allow_dirty=False,
+            error=ValueError,
+        )
+
+    with pytest.raises(RuntimeError, match="git_commit must be supplied"):
+        manifest.resolve_git_state(git_commit=None, git_dirty=True, allow_dirty=True)
+
+
+def test_omitting_both_values_inspects_the_worktree(monkeypatch) -> None:
+    """The documented inspected mode must read both values from the worktree."""
+    monkeypatch.setattr(manifest, "current_git_commit", lambda: "f" * 40)
+    monkeypatch.setattr(manifest, "current_git_dirty", lambda: False)
+
+    assert manifest.resolve_git_state(git_commit=None) == ("f" * 40, False)
+
+
 def test_dirty_refusal_names_both_the_cli_and_api_remedies(monkeypatch) -> None:
     monkeypatch.setattr(manifest, "current_git_commit", lambda: "e" * 40)
     monkeypatch.setattr(manifest, "current_git_dirty", lambda: True)

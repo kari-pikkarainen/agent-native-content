@@ -19,6 +19,7 @@ from contextbench.evaluation import (
     RetrievalBenchmarkSummary,
     run_retrieval_benchmark,
 )
+from contextbench.evaluation import runner as evaluation_runner
 from contextbench.evaluation.evidence import evaluate_context
 from contextbench.evaluation.models import RetrievalSummaryRow
 from contextbench.evaluation.reports import markdown_report, summarize
@@ -471,6 +472,43 @@ def test_dirty_worktree_is_refused_before_any_artifact_is_written(
 
     with pytest.raises(EvaluationError, match="modified worktree"):
         _run_from_worktree(tmp_path, run_id="dirty-run", allow_dirty=False)
+
+    assert not artifacts_root.exists()
+
+
+def test_dirty_worktree_is_refused_before_any_model_is_constructed(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    """The gate must fire before an embedder or reranker can load weights."""
+    monkeypatch.setattr(manifest, "current_git_commit", lambda: "d" * 40)
+    monkeypatch.setattr(manifest, "current_git_dirty", lambda: True)
+
+    def forbidden(*args: object, **kwargs: object) -> None:
+        raise AssertionError(
+            "model construction must not run before the worktree gate"
+        )
+
+    monkeypatch.setattr(evaluation_runner, "embedding_model_from_config", forbidden)
+    monkeypatch.setattr(evaluation_runner, "reranker_from_config", forbidden)
+    artifacts_root = tmp_path / "artifacts"
+
+    with pytest.raises(EvaluationError, match="modified worktree"):
+        run_retrieval_benchmark(
+            _corpus(tmp_path),
+            config=_config(),
+            artifacts_root=artifacts_root,
+            dataset="fixture",
+            dataset_version="v1",
+            dataset_revision="revision-1",
+            subset_name="fixture-one",
+            subset_sha256="1" * 64,
+            run_id="dirty-run-no-models",
+            tokenizer=FixtureTokenCounter(),
+            git_commit=None,
+            allow_dirty=False,
+            clock=lambda: datetime(2026, 9, 21, tzinfo=UTC),
+        )
 
     assert not artifacts_root.exists()
 

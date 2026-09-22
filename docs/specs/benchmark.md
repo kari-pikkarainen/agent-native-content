@@ -846,7 +846,9 @@ random_seed
 environment info
 ```
 
-`git_dirty` records whether the worktree differed from `git_commit`. A run
+`git_dirty` records whether the worktree differed from `git_commit`. The
+check fails closed, so an unknown worktree state, such as one left by a
+missing or failing Git executable, is also recorded as dirty. A run
 from a modified worktree is refused unless it is explicitly stamped dirty,
 and a dirty run is not a reproducible result.
 
