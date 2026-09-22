@@ -22,7 +22,7 @@ from contextbench.generation import (
     run_generation_benchmark,
 )
 from contextbench.generation.models import AnswerRequest
-from contextbench.generation.runner import _summarize
+from contextbench.generation.runner import _markdown_report, _summarize
 from contextbench.generation.scoring import accuracy_score, anls_score, token_f1_score
 
 
@@ -616,3 +616,177 @@ def test_openai_provider_marks_non_completed_responses_provider_invalid() -> Non
     # A truncated response can carry no text and must still be costed.
     assert result.text == ""
     assert result.output_tokens == 256
+
+
+class TruncatedJudgeProvider(FixtureProvider):
+    """Answers normally but reports every judge response as non-completed.
+
+    The judge text stays parseable and positive, so a run that ignored the
+    judge's provider status would publish ``citation_entailment == 1.0`` for a
+    verdict no completed judge ever gave.
+    """
+
+    def generate(self, request: AnswerRequest, *, config: GenerationConfig):
+        answer = super().generate(request, config=config)
+        if request.system.endswith(":citation_entailment_judge"):
+            return answer.model_copy(
+                update={
+                    "status": "incomplete",
+                    "incomplete_reason": "max_output_tokens",
+                }
+            )
+        return answer
+
+
+def test_truncated_judge_is_invalid_and_publishes_no_entailment(
+    tmp_path: Path,
+) -> None:
+    """A cut-off judge must not publish a positive entailment score."""
+    retrieval = _run(tmp_path, run_id="retrieval-truncated-judge")
+    provider = TruncatedJudgeProvider()
+    config = _generation_config().model_copy(
+        update={
+            "systems": (BenchmarkSystem.COMPILER,),
+            "citation_entailment_judge": True,
+        }
+    )
+
+    result = run_generation_benchmark(
+        retrieval.path,
+        _corpus(tmp_path).questions,
+        config=config,
+        provider=provider,
+        artifacts_root=tmp_path / "artifacts",
+        run_id="generation-truncated-judge",
+        git_commit="b" * 40,
+        git_dirty=False,
+        clock=lambda: datetime(2026, 9, 20, tzinfo=UTC),
+    )
+
+    record = result.records[0]
+    # The answer call itself completed, so only the judge is at fault.
+    assert record.response_valid is True
+    assert record.citation_entailment_judge_valid is False
+    assert record.citation_entailment == 0.0
+    assert record.judge_provider_status == "incomplete"
+    assert record.judge_provider_incomplete_reason == "max_output_tokens"
+    # The judge text was parseable and asserted entailment: only the provider
+    # status separates this failure from a genuine positive verdict.
+    assert json.loads(record.citation_entailment_judge_raw_response)["entailed"]
+    # The truncated judge call is still costed rather than discarded.
+    assert record.calls == 2
+    assert record.cost_usd == pytest.approx(0.00022)
+
+    row = result.summary.rows[0]
+    assert row.citation_entailment_judge_valid_rate == 0.0
+    assert row.mean_citation_entailment == 0.0
+    written = json.loads(
+        (result.path / "generation.jsonl").read_text(encoding="utf-8").splitlines()[0]
+    )
+    assert written["citation_entailment_judge_valid"] is False
+    assert written["judge_provider_incomplete_reason"] == "max_output_tokens"
+    summary = json.loads((result.path / "summary.json").read_text(encoding="utf-8"))
+    assert summary["rows"][0]["citation_entailment_judge_valid_rate"] == 0.0
+    assert summary["rows"][0]["mean_citation_entailment"] == 0.0
+
+
+def test_judge_valid_rate_separates_an_absent_judge_from_a_failed_one() -> None:
+    """An arm that never called the judge must not look like one that failed."""
+    absent = _summarize(
+        "generation-no-judge",
+        "retrieval-fixture",
+        (_generation_record(question_id="question-1"),),
+    )
+
+    assert absent.rows[0].citation_entailment_judge_valid_rate is None
+
+    mixed = _summarize(
+        "generation-judge",
+        "retrieval-fixture",
+        (
+            _generation_record(
+                question_id="question-1",
+                citation_entailment=1.0,
+                citation_entailment_judge_valid=True,
+            ),
+            _generation_record(
+                question_id="question-2",
+                citation_entailment=0.0,
+                citation_entailment_judge_valid=False,
+                judge_provider_status="incomplete",
+                judge_provider_incomplete_reason="max_output_tokens",
+            ),
+            # No judge call for this cell: it is neither a pass nor a failure.
+            _generation_record(question_id="question-3"),
+        ),
+    )
+
+    assert mixed.rows[0].citation_entailment_judge_valid_rate == 0.5
+    assert mixed.rows[0].question_count == 3
+    assert "| n/a |" in _markdown_report(absent)
+    assert "| 0.500 |" in _markdown_report(mixed)
+
+
+def test_openai_provider_records_a_response_that_reports_no_usage() -> None:
+    """A response without a usage block must be recorded, not raise."""
+
+    class Responses:
+        @staticmethod
+        def create(**_kwargs):
+            return SimpleNamespace(
+                id="response-1",
+                model="resolved-model",
+                output_text='{"answer":"yes","citations":[]}',
+                status="completed",
+                usage=None,
+            )
+
+    provider = OpenAIAnswerProvider(client=SimpleNamespace(responses=Responses()))
+
+    result = provider.generate(_provider_request(), config=_generation_config())
+
+    assert result.input_tokens == 0
+    assert result.output_tokens == 0
+    assert result.cached_input_tokens == 0
+    assert result.reasoning_tokens == 0
+    assert result.provider_usage == {}
+    assert result.text == '{"answer":"yes","citations":[]}'
+    assert result.provider_valid is True
+
+
+def test_openai_provider_records_unreadable_response_text() -> None:
+    """Unreadable text is a recorded failure, not an aborted run."""
+
+    class _Response:
+        id = "response-1"
+        model = "resolved-model"
+        status = "completed"
+        usage = SimpleNamespace(
+            input_tokens=120,
+            output_tokens=20,
+            total_tokens=140,
+            input_tokens_details=SimpleNamespace(cached_tokens=0),
+            output_tokens_details=SimpleNamespace(reasoning_tokens=0),
+        )
+
+        @property
+        def output_text(self) -> str:
+            raise TypeError("'NoneType' object is not iterable")
+
+    class Responses:
+        @staticmethod
+        def create(**_kwargs):
+            return _Response()
+
+    provider = OpenAIAnswerProvider(client=SimpleNamespace(responses=Responses()))
+
+    result = provider.generate(_provider_request(), config=_generation_config())
+
+    assert result.text == ""
+    assert result.text_error is not None
+    assert result.text_error.startswith("TypeError:")
+    # The provider reported a completed response, so only the unreadable text
+    # makes this a failure; it must not be scored as an empty answer.
+    assert result.status == "completed"
+    assert result.provider_valid is False
+    assert result.input_tokens == 120

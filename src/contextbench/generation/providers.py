@@ -66,6 +66,7 @@ class OpenAIAnswerProvider:
         if config.seed is not None:
             params["seed"] = config.seed
         response = self._client.responses.create(**params)
+        text, text_error = _response_text(response)
         usage = response.usage
         input_details = getattr(usage, "input_tokens_details", None)
         output_details = getattr(usage, "output_tokens_details", None)
@@ -90,7 +91,7 @@ class OpenAIAnswerProvider:
         return ProviderAnswer(
             # A truncated response can carry no text at all; an empty string
             # keeps the failed cell recorded instead of raising mid-run.
-            text=response.output_text or "",
+            text=text,
             model_id=response.model,
             response_id=response.id,
             input_tokens=input_tokens,
@@ -102,7 +103,26 @@ class OpenAIAnswerProvider:
             incomplete_reason=_incomplete_reason(
                 getattr(response, "incomplete_details", None)
             ),
+            text_error=text_error,
         )
+
+
+def _response_text(response: Any) -> tuple[str, str | None]:
+    """Read the response text, recording rather than raising on failure.
+
+    ``output_text`` is a computed property that walks ``response.output``, so
+    a partial response can in principle raise inside it. Letting that escape
+    would abort the whole run and lose every call already paid for, while
+    swallowing it would make an unreadable response indistinguishable from a
+    model that said nothing. The reason is therefore returned alongside the
+    empty text and recorded on the cell, which ``provider_valid`` then marks
+    as a failure.
+    """
+    try:
+        text = response.output_text
+    except Exception as exc:  # noqa: BLE001 - the SDK property is opaque here
+        return "", f"{type(exc).__name__}: {exc}"
+    return (text or ""), None
 
 
 def _incomplete_reason(details: Any) -> str | None:

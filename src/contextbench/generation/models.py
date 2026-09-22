@@ -81,6 +81,10 @@ class ProviderAnswer(BaseModel):
     # no status, which cannot be read as a failure.
     status: str | None = None
     incomplete_reason: str | None = None
+    # Set when the provider returned a response whose text could not be read.
+    # Empty text on its own cannot be told apart from a model that said
+    # nothing, so the reason is carried explicitly rather than inferred.
+    text_error: str | None = None
 
     @model_validator(mode="after")
     def cached_tokens_are_part_of_input(self) -> "ProviderAnswer":
@@ -90,12 +94,16 @@ class ProviderAnswer(BaseModel):
 
     @property
     def provider_valid(self) -> bool:
-        """Whether the provider itself reports a completed response.
+        """Whether the provider returned a completed, readable response.
 
         A truncated response still returns text, so without this check a
         cut-off answer is scored as a wrong answer rather than as a failure.
+        An unreadable response is a failure for the same reason: its empty
+        text would otherwise be scored as a bad answer.
         """
-        return self.status is None or self.status == "completed"
+        return self.text_error is None and (
+            self.status is None or self.status == "completed"
+        )
 
 
 class GenerationEvaluationRecord(BaseModel):
@@ -117,6 +125,7 @@ class GenerationEvaluationRecord(BaseModel):
     response_valid: bool
     provider_status: str | None = None
     provider_incomplete_reason: str | None = None
+    provider_text_error: str | None = None
     accuracy: float = Field(ge=0, le=1)
     token_f1: float = Field(ge=0, le=1)
     anls: float = Field(ge=0, le=1)
@@ -125,9 +134,17 @@ class GenerationEvaluationRecord(BaseModel):
     # citation alignment with registered gold pages, not semantic entailment.
     citation_support: float | None = Field(default=None, ge=0, le=1)
     citation_entailment: float | None = Field(default=None, ge=0, le=1)
+    # ``None`` means no judge call was made for this cell, either because the
+    # judge is disabled or because there was nothing citable to judge. It is
+    # not a judge failure and must never be aggregated as one. ``False`` means
+    # a judge call was made and the provider did not complete it or its output
+    # did not satisfy the strict JSON entailment contract.
     citation_entailment_judge_valid: bool | None = None
     citation_entailment_judge_reason: str | None = None
     citation_entailment_judge_raw_response: str | None = None
+    judge_provider_status: str | None = None
+    judge_provider_incomplete_reason: str | None = None
+    judge_provider_text_error: str | None = None
     citation_present: bool
     insufficient_evidence_correct: bool
     input_tokens: int = Field(ge=0)
@@ -159,7 +176,13 @@ class GenerationSummaryRow(BaseModel):
     # Share of cells whose response was both provider-completed and parseable.
     # Without it an arm truncated at 40% reads exactly like one that answered
     # badly.
-    response_valid_rate: float
+    response_valid_rate: float = Field(ge=0, le=1)
+    # Share of the cells that actually called the citation-entailment judge
+    # whose judge call both completed and parsed. ``None`` means no cell in
+    # this group called the judge at all, which is not a judge failure.
+    citation_entailment_judge_valid_rate: float | None = Field(
+        default=None, ge=0, le=1
+    )
     mean_accuracy: float
     mean_token_f1: float
     mean_anls: float

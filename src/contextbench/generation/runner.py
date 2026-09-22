@@ -222,9 +222,16 @@ def run_generation_benchmark(
                     time.perf_counter_ns() - judge_started
                 ) / 1_000_000
                 judge_raw_response = judge_response.text
-                entailed, judge_reason, judge_valid = (
+                entailed, judge_reason, judge_parsed_valid = (
                     parse_citation_entailment_response(judge_response.text)
                 )
+                # A judge response the provider cut short can still parse:
+                # partial JSON that happens to be well formed would publish a
+                # positive entailment no completed judge ever asserted. The
+                # judge shares this run's output-token ceiling while seeing
+                # the full cited evidence, so it is at least as exposed to
+                # truncation as the answer call it is checking.
+                judge_valid = judge_parsed_valid and judge_response.provider_valid
                 citation_entailment = float(entailed) if judge_valid else 0.0
         total_input_tokens = response.input_tokens + (
             judge_response.input_tokens if judge_response is not None else 0
@@ -257,6 +264,7 @@ def run_generation_benchmark(
                 response_valid=response_valid,
                 provider_status=response.status,
                 provider_incomplete_reason=response.incomplete_reason,
+                provider_text_error=response.text_error,
                 accuracy=accuracy,
                 token_f1=token_f1,
                 anls=anls,
@@ -266,6 +274,17 @@ def run_generation_benchmark(
                 citation_entailment_judge_valid=judge_valid,
                 citation_entailment_judge_reason=judge_reason,
                 citation_entailment_judge_raw_response=judge_raw_response,
+                judge_provider_status=(
+                    judge_response.status if judge_response is not None else None
+                ),
+                judge_provider_incomplete_reason=(
+                    judge_response.incomplete_reason
+                    if judge_response is not None
+                    else None
+                ),
+                judge_provider_text_error=(
+                    judge_response.text_error if judge_response is not None else None
+                ),
                 citation_present=bool(citations),
                 insufficient_evidence_correct=(
                     (not question.answerable)
@@ -464,12 +483,23 @@ def _summarize(
             for cell in cells
             if cell.citation_entailment is not None
         ]
+        # Only cells that actually called the judge can report whether the
+        # judge worked. An arm that never enabled the judge reports ``None``
+        # so it cannot be read as an arm whose judge failed everywhere.
+        judged = [
+            cell.citation_entailment_judge_valid
+            for cell in cells
+            if cell.citation_entailment_judge_valid is not None
+        ]
         rows.append(
             GenerationSummaryRow(
                 system=system,
                 token_budget=budget,
                 question_count=len(cells),
                 response_valid_rate=mean(cell.response_valid for cell in cells),
+                citation_entailment_judge_valid_rate=(
+                    mean(judged) if judged else None
+                ),
                 mean_accuracy=mean(cell.accuracy for cell in cells),
                 mean_token_f1=mean(cell.token_f1 for cell in cells),
                 mean_anls=mean(cell.anls for cell in cells),
@@ -595,11 +625,12 @@ def _markdown_report(summary: GenerationBenchmarkSummary) -> str:
         "",
         f"Retrieval contexts: `{summary.retrieval_run_id}`",
         "",
-        "| System | Budget | Valid responses | Accuracy | Token F1 | ANLS | "
+        "| System | Budget | Valid responses | Valid judges | Accuracy | "
+        "Token F1 | ANLS | "
         "Citation valid | Gold-page align | Citation entail | Citation present | "
         "Input tokens | Output tokens | Latency (ms) | $/query | $/correct |",
         "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | "
-        "---: | ---: | ---: | ---: | ---: |",
+        "---: | ---: | ---: | ---: | ---: | ---: |",
     ]
     for row in summary.rows:
         dollars_per_correct = (
@@ -617,9 +648,15 @@ def _markdown_report(summary: GenerationBenchmarkSummary) -> str:
             if row.mean_citation_entailment is not None
             else "n/a"
         )
+        judge_valid_rate = (
+            f"{row.citation_entailment_judge_valid_rate:.3f}"
+            if row.citation_entailment_judge_valid_rate is not None
+            else "n/a"
+        )
         lines.append(
             f"| {row.system.value} | {row.token_budget} "
-            f"| {row.response_valid_rate:.3f} | {row.mean_accuracy:.3f} "
+            f"| {row.response_valid_rate:.3f} | {judge_valid_rate} "
+            f"| {row.mean_accuracy:.3f} "
             f"| {row.mean_token_f1:.3f} | {row.mean_anls:.3f} "
             f"| {row.mean_citation_validity:.3f} "
             f"| {citation_support} | {citation_entailment} "
@@ -635,6 +672,11 @@ def _markdown_report(summary: GenerationBenchmarkSummary) -> str:
             "Valid responses is the share of cells the provider completed and "
             "that parsed against the answer contract; a low rate means the "
             "arm's scores measure failed calls, not answer quality.",
+            "Valid judges is the same check for the citation-entailment "
+            "judge call, over the cells that called it; n/a means no cell in "
+            "the row called the judge, which is not a judge failure. A "
+            "truncated judge can still emit parseable JSON, so citation "
+            "entailment can only be read alongside this rate.",
             "Gold-page alignment is the historical `citation_support` field; "
             "it is not semantic entailment. Citation entailment is reported "
             "only when the optional same-model judge is enabled.",
