@@ -33,7 +33,7 @@ def summarize(
             for record in selected
             if record.tokens_to_full_evidence is not None
         ]
-        answerable = [record for record in selected if record.answerable]
+        answerable = [record for record in selected if _has_gold_pages(record)]
         quoted = [record for record in selected if record.gold_quote_count > 0]
         rows.append(
             RetrievalSummaryRow(
@@ -99,6 +99,16 @@ def summarize(
             bootstrap_resamples=bootstrap_resamples,
         ),
     )
+
+
+def _has_gold_pages(record: RetrievalEvaluationRecord) -> bool:
+    """Report whether the question has at least one annotated gold page.
+
+    Answerable-only views use this rather than the answerable flag: a question
+    with no annotated gold pages scores a vacuous recall of 1.0 in every arm
+    (see ``evidence.evaluate_context``) and would contribute a meaningless tie.
+    """
+    return any(pages for pages in record.gold_pages.values())
 
 
 def _mean_or_none(values: Iterable[float]) -> float | None:
@@ -185,7 +195,7 @@ def _paired_values(
         control = cells.get((question_id, baseline))
         if control is None:
             continue
-        if eligibility == "answerable" and not treatment.answerable:
+        if eligibility == "answerable" and not _has_gold_pages(treatment):
             continue
         if eligibility == "quoted" and treatment.gold_quote_count == 0:
             continue

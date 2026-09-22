@@ -385,12 +385,16 @@ gold pages or quotes, are defined in the
 - Six development questions have no annotated gold pages and therefore receive
   the protocol's identical vacuous-success score in every arm. Answerable-only
   and quote-eligible summaries are now computed and rendered alongside the
-  aggregate, but eligibility keys on a question's answerable flag rather than
-  on it having annotated gold pages, so an answerable question with no gold
-  pages still contributes a vacuous score. No such question occurs in
-  `xldev24`, where all six zero-gold-page questions are unanswerable; one
-  XL100 question is affected. The canonical development and
-  holdout reports predate this reporting; only the
+  aggregate, and answerable-only eligibility now requires at least one
+  annotated gold page rather than keying on the answerable flag, so a question
+  with no gold pages is excluded from those columns and from the paired
+  intervals regardless of its answerable flag. The vacuous score is still
+  recorded per question and still enters the all-questions aggregate, which
+  this change deliberately leaves unchanged. The correction moves no `xldev24`
+  number, where all six zero-gold-page questions are already excluded as
+  unanswerable; one XL100 question (`adubench_single_001199`) is answerable
+  with no gold pages and was previously counted. The canonical development and
+  holdout reports predate both this reporting and this fix; only the
   [metric-audit rerun](results/retrieval/xlholdout6b-metric-audit/report.md)
   publishes the answerable-only tables.
 - Evidence retrieval has been measured more thoroughly than end-to-end answer
