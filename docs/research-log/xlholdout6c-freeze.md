@@ -16,6 +16,16 @@ from release metadata alone. No retrieval, compilation, ingestion, indexing,
 evaluation, or answer generation was performed against it, and none of its six
 source documents was read.
 
+**Amended 2026-09-22: the affirmative preflight was run and one substitution
+fired.** `doc_000028`, the `finance_business` pick's source, returned HTTP 403
+Forbidden. The pre-registered rule below advanced to the next candidate on a
+distinct document, `adubench_single_000181` on `doc_000095`, which fetched and
+verified. The other four deferred sources fetched and verified unchanged. All
+six sources are now cache-verified, so the preflight deviation recorded below
+is closed; page and byte totals moved from 1,239 and 101,420,487 to 1,265 and
+102,483,132. No other domain changed and no selection rule was relaxed. The
+substitution is recorded in full under "Executed substitution".
+
 Two commitments travel with this file:
 
 1. It is never tuned on. No configuration, threshold, prompt, or default may
@@ -184,6 +194,43 @@ The frozen orders are:
 Each entry sits on a distinct document. Chain depths, counted in distinct
 documents: finance_business 4, legal_regulation 7, medical_clinical 8,
 narrative_literature 2, scientific_academic 7, technical_engineering 9.
+
+## Executed substitution, 2026-09-22
+
+The affirmative preflight was run with
+`contextbench dataset download xl-docbench --sources --document-id ...` over
+the five deferred sources. One failed:
+
+| Document | Domain | Outcome |
+| --- | --- | --- |
+| `doc_000028` | finance_business | **HTTP 403 Forbidden** |
+| `doc_000127` | scientific_academic | fetched, SHA-256 `82acd6f852d5c509…` |
+| `doc_000168` | narrative_literature | fetched, SHA-256 `a72a61acb1215aac…` |
+| `doc_000257` | legal_regulation | fetched, SHA-256 `7fada798bc7c018c…` |
+| `doc_000363` | technical_engineering | fetched, SHA-256 `e159db17c5de3e07…` |
+
+Applying the rule above, `finance_business` advanced to the next candidate on
+a distinct document: `adubench_single_000181` on `doc_000095`, 161 pages. It
+was preflighted on its own and fetched, SHA-256 `cd2658668b1754fa…`, so the
+chain stopped at one step. The frozen order for that domain is unchanged; the
+substitution consumed its first fallback, leaving three.
+
+Resulting changes, all mechanical consequences of the swap:
+
+- `question_ids[0]`: `adubench_single_000741` → `adubench_single_000181`
+- `source_document_ids[0]`: `doc_000028` → `doc_000095`
+- `source_pages`: 1,239 → 1,265
+- `source_bytes`: 101,420,487 → 102,483,132
+- `evidence_modality` unchanged: both questions carry `["Text"]` evidence
+
+`doc_000028`'s failure is now recorded in `data/cache/xl-docbench/failures.jsonl`,
+so re-running rule 5 against the current ledgers excludes it and re-derives the
+amended set directly.
+
+This is the contingency working as designed rather than a re-selection: the
+substitute was fixed in writing before the preflight ran, and the failure was
+observed afterwards. Nothing about the result influenced the choice, because no
+result exists.
 
 ## Known weaknesses
 

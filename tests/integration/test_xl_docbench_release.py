@@ -90,7 +90,7 @@ def test_third_holdout_is_balanced_and_document_fresh() -> None:
     # document, the same modality, the same page and byte totals -- would pass
     # every other assertion in this test.
     assert tuple(third.question_ids) == (
-        "adubench_single_000741",
+        "adubench_single_000181",
         "adubench_single_001173",
         "adubench_single_000826",
         "adubench_single_000331",
@@ -137,5 +137,5 @@ def test_third_holdout_is_balanced_and_document_fresh() -> None:
     assert third.strata["source_bytes"] == sum(
         document.file_size_bytes for document in documents
     )
-    assert third.strata["source_pages"] == 1239
-    assert third.strata["source_bytes"] == 101420487
+    assert third.strata["source_pages"] == 1265
+    assert third.strata["source_bytes"] == 102483132

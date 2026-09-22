@@ -4,7 +4,7 @@
   "release_version": "xldocbench_strict_1345_v1",
   "release_revision": "72954bd70ffffe230f08b57c57fa9274ec14d7ea",
   "selection_seed": 20260922,
-  "selection_method": "Metadata-only Gate 1 screening holdout selected from committed XL100 by the XLHoldout6b rule. Exclude every source document used by XL10, XLDev24, XLHoldout6, or XLHoldout6b (28 documents). Keep answerable single-document questions only. Reject every question whose pinned source is recorded as a PDF preflight failure in data/cache/xl-docbench/failures.jsonl or data/cache/xl-docbench/documents/failures.jsonl. Within each domain choose the candidate with the lowest source page count, then the lowest source byte size, breaking ties on ascending SHA-256('20260922:' + question_id); the technical_engineering pick used that tie-break. Documented deviation from XLHoldout6b: the affirmative fetch-and-SHA-256 preflight could not be run because selection was performed offline, so only doc_000067 is cache-verified and the remaining five sources are preflight-deferred. Pre-registered contingency, frozen with this file: if a pinned source fails preflight before the Gate 1 run, substitute the next candidate in the same domain's deterministic order that sits on a distinct document which itself passes preflight, repeating until one does, and record every substitution in the research log; if a domain's chain is exhausted, run Gate 1 on the remaining domains and report the set as five-domain rather than re-drawing. Evidence modality was not a selection constraint here, as it was not on XLHoldout6b: five of the six questions carry text-only gold evidence, so no table, chart, keyed-join, or multi-page-evidence claim may rest on this subset. IDs are explicit, no retrieval or generation result was produced or inspected, and the subset must not be run or tuned on before Gate 1.",
+  "selection_method": "Metadata-only Gate 1 screening holdout selected from committed XL100 by the XLHoldout6b rule. Exclude every source document used by XL10, XLDev24, XLHoldout6, or XLHoldout6b (28 documents). Keep answerable single-document questions only. Reject every question whose pinned source is recorded as a PDF preflight failure in data/cache/xl-docbench/failures.jsonl or data/cache/xl-docbench/documents/failures.jsonl. Within each domain choose the candidate with the lowest source page count, then the lowest source byte size, breaking ties on ascending SHA-256('20260922:' + question_id); the technical_engineering pick used that tie-break. Documented deviation from XLHoldout6b: the affirmative fetch-and-SHA-256 preflight could not be run because selection was performed offline, so only doc_000067 is cache-verified and the remaining five sources are preflight-deferred. Pre-registered contingency, frozen with this file: if a pinned source fails preflight before the Gate 1 run, substitute the next candidate in the same domain's deterministic order that sits on a distinct document which itself passes preflight, repeating until one does, and record every substitution in the research log; if a domain's chain is exhausted, run Gate 1 on the remaining domains and report the set as five-domain rather than re-drawing. Evidence modality was not a selection constraint here, as it was not on XLHoldout6b: five of the six questions carry text-only gold evidence, so no table, chart, keyed-join, or multi-page-evidence claim may rest on this subset. Executed substitution, 2026-09-22: the affirmative preflight was run and the finance_business pick adubench_single_000741 on doc_000028 failed it with HTTP 403 Forbidden, so the pre-registered rule advanced to the next candidate on a distinct preflight-passing document, adubench_single_000181 on doc_000095, which fetched and verified; page and byte totals moved from 1239 and 101420487 accordingly. All six sources are now cache-verified, no other domain changed, and no selection rule was relaxed. IDs are explicit, no retrieval or generation result was produced or inspected, and the subset must not be run or tuned on before Gate 1.",
   "strata": {
     "purpose": "gate1_screening_holdout_not_final_claims",
     "domains": {
@@ -29,18 +29,18 @@
     },
     "source_documents": 6,
     "source_document_ids": [
-      "doc_000028",
+      "doc_000095",
       "doc_000257",
       "doc_000067",
       "doc_000168",
       "doc_000127",
       "doc_000363"
     ],
-    "source_pages": 1239,
-    "source_bytes": 101420487
+    "source_pages": 1265,
+    "source_bytes": 102483132
   },
   "question_ids": [
-    "adubench_single_000741",
+    "adubench_single_000181",
     "adubench_single_001173",
     "adubench_single_000826",
     "adubench_single_000331",
