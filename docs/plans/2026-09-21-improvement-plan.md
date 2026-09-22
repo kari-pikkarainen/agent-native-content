@@ -42,7 +42,7 @@ frozen before that change.
 
 ## Measurement problems that must be fixed first
 
-The 2026-09-21 code review found defects that change absolute numbers. The
+The 2026-09-21 code review found defects that change absolute numbers. Most
 defects are shared by every arm, but that does not make the paired deltas
 safe: zero-score BM25 fill depends on how many retrieval units a document
 yields, and fixed windows, structural chunks, and IR nodes yield different
@@ -60,6 +60,24 @@ Shared-infrastructure defects, which affect every arm equally:
 | Relaxed accuracy maps `casefold_exact_match` (822 of 1,345 questions) to substring or Levenshtein ≥ 0.8 | `src/contextbench/generation/scoring.py:68-70` | Likely more lenient than the released evaluator |
 | Provider never checks response status; truncated reasoning output scores as invalid JSON with no valid-rate column | `src/contextbench/generation/providers.py:61-77` | A whole arm can silently score zero |
 | One unit test reads the gitignored release | `tests/unit/test_xl_docbench.py:183` | CI on `main` has failed on the last three pushes |
+
+Arm-asymmetric defects, which move one arm's numbers and not the others', so
+they do not cancel in a paired delta at all. Found on 2026-09-22, after the
+review above:
+
+| Defect | Location | Effect |
+| --- | --- | --- |
+| Structural chunks keep heading text in `heading_path` metadata only; both channels read `retrieval_text`, which is `search_text or text`, and `search_text` is `None` on every structural chunk | `src/contextbench/retrieval/chunking.py:159`, `retrieval/models.py:88-90` | Only the `structural` arm is blind to heading vocabulary. `fixed` windows over every node carrying text, title and headings included (`chunking.py:64-68`), and the compiler joins the heading trail into `search_text` (`compiler/candidates.py:28,50-54`). Over the unit fixture `quarterly`, `report`, `results` and `methods` are indexed by `fixed` and by the compiler, and by no structural chunk |
+| Compiler candidates skip list-group nodes and `content_layer == "furniture"` nodes as non-evidence | `src/contextbench/compiler/candidates.py:10,22-26` | Asymmetric the other way and smaller: the group name `Highlights` is indexed by `fixed` but by neither the compiler nor `structural` |
+
+The first row handicaps a baseline, not the treatment, so it inflates both the
+fixed and the compiler margin over structural chunks. It bears hardest on the
+matched content-unit × policy factorial, the experiment meant to separate
+representation from policy: "IR nodes beat structural chunks" there can partly
+mean "the compiler indexes headings and the structural baseline does not".
+Correcting it can only strengthen `structural`. It is unfixed by choice; the
+measurement, and the decision it forces on the rerun, are in the
+[retrieval specification](../specs/retrieval.md).
 
 Compiler defects, which change the treatment and are therefore fixed
 separately in Phase 1 with their own before-and-after run:
