@@ -42,6 +42,9 @@ DEFAULT_RERANKER_REVISION = "233902d25c440f23af6f7d6e94d2946bac0bee0a"
 # ``contextbench.retrieval.index``; keep them in step with it.
 OFFLINE_EMBEDDING_PREFIX = "hash-"
 OFFLINE_RERANKER_MODEL = "lexical-overlap-v1"
+# Command-line spelling of the two heading-context positions, matching the
+# ``heading-on`` / ``heading-off`` labels the factorial report and manifest use.
+HEADING_CONTEXT_POSITIONS = {"on": True, "off": False}
 
 
 def version_callback(value: bool) -> None:
@@ -434,6 +437,17 @@ def evaluate_factorial(
         int,
         typer.Option(min=1, help="Maximum candidates reranked for each facet."),
     ] = 250,
+    heading_context: Annotated[
+        list[str] | None,
+        typer.Option(
+            "--heading-context",
+            help=(
+                "Repeatable heading-context position, on or off; defaults to "
+                "on alone. Passing both crosses the heading-context ablation "
+                "with every unit and policy and doubles the cell count."
+            ),
+        ),
+    ] = None,
     run_id: Annotated[
         str | None,
         typer.Option(help="Optional immutable factorial run identifier."),
@@ -450,6 +464,8 @@ def evaluate_factorial(
     ] = False,
 ) -> None:
     """Cross content units with ranked and faceted-coverage policies."""
+    from pydantic import ValidationError
+
     from contextbench.evaluation import FactorialConfig, FactorialFacetConfig
     from contextbench.evaluation.factorial_xl import run_xl_factorial
     from contextbench.ingest import IngestionError
@@ -466,18 +482,35 @@ def evaluate_factorial(
         embedding_model=embedding_model,
         reranker_model=reranker_model,
     )
-    config = FactorialConfig(
-        seed=seed,
-        retrieval=retrieval,
-        faceting=FactorialFacetConfig(
+    # An omitted flag passes no factor at all, so the single-valued default on
+    # ``FactorialConfig.heading_contexts`` stays the only definition of it and
+    # a run without the flag is identical to one made before the flag existed.
+    factors: dict[str, tuple[bool, ...]] = {}
+    if heading_context is not None:
+        factors["heading_contexts"] = _heading_contexts(heading_context)
+    try:
+        config = FactorialConfig(
+            seed=seed,
             retrieval=retrieval,
-            query_facet_limit=query_facet_limit,
-            query_facet_min_terms=query_facet_min_terms,
-            query_facet_rerank_candidate_limit=(
-                query_facet_rerank_candidate_limit
+            faceting=FactorialFacetConfig(
+                retrieval=retrieval,
+                query_facet_limit=query_facet_limit,
+                query_facet_min_terms=query_facet_min_terms,
+                query_facet_rerank_candidate_limit=(
+                    query_facet_rerank_candidate_limit
+                ),
             ),
-        ),
-    )
+            **factors,
+        )
+    except ValidationError as exc:
+        # The config owns the factor rules -- non-empty and unique -- so the
+        # CLI surfaces its message rather than carrying a second copy of them.
+        _abort(
+            "; ".join(
+                str(error["msg"]).removeprefix("Value error, ")
+                for error in exc.errors()
+            )
+        )
     try:
         result = run_xl_factorial(
             data_dir=data_dir,
@@ -997,6 +1030,22 @@ def _require_matching_revisions(
                 f"{default_revision}, which pins {default_model}. Pass "
                 f"{revision_flag} <commit> naming the commit of {model}."
             )
+
+
+def _heading_contexts(values: list[str]) -> tuple[bool, ...]:
+    """Map repeated ``--heading-context`` tokens onto the factorial booleans.
+
+    The tokens are spelled as the generated report and the manifest system
+    names spell the positions, ``on`` and ``off``. Only the vocabulary is
+    checked here; whether the resulting tuple is non-empty and unique is
+    ``FactorialConfig``'s rule and is left to its validator.
+    """
+    positions: list[bool] = []
+    for value in values:
+        if value not in HEADING_CONTEXT_POSITIONS:
+            _abort(f"--heading-context takes 'on' or 'off', not {value!r}")
+        positions.append(HEADING_CONTEXT_POSITIONS[value])
+    return tuple(positions)
 
 
 def _abort(message: str) -> NoReturn:

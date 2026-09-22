@@ -130,10 +130,11 @@ Consequences for this experiment:
 - `RetrievalConfig` is part of the derived-index key payload, so the change
   rekeys cached indexes in either direction and no stale index is reused.
 - A run that deliberately reproduces the old state must set
-  `heading_contexts=(False,)` and record that it did. Since the field now also
-  reaches the IR unit, that run reproduces the old *structural* state while
-  also removing heading context from the IR unit, which the published IR rows
-  had. The two old states cannot be reproduced separately through this field.
+  `heading_contexts=(False,)` -- `--heading-context off` -- and record that it
+  did. Since the field now also reaches the IR unit, that run reproduces the
+  old *structural* state while also removing heading context from the IR unit,
+  which the published IR rows had. The two old states cannot be reproduced
+  separately through this field.
 
 ## Interpretation
 
@@ -168,16 +169,34 @@ The safe defaults select those same files. Runs are atomically published under
 per-question metrics, contexts, summary, and Markdown report. Existing run IDs
 are never overwritten.
 
-**`eval-factorial` exposes no factorial factor at all.** The command builds
-`FactorialConfig` from `seed`, `retrieval` and `faceting` only, so
-`content_units`, `selection_policies`, `budgets` and `heading_contexts` are
-all unreachable from the CLI and always take their defaults --
-`heading_contexts` included, which means the command can only ever run the
-single-valued `(True,)` position. **Running the heading-context ablation
-therefore requires either a new CLI option or a dedicated entry point**;
-nothing in the shipped command can produce a two-position run. The
-`heading_contexts=(True, False)` path is exercised only from Python, in
-`tests/unit/test_factorial.py`.
+**Only one factor is settable from the command line.** `--heading-context` is
+repeatable and takes `on` or `off`, spelled as the report and the manifest
+spell the positions, so the ablation runs as:
+
+```shell
+uv run --extra retrieval contextbench eval-factorial \
+  --heading-context on --heading-context off \
+  --run-id xldev2-factorial-heading
+```
+
+Omitting the flag passes no factor at all, leaving the single-valued `(True,)`
+default in place, so a run without it is identical to one made before the flag
+existed. Vocabulary is checked by the CLI; non-empty and unique remain
+`FactorialConfig`'s rules and its validator's message is what the command
+prints. Both are covered in `tests/unit/test_cli.py` by
+`test_eval_factorial_crosses_both_heading_context_positions` and
+`test_eval_factorial_refuses_an_unusable_heading_context`.
+
+**`content_units`, `selection_policies` and `budgets` stay unreachable.** The
+command still builds `FactorialConfig` from `seed`, `retrieval`, `faceting`
+and now `heading_contexts` only, so those three always take their defaults and
+a run that varies them can still only be made from Python, as
+`tests/unit/test_factorial.py` does. The asymmetry is deliberate rather than
+an oversight: heading context was exposed because the rerun needs the ablation
+it enables, and no measurement currently needs a subset of the units, the
+policies or the budgets. Exposing those three is a separate change and should
+follow the same shape -- repeatable option, vocabulary checked at the CLI,
+non-empty and unique left to the config validator.
 
 The shared evaluator reports both provenance page recall and conservative
 content-verified page recall. The latter credits a source node's pages only

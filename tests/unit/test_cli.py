@@ -245,6 +245,99 @@ def test_eval_factorial_defaults_to_small_fixed_corpus(
     assert set(config.selection_policies) == {"ranked", "faceted_coverage"}
 
 
+def test_eval_factorial_crosses_both_heading_context_positions(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """The ablation the factor exists for has to be reachable from the command.
+
+    ``FactorialConfig.heading_contexts`` is crossed with the content units and
+    the selection policies, but the command built the config without it, so a
+    two-position run could be made only from Python. Omitting the flag must
+    still produce exactly the single-valued default, because that is what keeps
+    an unasked-for run identical to the runs made before the flag existed.
+    """
+    captured: dict[str, dict] = {}
+
+    def fake_run_xl_factorial(**kwargs):
+        captured[kwargs["run_id"]] = kwargs
+        return SimpleNamespace(
+            path=tmp_path / "artifacts" / "factorial-runs" / kwargs["run_id"],
+            manifest=SimpleNamespace(run_id=kwargs["run_id"]),
+        )
+
+    monkeypatch.setattr(
+        "contextbench.evaluation.factorial_xl.run_xl_factorial",
+        fake_run_xl_factorial,
+    )
+
+    crossed = runner.invoke(
+        app,
+        [
+            "eval-factorial",
+            "--artifacts-root",
+            str(tmp_path / "artifacts"),
+            "--run-id",
+            "crossed",
+            "--heading-context",
+            "on",
+            "--heading-context",
+            "off",
+        ],
+    )
+    default = runner.invoke(
+        app,
+        [
+            "eval-factorial",
+            "--artifacts-root",
+            str(tmp_path / "artifacts"),
+            "--run-id",
+            "default",
+        ],
+    )
+
+    assert crossed.exit_code == 0, crossed.output
+    assert default.exit_code == 0, default.output
+    assert captured["crossed"]["config"].heading_contexts == (True, False)
+    assert captured["default"]["config"].heading_contexts == (True,)
+
+
+def test_eval_factorial_refuses_an_unusable_heading_context(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """A rejected factor must say what is wrong before any index is built.
+
+    Non-empty and unique are ``FactorialConfig``'s own rules, so a repeated
+    position has to surface that validator's message rather than a traceback or
+    a silently deduplicated run; an unspellable position is caught by the CLI,
+    which owns the on/off vocabulary.
+    """
+    calls: list[str] = []
+
+    def fake_run_xl_factorial(**kwargs):
+        calls.append("factorial")
+        return SimpleNamespace(
+            path=tmp_path / "artifacts" / "factorial-runs" / "run-1",
+            manifest=SimpleNamespace(run_id="run-1"),
+        )
+
+    monkeypatch.setattr(
+        "contextbench.evaluation.factorial_xl.run_xl_factorial",
+        fake_run_xl_factorial,
+    )
+
+    repeated = runner.invoke(
+        app,
+        ["eval-factorial", "--heading-context", "on", "--heading-context", "on"],
+    )
+    empty = runner.invoke(app, ["eval-factorial", "--heading-context", ""])
+
+    assert repeated.exit_code == 1
+    assert "heading_contexts must be non-empty and unique" in repeated.output
+    assert empty.exit_code == 1
+    assert "--heading-context takes 'on' or 'off'" in empty.output
+    assert calls == []
+
+
 def test_eval_commands_forward_pinned_model_revisions(
     tmp_path: Path, monkeypatch
 ) -> None:

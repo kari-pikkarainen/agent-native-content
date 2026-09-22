@@ -179,6 +179,10 @@ uv run --extra retrieval contextbench eval-factorial \
   --run-id xldev2-factorial
 ```
 
+Heading context is a third, crossed factor, single-valued by default; pass
+`--heading-context on --heading-context off` to run the ablation, and read
+[the next decision gate](#next-decision-gate) before interpreting it.
+
 The command deliberately excludes compiler-only structural expansion, table
 joins, and page-neighbor backfill. Its defaults use this same two-question
 diagnostic and fixed 11-document corpus. See the
@@ -429,7 +433,11 @@ reporting defects: BM25 returning every chunk with a zero score into rank
 fusion, embedding and reranker models loaded without a pinned revision, and
 run manifests that do not record whether the worktree was dirty. All three are
 fixed on this branch, as is the fourth defect that review found in the dense
-channel. Nothing has been remeasured: every absolute figure and
+channel. A fifth, found on 2026-09-22 after that review, is fixed here too and
+is the one that matters most for the arm comparison: the structural arm could
+not retrieve on heading vocabulary. Unlike the four above it moved one arm's
+numbers and not the others', so it does not cancel in a paired delta at all.
+Nothing has been remeasured: every absolute figure and
 paired delta published on this page comes from a run made before those fixes
 and stays provisional until the affected runs are repeated. The BM25 defect
 did not cost every arm the same amount, which is why the paired deltas must be
@@ -474,6 +482,75 @@ reinstate exactly the hash-ordered credit the guard removes. Downstream
 consumers were audited against this: an empty packet is a valid packet, scores
 recall `0.0` against annotated gold pages rather than a vacuous `1.0`, and
 yields an answer that cites nothing and so scores zero on citation validity.
+
+### The structural arm could not retrieve on its own headings
+
+**The defect and its fix.** Structural chunks kept the heading trail beside
+the body as `heading_path` metadata, while both retrieval channels read
+`RetrievalChunk.retrieval_text`, which is `search_text or text`. `search_text`
+was `None` on every structural chunk, so heading and title strings reached
+neither BM25, nor the dense embedding, nor the reranker. The other two arms
+were never blind to them: the fixed arm indexes headings incidentally, because
+it windows over every IR node that carries text, title and heading nodes
+included, and the compiler joins each node's heading trail above its own text
+into its search text. Only this baseline was blind, which handicapped a
+baseline rather than the treatment and so inflated both the fixed and the
+compiler margin over it. Measured on the development set, 4 of the 24
+`xldev24` questions use a term the fixed arm reaches and the structural arm
+did not, concentrated in the questions that name a section by its title --
+the class a structure-preserving representation is supposed to be best at.
+The fix gives structural chunks the same search text the compiler builds,
+behind `RetrievalConfig.heading_search_context`, which defaults on; emitted
+text, token counts, chunk ids and provenance are identical in both positions,
+and the off position reproduces the previous structural behaviour exactly. The
+compiler reads the same field, but it has always carried heading context, so
+its off position is a new state rather than an old one.
+
+**The ablation.** `FactorialConfig.heading_contexts` crosses that field with
+the content units and the selection policies, exactly as those are crossed
+with each other. It is single-valued by default, so a run that does not ask
+for the ablation is unchanged, and it is now settable from the command line:
+
+```shell
+uv run --extra retrieval contextbench eval-factorial \
+  --heading-context on --heading-context off \
+  --run-id xldev2-factorial-heading
+```
+
+The factor governs the structural unit and the IR unit, the two that read the
+field. The fixed unit does not read it and its chunks are identical in both
+positions by construction, so an unchanged fixed row is not evidence about
+heading context.
+
+**What a delta across the factor carries: three mechanisms, not one.**
+Heading vocabulary becomes matchable; the candidate dedupe key widens,
+because the pre-rerank dedupe keys on `retrieval_text`, so two identical
+bodies under different headings collapse into one candidate in the off
+position and both survive in the on position -- which changes results even
+for a query containing no heading term; and, in `FACETED_COVERAGE` cells,
+the coverage objective changes, because the packer derives each candidate's
+coverage terms and table references from `retrieval_text` as well, a
+policy-side effect of a factor meant to isolate representation. Attributing a
+single-factor delta wholly to heading matching would be wrong. All three are
+detailed in the
+[retrieval specification](docs/specs/retrieval.md).
+
+**What is superseded.** Published structural numbers were measured in the old
+state and cannot be carried across, and neither can the paired deltas drawn
+against them. Published IR numbers do not carry across either, for a second
+reason found while making the factor safe: the IR candidate id used to be
+derived from the indexed string, so toggling the factor permuted ids that are
+tie-break sort keys throughout retrieval and packing. That derivation is now
+text-only, which moved default-configuration IR results on the committed
+fixtures. In the factorial both effects land on rows: the structural-unit and
+IR-unit rows are superseded and the fixed-unit rows are unaffected by either
+change, so a partial rerun that refreshes one and keeps the other would
+compare cells measured under two different behaviours.
+
+**A CLI gap remains.** `--heading-context` is the only factorial factor the
+command exposes. `content_units`, `selection_policies` and `budgets` are
+still unreachable from `eval-factorial` and always take their defaults, so a
+run that varies them can only be made from Python.
 
 Pinning the model revisions changed the derived-index key, so all 31 cached
 indexes under `artifacts/indexes/` are now unreachable by key and must be
