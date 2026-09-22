@@ -25,6 +25,11 @@ class AnswerModelConfig(BaseModel):
     model: str = Field(min_length=1)
     max_output_tokens: int = Field(default=256, ge=1)
     reasoning_effort: str | None = None
+    # ``None`` means the setting is not sent at all, so the provider default
+    # applies. Many reasoning models reject an explicit temperature, so an
+    # unset value cannot be modelled as a numeric default.
+    temperature: float | None = Field(default=None, ge=0)
+    seed: int | None = None
     pricing: PricingMetadata
     prompt_version: Literal["answer-json-v1"] = "answer-json-v1"
 
@@ -72,12 +77,25 @@ class ProviderAnswer(BaseModel):
     output_tokens: int = Field(ge=0)
     reasoning_tokens: int = Field(default=0, ge=0)
     provider_usage: dict[str, Any] = Field(default_factory=dict)
+    # Provider-reported completion state. ``None`` means the provider reports
+    # no status, which cannot be read as a failure.
+    status: str | None = None
+    incomplete_reason: str | None = None
 
     @model_validator(mode="after")
     def cached_tokens_are_part_of_input(self) -> "ProviderAnswer":
         if self.cached_input_tokens > self.input_tokens:
             raise ValueError("cached_input_tokens cannot exceed input_tokens")
         return self
+
+    @property
+    def provider_valid(self) -> bool:
+        """Whether the provider itself reports a completed response.
+
+        A truncated response still returns text, so without this check a
+        cut-off answer is scored as a wrong answer rather than as a failure.
+        """
+        return self.status is None or self.status == "completed"
 
 
 class GenerationEvaluationRecord(BaseModel):
@@ -94,7 +112,11 @@ class GenerationEvaluationRecord(BaseModel):
     raw_response: str
     parsed_answer: str
     citations: tuple[str, ...]
+    # False when the provider did not complete the response or when the
+    # response did not satisfy the strict JSON answer contract.
     response_valid: bool
+    provider_status: str | None = None
+    provider_incomplete_reason: str | None = None
     accuracy: float = Field(ge=0, le=1)
     token_f1: float = Field(ge=0, le=1)
     anls: float = Field(ge=0, le=1)
@@ -134,6 +156,10 @@ class GenerationSummaryRow(BaseModel):
     system: BenchmarkSystem
     token_budget: int
     question_count: int
+    # Share of cells whose response was both provider-completed and parseable.
+    # Without it an arm truncated at 40% reads exactly like one that answered
+    # badly.
+    response_valid_rate: float
     mean_accuracy: float
     mean_token_f1: float
     mean_anls: float

@@ -553,6 +553,17 @@ def evaluate_generation(
         str | None,
         typer.Option(help="Optional provider reasoning-effort setting."),
     ] = None,
+    temperature: Annotated[
+        float | None,
+        typer.Option(
+            min=0,
+            help="Optional sampling temperature; unset sends no temperature.",
+        ),
+    ] = None,
+    seed: Annotated[
+        int | None,
+        typer.Option(help="Optional provider sampling seed; unset sends no seed."),
+    ] = None,
     citation_entailment_judge: Annotated[
         bool,
         typer.Option(
@@ -615,6 +626,8 @@ def evaluate_generation(
             model=model,
             max_output_tokens=max_output_tokens,
             reasoning_effort=reasoning_effort,
+            temperature=temperature,
+            seed=seed,
             systems=selected_systems,
             budgets=selected_budgets,
             citation_entailment_judge=citation_entailment_judge,

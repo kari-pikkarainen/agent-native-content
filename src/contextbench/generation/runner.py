@@ -162,7 +162,11 @@ def run_generation_benchmark(
                 f"{row['token_budget']}: {exc}"
             ) from exc
         answer_latency_ms = (time.perf_counter_ns() - started) / 1_000_000
-        parsed_answer, citations, response_valid = parse_answer_response(response.text)
+        parsed_answer, citations, parsed_valid = parse_answer_response(response.text)
+        # A response the provider did not complete is a failure, not a wrong
+        # answer. The run continues so the calls already paid for are not
+        # lost; the cell is recorded, costed, and scored zero.
+        response_valid = parsed_valid and response.provider_valid
         gold = "" if question.gold_answer is None else str(question.gold_answer)
         kind = answer_type(question)
         accuracy = (
@@ -251,6 +255,8 @@ def run_generation_benchmark(
                 parsed_answer=parsed_answer,
                 citations=citations,
                 response_valid=response_valid,
+                provider_status=response.status,
+                provider_incomplete_reason=response.incomplete_reason,
                 accuracy=accuracy,
                 token_f1=token_f1,
                 anls=anls,
@@ -334,6 +340,11 @@ def run_generation_benchmark(
         "citation_entailment_prompt_sha256": hashlib.sha256(
             CITATION_ENTAILMENT_PROMPT_INSTRUCTIONS.encode("utf-8")
         ).hexdigest(),
+        # The configured sampling settings, not a guess at what the provider
+        # used. ``null`` means the setting was not sent and the provider
+        # default applied.
+        "temperature": config.temperature,
+        "seed": config.seed,
         "config": config_value,
         "config_sha256": config_sha256,
         "question_ids": list(manifest["question_ids"]),
@@ -458,6 +469,7 @@ def _summarize(
                 system=system,
                 token_budget=budget,
                 question_count=len(cells),
+                response_valid_rate=mean(cell.response_valid for cell in cells),
                 mean_accuracy=mean(cell.accuracy for cell in cells),
                 mean_token_f1=mean(cell.token_f1 for cell in cells),
                 mean_anls=mean(cell.anls for cell in cells),
@@ -583,10 +595,10 @@ def _markdown_report(summary: GenerationBenchmarkSummary) -> str:
         "",
         f"Retrieval contexts: `{summary.retrieval_run_id}`",
         "",
-        "| System | Budget | Accuracy | Token F1 | ANLS | Citation valid | "
-        "Gold-page align | Citation entail | Citation present | Input tokens | "
-        "Output tokens | Latency (ms) | $/query | $/correct |",
-        "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | "
+        "| System | Budget | Valid responses | Accuracy | Token F1 | ANLS | "
+        "Citation valid | Gold-page align | Citation entail | Citation present | "
+        "Input tokens | Output tokens | Latency (ms) | $/query | $/correct |",
+        "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | "
         "---: | ---: | ---: | ---: | ---: |",
     ]
     for row in summary.rows:
@@ -606,7 +618,8 @@ def _markdown_report(summary: GenerationBenchmarkSummary) -> str:
             else "n/a"
         )
         lines.append(
-            f"| {row.system.value} | {row.token_budget} | {row.mean_accuracy:.3f} "
+            f"| {row.system.value} | {row.token_budget} "
+            f"| {row.response_valid_rate:.3f} | {row.mean_accuracy:.3f} "
             f"| {row.mean_token_f1:.3f} | {row.mean_anls:.3f} "
             f"| {row.mean_citation_validity:.3f} "
             f"| {citation_support} | {citation_entailment} "
@@ -619,6 +632,9 @@ def _markdown_report(summary: GenerationBenchmarkSummary) -> str:
         [
             "",
             "Costs use the pricing metadata frozen in this run's manifest.",
+            "Valid responses is the share of cells the provider completed and "
+            "that parsed against the answer contract; a low rate means the "
+            "arm's scores measure failed calls, not answer quality.",
             "Gold-page alignment is the historical `citation_support` field; "
             "it is not semantic entailment. Citation entailment is reported "
             "only when the optional same-model judge is enabled.",

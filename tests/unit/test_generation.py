@@ -13,6 +13,7 @@ from contextbench.experiments import manifest
 from contextbench.generation import (
     GenerationConfig,
     GenerationError,
+    GenerationEvaluationRecord,
     OpenAIAnswerProvider,
     PricingMetadata,
     ProviderAnswer,
@@ -21,6 +22,7 @@ from contextbench.generation import (
     run_generation_benchmark,
 )
 from contextbench.generation.models import AnswerRequest
+from contextbench.generation.runner import _summarize
 from contextbench.generation.scoring import accuracy_score, anls_score, token_f1_score
 
 
@@ -358,3 +360,259 @@ def test_generation_dirty_worktree_is_refused_before_any_provider_call(
 
     assert provider.requests == []
     assert not artifacts_root.exists()
+
+
+class TruncatedFirstCallProvider(FixtureProvider):
+    """Answers normally but reports the first response as non-completed.
+
+    The text stays a correct, parseable answer, so a run that ignored the
+    provider status would score this cell 1.0 instead of recording a failure.
+    """
+
+    def generate(self, request: AnswerRequest, *, config: GenerationConfig):
+        answer = super().generate(request, config=config)
+        if len(self.requests) == 1:
+            return answer.model_copy(
+                update={
+                    "status": "incomplete",
+                    "incomplete_reason": "max_output_tokens",
+                }
+            )
+        return answer
+
+
+def _provider_request() -> AnswerRequest:
+    return AnswerRequest(
+        question_id="question-1",
+        system=BenchmarkSystem.COMPILER,
+        token_budget=12,
+        prompt="prompt",
+        evidence_ids=("evidence-1",),
+    )
+
+
+def _generation_record(**overrides) -> GenerationEvaluationRecord:
+    values: dict[str, object] = {
+        "retrieval_run_id": "retrieval-fixture",
+        "question_id": "question-1",
+        "system": BenchmarkSystem.COMPILER,
+        "token_budget": 12,
+        "answerable": True,
+        "gold_answer": "revenue",
+        "raw_response": '{"answer":"revenue","citations":[]}',
+        "parsed_answer": "revenue",
+        "citations": (),
+        "response_valid": True,
+        "accuracy": 1.0,
+        "token_f1": 1.0,
+        "anls": 1.0,
+        "citation_validity": 0.0,
+        "citation_support": None,
+        "citation_present": False,
+        "insufficient_evidence_correct": False,
+        "input_tokens": 100,
+        "cached_input_tokens": 20,
+        "output_tokens": 10,
+        "reasoning_tokens": 2,
+        "latency_ms": 1.0,
+        "model_id": "fixture-model",
+        "provider_usage": {},
+        "cost_usd": 0.0001,
+    }
+    values.update(overrides)
+    return GenerationEvaluationRecord(**values)
+
+
+def test_non_completed_response_scores_zero_and_does_not_abort_the_run(
+    tmp_path: Path,
+) -> None:
+    """A truncated answer must be a recorded failure, not a wrong answer.
+
+    Aborting would throw away the provider calls already paid for, so the run
+    continues and the failed cell is recorded, costed, and scored zero.
+    """
+    retrieval = _run(tmp_path, run_id="retrieval-truncated")
+    provider = TruncatedFirstCallProvider()
+
+    result = run_generation_benchmark(
+        retrieval.path,
+        _corpus(tmp_path).questions,
+        config=_generation_config(),
+        provider=provider,
+        artifacts_root=tmp_path / "artifacts",
+        run_id="generation-truncated",
+        git_commit="b" * 40,
+        git_dirty=False,
+        clock=lambda: datetime(2026, 9, 20, tzinfo=UTC),
+    )
+
+    failed = [record for record in result.records if not record.response_valid]
+    assert len(failed) == 1
+    record = failed[0]
+    assert record.provider_status == "incomplete"
+    assert record.provider_incomplete_reason == "max_output_tokens"
+    assert (record.accuracy, record.token_f1, record.anls) == (0.0, 0.0, 0.0)
+    # The answer text itself was correct and parseable: only the provider
+    # status distinguishes this failure from a right answer.
+    assert record.parsed_answer == "revenue"
+    assert record.cost_usd == pytest.approx(0.00011)
+
+    assert len(provider.requests) == len(BenchmarkSystem)
+    assert len(result.records) == len(BenchmarkSystem)
+    assert all(
+        other.accuracy == 1.0
+        for other in result.records
+        if other.response_valid
+    )
+    assert (result.path / "summary.json").is_file()
+    rates = {row.system: row.response_valid_rate for row in result.summary.rows}
+    assert rates[record.system] == 0.0
+    assert sum(rates.values()) == len(BenchmarkSystem) - 1
+    written = [
+        json.loads(line)
+        for line in (result.path / "generation.jsonl")
+        .read_text(encoding="utf-8")
+        .splitlines()
+    ]
+    assert len(written) == len(BenchmarkSystem)
+    assert sum(not row["response_valid"] for row in written) == 1
+
+
+def test_response_valid_rate_separates_failed_calls_from_wrong_answers() -> None:
+    summary = _summarize(
+        "generation-rate",
+        "retrieval-fixture",
+        (
+            _generation_record(question_id="question-1"),
+            _generation_record(
+                question_id="question-2",
+                response_valid=False,
+                provider_status="incomplete",
+                provider_incomplete_reason="max_output_tokens",
+                accuracy=0.0,
+                token_f1=0.0,
+                anls=0.0,
+            ),
+        ),
+    )
+
+    assert len(summary.rows) == 1
+    assert summary.rows[0].response_valid_rate == 0.5
+    assert summary.rows[0].question_count == 2
+
+
+def test_generation_manifest_records_configured_temperature_and_seed(
+    tmp_path: Path,
+) -> None:
+    retrieval = _run(tmp_path, run_id="retrieval-sampling")
+    unset = run_generation_benchmark(
+        retrieval.path,
+        _corpus(tmp_path).questions,
+        config=_generation_config(),
+        provider=FixtureProvider(),
+        artifacts_root=tmp_path / "artifacts",
+        run_id="generation-sampling-default",
+        git_commit="b" * 40,
+        git_dirty=False,
+        clock=lambda: datetime(2026, 9, 20, tzinfo=UTC),
+    )
+    configured = run_generation_benchmark(
+        retrieval.path,
+        _corpus(tmp_path).questions,
+        config=_generation_config().model_copy(
+            update={"temperature": 0.0, "seed": 7}
+        ),
+        provider=FixtureProvider(),
+        artifacts_root=tmp_path / "artifacts",
+        run_id="generation-sampling-configured",
+        git_commit="b" * 40,
+        git_dirty=False,
+        clock=lambda: datetime(2026, 9, 20, tzinfo=UTC),
+    )
+
+    # null records "not sent, provider default", which is a stated setting
+    # rather than a missing one.
+    unset_manifest = json.loads(
+        (unset.path / "manifest.json").read_text(encoding="utf-8")
+    )
+    assert unset_manifest["temperature"] is None
+    assert unset_manifest["seed"] is None
+    configured_manifest = json.loads(
+        (configured.path / "manifest.json").read_text(encoding="utf-8")
+    )
+    assert configured_manifest["temperature"] == 0.0
+    assert configured_manifest["seed"] == 7
+    assert configured_manifest["config"]["temperature"] == 0.0
+    assert configured_manifest["config"]["seed"] == 7
+
+
+def test_openai_provider_sends_sampling_settings_only_when_configured() -> None:
+    calls: list[dict[str, object]] = []
+
+    class Responses:
+        @staticmethod
+        def create(**kwargs):
+            calls.append(kwargs)
+            return SimpleNamespace(
+                id="response-1",
+                model="resolved-model",
+                output_text='{"answer":"yes","citations":[]}',
+                status="completed",
+                incomplete_details=None,
+                usage=SimpleNamespace(
+                    input_tokens=10,
+                    output_tokens=5,
+                    total_tokens=15,
+                    input_tokens_details=None,
+                    output_tokens_details=None,
+                ),
+            )
+
+    provider = OpenAIAnswerProvider(client=SimpleNamespace(responses=Responses()))
+    request = _provider_request()
+
+    unset = provider.generate(request, config=_generation_config())
+    provider.generate(
+        request,
+        config=_generation_config().model_copy(
+            update={"temperature": 0.0, "seed": 7}
+        ),
+    )
+
+    assert "temperature" not in calls[0]
+    assert "seed" not in calls[0]
+    # 0.0 is a configured temperature, not an unset one.
+    assert calls[1]["temperature"] == 0.0
+    assert calls[1]["seed"] == 7
+    assert unset.provider_valid is True
+
+
+def test_openai_provider_marks_non_completed_responses_provider_invalid() -> None:
+    class Responses:
+        @staticmethod
+        def create(**_kwargs):
+            return SimpleNamespace(
+                id="response-1",
+                model="resolved-model",
+                output_text=None,
+                status="incomplete",
+                incomplete_details=SimpleNamespace(reason="max_output_tokens"),
+                usage=SimpleNamespace(
+                    input_tokens=120,
+                    output_tokens=256,
+                    total_tokens=376,
+                    input_tokens_details=SimpleNamespace(cached_tokens=0),
+                    output_tokens_details=SimpleNamespace(reasoning_tokens=256),
+                ),
+            )
+
+    provider = OpenAIAnswerProvider(client=SimpleNamespace(responses=Responses()))
+
+    result = provider.generate(_provider_request(), config=_generation_config())
+
+    assert result.status == "incomplete"
+    assert result.incomplete_reason == "max_output_tokens"
+    assert result.provider_valid is False
+    # A truncated response can carry no text and must still be costed.
+    assert result.text == ""
+    assert result.output_tokens == 256
