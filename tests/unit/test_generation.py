@@ -984,10 +984,11 @@ def test_entity_path_is_laxer_than_casefold_exact_match() -> None:
 def test_entity_path_scores_an_empty_gold_by_levenshtein_alone() -> None:
     """Characterization: an empty normalized gold skips the substring branch.
 
-    `scoring.py:151` guards the substring test with `gold_norm and ...`, so an
-    empty gold does not match every prediction. It falls through to Levenshtein,
-    which scores 1.0 only against an equally empty prediction. `runner.py:170`
-    maps a missing gold to `""`, so this is reachable. See deviation 1 in
+    `src/contextbench/generation/scoring.py:165` guards the substring test with
+    `gold_norm and ...`, so an empty gold does not match every prediction. It
+    falls through to Levenshtein, which scores 1.0 only against an equally empty
+    prediction. `src/contextbench/generation/runner.py:170` maps a missing gold
+    to `""`, so this is reachable. See deviation 1 in
     `docs/specs/evaluation.md`.
     """
     # Without the guard, "" is a substring of everything and this would be 1.0.
