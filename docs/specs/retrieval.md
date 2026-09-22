@@ -46,11 +46,54 @@ as zero-score chunks once did on the sparse side. Short queries against the
 default 256-dimension hash embedding leave most chunks at similarity exactly
 `0.0`, so this is the common case rather than a corner.
 
-This is recorded, not fixed. Fixing it moves published numbers, so it must be
-its own change with its own re-measurement, not a rider on the BM25 fix. Any
-rerun that republishes a baseline should decide this first: if the dense mirror
-is fixed after a baseline is republished, every number in that baseline moves
-again and the rerun is wasted.
+This is recorded, not fixed.
+
+#### It cannot fire on a benchmark run
+
+An earlier version of this section claimed that fixing the dense channel moves
+published numbers and so must precede any rerun. That claim was not measured,
+and it is false. With `BAAI/bge-small-en-v1.5`, the embedder every published
+run used, a non-positive similarity does not occur:
+
+- Corpus side. All 31 cached indexes under `artifacts/indexes/` store
+  384-dimension unit-normalized vectors. Their exhaustive pairwise cosines --
+  3,715,675,587 distinct chunk pairs, including the three 36,294-chunk
+  indexes -- contain no value at or below zero. Per-index minima run from
+  `+0.1108` to `+0.5028`, and every chunk lies within 19.9 to 64.8 degrees of
+  its corpus mean. The vectors occupy a narrow cone, not the whole sphere.
+- Query side. The 24 `xldev24` questions, embedded at the pinned revision
+  `5c38ec7c405ec4b44b94cc5a9bb96e735b38267a` with CLS pooling and L2
+  normalization, scored against those stored vectors give 6,928,752
+  query-chunk similarities. None is at or below zero; the minimum is `+0.1878`;
+  none appears in any top-40. (The reproduction was checked against the stored
+  vectors themselves, which it reproduces to within `6e-8`.)
+
+A positivity guard on `_dense_search` is therefore inert under the production
+embedder: it would discard nothing on any run the benchmark has published, and
+so it cannot change a published number. This narrows the defect rather than
+dismissing it. The guard is still a genuine correctness change -- the code
+really does hand rank credit to zero-similarity chunks, and would do so for any
+embedder whose vectors are not confined to a positive cone -- but the reachable
+case today is the offline `hash-256-v1` model, whose sign-bit vectors leave
+most chunks at exactly `0.0` against a short query.
+
+#### What blocks the fix is an empty-candidate question
+
+The guard is not blocked on the rerun. It is blocked on a policy question the
+hash model exposes. BM25 already refuses zero-score chunks; if the dense
+channel also refuses zero-similarity chunks, a query that matches nothing in
+either channel yields no candidates at all, where it previously yielded
+hash-ordered non-matches. Measured on the committed fixtures, a strict guard
+empties 7 of the 20 fixture (arm, query) pairs -- `fixed`/`metrics`,
+`fixed`/`growth conclusion`, and `structural` for `quarterly report`,
+`metrics`, `methods`, `report highlights` and `growth conclusion` -- and drops
+the `region 42` row of the pinned ranking table from four results to three,
+because only three of those chunks carry any signal in either channel.
+
+Whether an empty retrieval is the correct outcome for a query that matches
+nothing, or whether the pipeline needs a floor, is a research decision and is
+deliberately not taken here. Returning the top-k anyway would reinstate exactly
+the hash-ordered credit the guard removes, so it is not a neutral default.
 
 ### How much the sparse defect cost each arm
 

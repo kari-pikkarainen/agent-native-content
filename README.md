@@ -442,10 +442,27 @@ One defect from that review is not fixed. The dense channel still awards rank
 credit, and so reciprocal-rank-fusion credit, to chunks whose similarity to
 the query is exactly zero, in chunk-ID order, exactly as the sparse channel
 did before the BM25 fix; see
-[the retrieval specification](docs/specs/retrieval.md). Fixing it moves
-published numbers, so it has to be decided before any rerun republishes a
-baseline: decided afterwards, every number in that baseline moves a second
-time and the rerun is wasted.
+[the retrieval specification](docs/specs/retrieval.md).
+
+It does not block the rerun, and the earlier claim on this page that it moves
+published numbers was wrong. It has now been measured against the embedder the
+published runs actually used. Across all 31 cached indexes the stored
+`BAAI/bge-small-en-v1.5` vectors are mutually positive: 3,715,675,587 distinct
+chunk pairs, none with a cosine at or below zero, minimum `+0.1108`. Embedding
+the 24 `xldev24` questions at the pinned revision
+`5c38ec7c405ec4b44b94cc5a9bb96e735b38267a` and scoring them against those same
+stored vectors gives 6,928,752 query-chunk similarities, again none at or below
+zero, minimum `+0.1878`, and none inside any top-40. A positivity guard on the
+dense channel could therefore not have fired on any published run, so fixing it
+cannot move a published number. The defect is real and worth fixing, but it is
+reachable only under the offline `hash-256-v1` model used by fixtures, whose
+sign-bit vectors are sparse enough to make exact zeros routine.
+
+Fixing it is blocked on a research decision rather than on the rerun. Under the
+hash model a strict guard, combined with the BM25 guard already in place, can
+leave a query with no candidates at all rather than with hash-ordered
+non-matches: it empties 7 of the 20 fixture (arm, query) pairs outright. Whether
+an empty retrieval is the correct answer there, or needs a floor, is open.
 
 Pinning the model revisions changed the derived-index key, so all 31 cached
 indexes under `artifacts/indexes/` are now unreachable by key and must be
