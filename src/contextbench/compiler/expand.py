@@ -299,13 +299,21 @@ def expand_candidates(
             for offset, candidate in enumerate(page_neighbors)
         )
 
-    # ``reranked`` is the only score here that means the same thing for every
-    # candidate class: a cross-encoder score against this query, shrunk by an
-    # explicit penalty for derived classes. ``fused`` is not -- it records how
-    # a candidate entered the pool, and that differs by class (an RRF sum for
-    # anything retrieved, a lexical overlap ratio for a keyed join), so it
-    # cannot break ties between classes and is no longer read here. The
-    # remaining keys are structural and total, so this stays deterministic.
+    # ``reranked`` is the only score here carried in one unit, so it is the
+    # only one this sort may key on. It is not uniformly a score of the
+    # candidate's own text: direct hits, keyed joins and table fragments are
+    # scored directly, page-neighbor windows are scored and then shrunk by a
+    # distance penalty, and siblings and list neighbors are never scored --
+    # ``_candidate_for_related_node`` gives them their anchor's score shrunk by
+    # a penalty. One unit, not one meaning; see ``RetrievalScores`` and
+    # ``docs/specs/retrieval.md`` for the per-class table and for the open
+    # question about multiplying a cross-encoder score by a fixed factor.
+    #
+    # ``fused`` is not even one unit -- it records how a candidate entered the
+    # pool, which differs by class (an RRF sum for anything retrieved, a
+    # lexical overlap ratio for a keyed join) -- so it cannot break ties
+    # between classes and is no longer read here. The remaining keys are
+    # structural and total, so this stays deterministic.
     expanded.sort(
         key=lambda candidate: (
             candidate.priority_tier,

@@ -118,10 +118,16 @@ class RetrievalChunk(BaseModel):
 class RetrievalScores(BaseModel):
     """Scores from each shared retrieval stage.
 
-    Only ``reranked`` is comparable across candidate classes. It always holds a
-    cross-encoder score for this candidate against the query, optionally shrunk
-    by an explicit structural penalty, so it is the one field any cross-class
-    ordering may key on.
+    ``reranked`` is the only field any cross-class ordering may key on, because
+    it is the only one carried in one unit: cross-encoder score. It is not
+    uniformly a score of the candidate's own text. Three compiler classes are
+    scored directly -- direct retrieval, keyed table joins, and oversized-table
+    fragments -- and so is a page-neighbor window, which is then shrunk by a
+    distance penalty. Siblings and list neighbors are never scored at all:
+    ``compiler/expand.py`` builds them with the *anchor's* score shrunk by a
+    penalty, so the number describes the paragraph or list item they were
+    expanded from, not the neighbor's text. The per-class table is in
+    ``docs/specs/retrieval.md``, which is the binding statement.
 
     ``dense``, ``sparse`` and ``fused`` are provenance: they record how a
     candidate reached the pool, and their units depend on which path it took.
@@ -130,6 +136,20 @@ class RetrievalScores(BaseModel):
     ratio for a keyed table join, which was never retrieved at all. Comparing
     those numbers to each other is meaningless; they may break ties only inside
     one class, and are published so a run can be audited.
+
+    Open question (2026-09-22): the structural penalties multiply. That was
+    defensible while anchors carried tightly clustered RRF sums, where a 0.9
+    factor moved a neighbor a predictable few ranks. Anchors now carry
+    cross-encoder scores, and a fixed factor on a signed log-odds value is not
+    a stated demotion policy: 0.5 becomes 0.45 and barely moves, while 10.0
+    becomes 9.0 and can still outrank many direct hits. The displacement now
+    depends on local score spacing rather than on any rule.
+    ``_penalized_reranker_score`` already concedes the point by special-casing
+    the sign so a negative score is not inverted, and still multiplies. Task 7
+    of ``docs/plans/2026-09-21-improvement-plan.md`` caches cross-encoder
+    scores per (query, node), which is what would make scoring neighbor text
+    directly affordable; task 4 owns the resulting ordering policy. Do not
+    change the penalty form without re-running the arms: it moves packets.
     """
 
     model_config = ConfigDict(extra="forbid", frozen=True)

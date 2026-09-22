@@ -1109,6 +1109,13 @@ def test_faceted_core_scores_share_the_reranker_scale_with_fragments(
 
     # ``reranked`` now holds the score the reranker actually produced for this
     # candidate against this query, and ``fused`` still holds the RRF sum.
+    #
+    # The equality below is NOT the general contract. It holds because this
+    # candidate is in ranking 0, the full-query ranking, and
+    # ``retrieve_faceted`` keeps the first ranking that produced a candidate.
+    # A candidate reached only through a facet keeps that facet's score, and
+    # comparing it to a full-query score would fail here by design. See
+    # ``docs/specs/retrieval.md``, "What ``reranked`` holds, per class".
     evidence = next(
         candidate
         for candidate in trace.ranked_evidence
@@ -1186,34 +1193,20 @@ def test_table_fragments_stop_displacing_faceted_core_evidence(
     assert any(content == "Results\n\nDistrict revenue" for content in contents)
 
 
-class ConstantReranker:
-    """Scores every pair the same, so only the tiebreak keys decide order."""
-
-    name = "constant-v1"
-
-    @property
-    def version(self) -> str:
-        return "1"
-
-    @property
-    def revision(self) -> str | None:
-        return None
-
-    def score(self, query: str, chunks) -> list[float]:
-        return [1.0] * len(chunks)
-
-    def score_pairs(self, pairs) -> list[float]:
-        return [1.0] * len(pairs)
-
-
 def test_reranker_ties_fall_back_to_structure_not_to_fused_scores(
     tmp_path: Path,
 ) -> None:
     """``fused`` is class-local provenance and cannot order across classes.
 
     A keyed join's ``fused`` is a lexical overlap ratio; a retrieved node's is
-    an RRF sum an order of magnitude smaller. Using it to break a reranker tie
-    ranked joins first on units alone.
+    an RRF sum roughly a decimal order of magnitude smaller. Using it to break
+    a reranker tie ranked joins first on units alone.
+
+    The tie here is not manufactured by a stub: the real reranker gives the
+    strongest direct hit and all three joins the same score, while the rest of
+    the pool takes two other scores. Exact ties are ordinary -- every fragment
+    of an oversized table scoring 0.0 against a heading query is another case,
+    pinned by ``test_table_fragments_pin_structural_heading_search_context_off``.
     """
     source = joined_tables_and_prose_source()
     counter = FixtureTokenCounter()
@@ -1226,30 +1219,40 @@ def test_reranker_ties_fall_back_to_structure_not_to_fused_scores(
         50,
         compiler_config(),
         tokenizer=counter,
-        reranker=ConstantReranker(),
+        reranker=LexicalOverlapReranker(),
     )
     candidates = trace.expanded_candidates
 
-    # Premise: every reranker score ties, and the two classes' ``fused``
-    # values are on different scales with the join's the larger.
-    assert len({candidate.scores.reranked for candidate in candidates}) == 1
-    joins = [
-        candidate for candidate in candidates if candidate.operator == "keyed_join"
+    # Premise: a normally scored pool -- several distinct reranker scores --
+    # in which exactly one score is shared, and shared across two classes
+    # whose ``fused`` values are on different scales.
+    scores = [candidate.scores.reranked for candidate in candidates]
+    assert len(set(scores)) > 2
+    tied_score = max(scores)
+    tied = [
+        candidate
+        for candidate in candidates
+        if candidate.scores.reranked == tied_score
     ]
-    core = [
-        candidate for candidate in candidates if candidate.operator == "retrieval"
-    ]
-    assert joins and core
-    assert max(join.scores.fused for join in joins) > max(
-        candidate.scores.fused for candidate in core
+    assert len(tied) > 1
+    assert {candidate.operator for candidate in tied} == {"retrieval", "keyed_join"}
+    core_tied = next(
+        candidate for candidate in tied if candidate.operator == "retrieval"
     )
+    join_tied = next(
+        candidate for candidate in tied if candidate.operator == "keyed_join"
+    )
+    # Roughly 0.42 against roughly 0.05: this is the comparison that used to
+    # decide the tie, and it decided it on units.
+    assert join_tied.scores.fused > core_tied.scores.fused
 
-    # With the scores tied, order comes from the structural keys alone.
+    # The tie is broken by structure instead, so the direct hit keeps its place.
     keys = [
         (candidate.origin_rank, candidate.expansion_order, candidate.chunk.id)
-        for candidate in candidates
+        for candidate in tied
     ]
     assert keys == sorted(keys)
+    assert candidates.index(core_tied) < candidates.index(join_tied)
     assert candidates[0].operator == "retrieval"
 
 

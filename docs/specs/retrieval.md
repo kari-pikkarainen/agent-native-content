@@ -30,6 +30,92 @@ The returned `RankedEvidence` records dense, sparse, fused, and reranked scores.
 Packed `ContextItem` values carry document IDs, pages, heading paths, IR node
 IDs, Docling source item IDs, and an evidence ID suitable for answer citations.
 
+### Which score may order candidates
+
+This is normative. `RetrievalScores` has four fields and they are not
+interchangeable.
+
+**`reranked` is the only cross-class ordering key.** It is the only field
+carried in one unit — cross-encoder score — for every candidate class, so it
+is the only one any ordering that mixes classes may key on. Both compiler
+ordering sites obey this: the candidate sort in `compiler/expand.py` and the
+third element of `_coverage_key` in `compiler/pack.py`.
+
+**`dense`, `sparse` and `fused` are class-local provenance.** They record how
+a candidate reached the pool, and their units depend on the path it took.
+`fused` is a reciprocal-rank-fusion sum for anything retrieved — over the
+sparse and dense channels for a plain query, over rankings for a faceted one —
+and a lexical overlap ratio in `0..1` for a keyed table join, which was never
+retrieved at all. An RRF sum is on the order of `0.03`; the overlap ratio is
+on the order of `0.4`. Comparing them across classes is meaningless. They may
+break ties only inside one class, and they are published so a run can be
+audited.
+
+The facet stage must not write its RRF sum into `reranked`. It did until
+compiler 0.9.0, which discarded the cross-encoder score `rerank_many` had
+already computed and left faceted core evidence ordered by a number roughly a
+decimal order of magnitude smaller than the raw scores that keyed joins and
+table fragments carry. Every fragment then sorted above every direct hit
+irrespective of relevance. Covered by
+`test_faceted_core_scores_share_the_reranker_scale_with_fragments` and
+`test_table_fragments_stop_displacing_faceted_core_evidence`.
+
+#### What `reranked` holds, per class
+
+One unit is not one meaning. Two classes are never scored on their own text:
+
+| Candidate class | `reranked` | `fused` |
+| --- | --- | --- |
+| Direct retrieval, faceted, `batched` (default) | cross-encoder score from `rerank_many`, conditioned on the full query or on the facet that found it | facet RRF sum |
+| Direct retrieval, faceting off, no facets, or `single_pass` | cross-encoder score against the full query | sparse+dense RRF, or facet RRF under `single_pass` |
+| Keyed table join | cross-encoder score against the full query | lexical overlap ratio, `0..1` |
+| Oversized-table fragment | cross-encoder score against the full query | inherited from the parent table node |
+| Page-neighbor window | cross-encoder score against the full query, shrunk by `page_neighbor_score_penalty ** distance` | parent RRF × penalty |
+| Sibling, list neighbor | **the anchor's `reranked`, shrunk by a penalty.** The neighbor's own text is never scored | parent RRF × penalty |
+
+Two consequences follow and are deliberate, not defects to be silently fixed.
+
+**Conditioning is not uniform under the batched facet strategy.**
+`retrieve_faceted` keeps the first ranking that produced a candidate, and
+ranking 0 is the full query, so a candidate the full query found carries a
+full-query score while a candidate reached only through a facet carries that
+facet's score. Same model, same unit, different conditioning. A facet is
+shorter and more specific than the query it came from, so those scores tend to
+read high, and nothing corrects for it; the `query_facet_full_weight` advantage
+ranking 0 receives in the RRF sum is the only counterweight, and it acts on
+`fused` and on rank, not on `reranked`. Making the conditioning uniform means
+scoring facet-only candidates against the full query as well — a second
+cross-encoder pass or a wider first one — which is a latency decision, not a
+scale fix.
+
+The caveat is narrower than it first appears, and the bound is arithmetic
+rather than incidental. Facet-only candidates do arise — pool truncation, not
+a failed match, is what produces them, since every facet term is also a query
+term — but `retrieve_faceted` then truncates the fused union to `len(ranked)`,
+and a facet-only candidate carries no `query_facet_full_weight` credit. With
+the default `rrf_k` of 60, a candidate credited by a single facet at rank 1
+reaches `1/61 ≈ 0.0164`, while any ranking-0 candidate reaches at least
+`2/(60 + rank)`, which stays above `0.03` for any plausible rank. A facet-only
+candidate therefore survives the cut only when at least two facets credit it
+near rank 1 *and* the ranking-0 candidate it displaces drew no facet credit at
+all. No fixture built for the 0.9.0 change produced one, so the published
+compiler packets are unlikely to contain facet-conditioned scores today; that
+is a bound on exposure, not a guarantee, and it will loosen if
+`query_facet_limit` rises.
+
+**Open question (2026-09-22): the structural penalties multiply.** That was
+defensible while anchors carried tightly clustered RRF sums, where a 0.9 factor
+moved a neighbor a predictable handful of ranks. Since 0.9.0 anchors carry
+cross-encoder scores, and a fixed factor on a signed log-odds value states no
+policy: `0.5` becomes `0.45` and barely moves, while `10.0` becomes `9.0` and
+can still outrank many direct hits, so the displacement depends on local score
+spacing. `_penalized_reranker_score` already concedes the point by
+special-casing the sign so a negative score is not inverted, and still
+multiplies. Task 7 of `docs/plans/2026-09-21-improvement-plan.md` caches
+cross-encoder scores per (query, node), which is what would make scoring
+neighbor text directly affordable; task 4 owns the resulting ordering policy.
+Changing the penalty form moves packets and requires re-running the arms.
+
 ### Both channels refuse non-matches
 
 Stage 1 returns only chunks that match at least one query term: a chunk scoring
@@ -413,11 +499,19 @@ sentences carry the same sparse score, ranks 2 and 3 moved from
 follows from one candidate taking sparse rank 2 with dense rank 3 and the
 other the reverse. On `"revenue table"` a fused value likewise moves from
 `1/71` to `1/70`. This is a downstream consequence of the id tie-break, not a
-change in scoring logic, and **no metric consumes the fused value**: it is an
-ordering key (`retrieval/index.py:330`, `compiler/expand.py:293` and
-`:415`) and a recorded diagnostic. One field does follow it -- `retrieve`
-seeds `RetrievalScores.reranked` with the fused value at
-`retrieval/index.py:356`, so that seed moves until a reranker overwrites it.
+change in scoring logic, and **no metric consumes the fused value**: it is a
+class-local ordering key and a recorded diagnostic. Since compiler 0.9.0 it is
+read at four ordering sites, every one of them comparing candidates within a
+single class, per "Which score may order candidates" above: the candidate sort
+in `retrieval/index.py:330`, the reranker tie-break in `retrieval/index.py:380`
+and `:425`, and the page-neighbor sort in `compiler/expand.py:445`. It is also
+part of the rerank cache key at `retrieval/index.py:718`, so a moved fused
+value costs a cache miss rather than a changed result. Two other fields follow
+it: `retrieve` seeds `RetrievalScores.reranked` with the fused value at
+`retrieval/index.py:356`, so that seed moves until a reranker overwrites it,
+and the structural penalties at `compiler/expand.py:429` and `:727` scale it.
+The compiler's main candidate sort no longer reads it; before 0.9.0 it did,
+which is what this paragraph used to record as `compiler/expand.py:293`.
 Any earlier statement that retrieval scores were unchanged is false as
 written; it holds for the sparse, dense and reranked scores only.
 
