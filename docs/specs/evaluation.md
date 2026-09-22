@@ -203,9 +203,12 @@ scoring functions, and pricing metadata.
 
 The prompt requires a concise answer plus evidence-ID citations and requires
 `INSUFFICIENT_EVIDENCE` when the context cannot support an answer. Invalid JSON
-is not repaired and scores zero. Scoring follows the released XL-DocBench
-deterministic evaluator: relaxed rule-based accuracy, normalized token F1, and
-ANLS. Citation validity is the fraction of returned IDs present in the context.
+is not repaired and scores zero. Scoring *targets* the released XL-DocBench
+deterministic evaluator — relaxed rule-based accuracy, normalized token F1, and
+ANLS — but the mapping is **unverified** against it: the released evaluator has
+never been executed or read here, and every difference below is an assumption
+rather than a confirmed match. See "Released rule mapping and deviations".
+Citation validity is the fraction of returned IDs present in the context.
 The historical `citation_support` field measures overlap with registered gold
 pages and is now labeled gold-page alignment; neither metric is semantic
 entailment. An optional second call to the same frozen model judges whether the
@@ -224,6 +227,84 @@ constructing the provider and counts the optional judge in that ceiling. Runs
 are atomically published under
 `artifacts/generation-runs/<run-id>/` and bind to hashes of the retrieval
 manifest and contexts.
+
+## Released rule mapping and deviations
+
+### Why this mapping is unverified
+
+The released XL-DocBench evaluator has never been compared against. The pinned
+release on disk (`data/raw/xl-docbench`, `xldocbench_strict_1345_v1`) contains
+only `manifest.json` and `data/documents.jsonl`, `data/qa_single_doc.jsonl`,
+`data/qa_cross_doc.jsonl`. The manifest *names* evaluator artifacts —
+`release_files.per_question_scores` (`results/scores.jsonl`),
+`release_files.score_summary` (`results/summary.json`),
+`score_evaluator_sha256`, and `scored_system_count` (13) — but none of them are
+downloaded, no `results/` directory exists, and no evaluator code is vendored
+anywhere in this repository. Reference semantics below are inferred from rule
+*names* alone.
+
+Every row is labelled **verified** (checked against the release data and
+`src/contextbench/generation/scoring.py` in this repository) or **assumed,
+pending evaluator fetch** (a guess at the reference evaluator that no artifact
+on disk can confirm). A verified label never means "matches the reference"; it
+means "this is what our implementation demonstrably does".
+
+### Rule inventory
+
+Counts over all 1345 released rows, both `qa_single_doc.jsonl` and
+`qa_cross_doc.jsonl`:
+
+| `verification_rule` | Rows | Released `answer.format` | Mapped `answer_type` |
+|---|---|---|---|
+| `casefold_exact_match` | 822 | `Str` (822) | `entity` |
+| `numeric_tolerance` | 276 | `Int` (209), `Float` (67) | `numeric` |
+| `exact_match` | 188 | `None` (188) | `unanswerable` |
+| `percentage_exact` | 43 | `Float` (43) | `percentage` |
+| `choice_exact_match` | 16 | `Str` (16) | `single_choice` |
+
+Resulting `answer_type` distribution: entity 822, numeric 276, unanswerable
+188, percentage 43, single_choice 16.
+
+All 188 `exact_match` rows carry `format == "None"` **and**
+`metadata.is_unanswerable == true`. `answer_type` returns `unanswerable` at its
+first guard, before any rule dispatch, so `exact_match` never reaches the
+relaxed entity path. The relaxed entity path affects exactly the 822
+`casefold_exact_match` questions.
+
+The set of released rules is pinned as `RELEASED_VERIFICATION_RULES` in
+`src/contextbench/generation/scoring.py` and asserted by the test suite, so a
+newly-seen rule fails the suite rather than silently taking a default path.
+
+### Deviations and assumptions
+
+| # | Rule / path | What the implementation does | Assumed released semantics | Assessment | Label |
+|---|---|---|---|---|---|
+| 1 | `casefold_exact_match` → `entity` (822 rows) | After normalization, scores 1.0 if gold is a **substring** of the prediction, else if the normalized Levenshtein ratio is **>= 0.8** | Casefolded exact string equality | **Deliberate deviation, laxer.** Relaxed matching is intentional for free-text generation, but it is strictly more permissive than the rule name and inflates accuracy on the largest slice of the benchmark. Magnitude unquantified. | Deviation **verified**; released semantics **assumed, pending evaluator fetch** |
+| 2 | `percentage_exact` → `percentage` (43 rows) | Shares `numeric`'s **5% relative** tolerance; the `percentage` and `numeric` kinds take the same branch | Exact match on the percentage value, as the name `percentage_exact` states | **Deliberate deviation, laxer.** A distinct `percentage` type exists but carries no distinct predicate. | Deviation **verified**; released semantics **assumed, pending evaluator fetch** |
+| 3 | Tolerance value (`numeric` + `percentage`, 319 rows) | `NUMERIC_RELATIVE_TOLERANCE = 0.05`, applied as relative error; gold `0` is special-cased to an absolute `< 1e-6` | Unknown. The rule name `numeric_tolerance` implies a tolerance but does not state one | **Unsourced assumption.** Every released `answer` object contains exactly `format`, `value`, `verification_rule` — all 1345 rows, no exceptions — so there is no per-question tolerance parameter anywhere in the release. Whether the reference tolerance is relative or absolute, and its magnitude, are both unknown. | **Assumed, pending evaluator fetch** |
+| 4 | `exact_match` → `unanswerable` (188 rows) | Substring match of the normalized prediction against a hardcoded phrase list: `not answerable`, `unanswerable`, `cannot be determined`, `cannot be answered`, `not enough information`, `insufficient_evidence` | A structured abstention check against the released `None` answer | **Deliberate deviation.** Not equivalent in either direction: a prediction that confidently asserts a wrong answer *and* happens to contain one of these phrases scores 1.0, while a valid abstention phrased outside the list scores 0.0. The prompt mitigates this by mandating the literal `INSUFFICIENT_EVIDENCE` token, but nothing enforces it. | Behavior **verified**; released semantics **assumed, pending evaluator fetch** |
+| 5 | Numeric routing | `numeric` is selected when `answer_format` is `Int`/`Float` **or** when the rule name *contains* `"numeric"` or `"tolerance"` (`any(marker in question.verification_rule ...)`), a substring test rather than equality | Exact dispatch on the rule identifier | **Latent fragility, not currently wrong.** For the five released rules the substring test gives the same result as equality, so no released row is misrouted. An unseen future rule containing either word — e.g. a hypothetical `numeric_exact` — would silently take the numeric path with its 5% tolerance and no error. `RELEASED_VERIFICATION_RULES` plus its test are the guard against this. | Behavior **verified**; the risk is prospective |
+
+### Secondary observations
+
+- The `boolean` path in `accuracy_score` is **dead for this release**: no
+  released row has a `Bool` or `Boolean` format. It is retained for datasets
+  that do, and is untouched by these deviations.
+- An unrecognized `kind` falls through to the **entity** path rather than
+  raising. This is why the `RELEASED_VERIFICATION_RULES` assertion matters: the
+  default is silent and permissive, not loud.
+- `token_f1_score` and `anls_score` are reported alongside accuracy and share
+  `normalize_answer`, but neither is named by any released `verification_rule`;
+  their correspondence to the released evaluator is equally unverified.
+
+### Closing this gap
+
+The only thing that converts these rows to a real comparison is fetching the
+evaluator named by `score_evaluator_sha256` and the released
+`results/scores.jsonl`, then diffing per-question scores for the 13 scored
+systems. That fetch is network work and is out of scope here. Until it happens,
+no claim of evaluator parity may be published; report accuracy as
+"relaxed, locally defined" and cite this section.
 
 ## Gold-evidence representation experiment
 

@@ -1,8 +1,54 @@
-"""Deterministic XL-DocBench-compatible answer scoring."""
+"""Deterministic XL-DocBench-compatible answer scoring.
+
+This module *targets* the released XL-DocBench deterministic evaluator. The
+released evaluator has never been executed or read here: the pinned release on
+disk carries only ``manifest.json`` and ``data/*.jsonl``. The manifest names
+evaluator artifacts (``release_files.per_question_scores``,
+``release_files.score_summary``, ``score_evaluator_sha256``) that are not
+downloaded, and no evaluator code is vendored in this repository. The mapping
+below is therefore **unverified** against the reference implementation.
+
+Known deviations and unverified assumptions are enumerated in
+``docs/specs/evaluation.md`` under "Released rule mapping and deviations".
+Do not change a predicate here without updating that table: these functions
+produce published benchmark numbers.
+"""
 
 import re
 
 from contextbench.datasets.base import BenchmarkQuestion
+
+RELEASED_VERIFICATION_RULES = frozenset(
+    {
+        "casefold_exact_match",
+        "choice_exact_match",
+        "exact_match",
+        "numeric_tolerance",
+        "percentage_exact",
+    }
+)
+"""Every ``answer.verification_rule`` observed in release ``xldocbench_strict_1345_v1``.
+
+Counts over the 1345 released rows: ``casefold_exact_match`` 822,
+``numeric_tolerance`` 276, ``exact_match`` 188, ``percentage_exact`` 43,
+``choice_exact_match`` 16.
+
+This constant documents the closed set :func:`answer_type` was written against
+and is asserted by the test suite. It is deliberately *not* consulted at
+runtime: :func:`answer_type` must keep scoring whatever a future release hands
+it rather than raising mid-benchmark. A rule outside this set is unreviewed and
+may take a wrong path silently -- notably any rule containing ``"tolerance"``
+or ``"numeric"``, which is routed to the numeric path by substring test.
+"""
+
+NUMERIC_RELATIVE_TOLERANCE = 0.05
+"""Relative tolerance applied to the ``numeric`` and ``percentage`` paths.
+
+**This value has no source in the release.** Every released ``answer`` object
+contains exactly ``format``, ``value``, and ``verification_rule`` -- there is no
+per-question tolerance parameter, and the reference evaluator's tolerance is
+unknown. 5% is a local assumption, pending an evaluator fetch.
+"""
 
 
 def normalize_answer(text: str) -> str:
@@ -17,7 +63,24 @@ def normalize_answer(text: str) -> str:
 
 
 def answer_type(question: BenchmarkQuestion) -> str:
-    """Map released format/rule metadata to the native evaluator type."""
+    """Map released format/rule metadata to the native evaluator type.
+
+    Over release ``xldocbench_strict_1345_v1`` this yields entity 822,
+    numeric 276, unanswerable 188, percentage 43, single_choice 16.
+
+    The unanswerable guard runs **first**, before any rule dispatch. All 188
+    ``exact_match`` rows carry ``format == "None"`` and
+    ``metadata.is_unanswerable == true``, so ``exact_match`` never reaches the
+    relaxed entity path; the entity path is reached only by the 822
+    ``casefold_exact_match`` rows.
+
+    The ``boolean`` branch is dead for this release: no released row has a
+    ``Bool`` format. It is retained for datasets that do.
+
+    Numeric routing uses a **substring** test on the rule name, so an unseen
+    rule containing ``"numeric"`` or ``"tolerance"`` would silently take the
+    numeric path. See :data:`RELEASED_VERIFICATION_RULES`.
+    """
     if not question.answerable or question.answer_format == "None":
         return "unanswerable"
     if question.verification_rule == "choice_exact_match":
@@ -34,10 +97,29 @@ def answer_type(question: BenchmarkQuestion) -> str:
 
 
 def accuracy_score(prediction: str, gold: str, kind: str) -> float:
-    """Compute the benchmark's relaxed rule-based accuracy."""
+    """Compute the benchmark's relaxed rule-based accuracy.
+
+    Relaxed relative to the released rule names, in ways that are unverified
+    against the reference evaluator:
+
+    - ``unanswerable`` is a phrase-substring test over a hardcoded phrase list,
+      not a structured abstention check. Any answer containing one of those
+      phrases scores 1.0 regardless of the rest of its content.
+    - ``numeric`` and ``percentage`` share one relative tolerance
+      (:data:`NUMERIC_RELATIVE_TOLERANCE`), despite the released rule being
+      named ``percentage_exact``.
+    - ``entity`` (the fallback, reached by ``casefold_exact_match``) accepts a
+      gold-in-prediction substring hit *or* a Levenshtein ratio >= 0.8, which
+      is laxer than a casefolded exact match.
+    - An unrecognized ``kind`` falls through to the entity path.
+
+    See "Released rule mapping and deviations" in ``docs/specs/evaluation.md``.
+    """
     prediction_norm = normalize_answer(prediction)
     gold_norm = normalize_answer(gold)
     if kind == "unanswerable":
+        # Substring match, not structured abstention: a prediction that asserts
+        # an answer *and* contains one of these phrases still scores 1.0.
         phrases = (
             "not answerable",
             "unanswerable",
@@ -58,7 +140,8 @@ def accuracy_score(prediction: str, gold: str, kind: str) -> float:
             return 0.0
         if gold_number == 0:
             return float(abs(prediction_number) < 1e-6)
-        return float(abs(prediction_number - gold_number) / abs(gold_number) <= 0.05)
+        relative_error = abs(prediction_number - gold_number) / abs(gold_number)
+        return float(relative_error <= NUMERIC_RELATIVE_TOLERANCE)
     if kind == "single_choice":
         prediction_option = re.search(r"\b([A-D])\b", prediction.strip().upper())
         gold_option = re.search(r"\b([A-D])\b", gold.strip().upper())

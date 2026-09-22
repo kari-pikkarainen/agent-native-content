@@ -8,6 +8,7 @@ from types import SimpleNamespace
 import pytest
 from test_evaluation import _corpus, _run
 
+from contextbench.datasets.base import BenchmarkQuestion
 from contextbench.evaluation import BenchmarkSystem
 from contextbench.experiments import manifest
 from contextbench.generation import (
@@ -23,7 +24,14 @@ from contextbench.generation import (
 )
 from contextbench.generation.models import AnswerRequest
 from contextbench.generation.runner import _markdown_report, _summarize
-from contextbench.generation.scoring import accuracy_score, anls_score, token_f1_score
+from contextbench.generation.scoring import (
+    NUMERIC_RELATIVE_TOLERANCE,
+    RELEASED_VERIFICATION_RULES,
+    accuracy_score,
+    anls_score,
+    answer_type,
+    token_f1_score,
+)
 
 
 class FixtureProvider:
@@ -790,3 +798,154 @@ def test_openai_provider_records_unreadable_response_text() -> None:
     assert result.status == "completed"
     assert result.provider_valid is False
     assert result.input_tokens == 120
+
+
+def _rule_question(
+    verification_rule: str,
+    *,
+    answer_format: str,
+    answerable: bool,
+) -> BenchmarkQuestion:
+    """Build a question carrying one released rule, without reading `data/**`."""
+    return BenchmarkQuestion(
+        id=f"question-{verification_rule}",
+        question="Which target increased?",
+        document_ids=("dataset-doc-1",),
+        gold_answer=None if answer_format == "None" else "revenue",
+        answer_format=answer_format,
+        verification_rule=verification_rule,
+        gold_evidence=(),
+        answerable=answerable,
+        task_type="single_doc",
+    )
+
+
+# Every released rule in `xldocbench_strict_1345_v1`, paired with the released
+# `answer.format` and answerability that co-occur with it, and the type the
+# mapping must produce. Deviations are tabulated in `docs/specs/evaluation.md`.
+RELEASED_RULE_MAPPING: tuple[tuple[str, str, bool, str], ...] = (
+    ("casefold_exact_match", "Str", True, "entity"),
+    ("numeric_tolerance", "Int", True, "numeric"),
+    ("numeric_tolerance", "Float", True, "numeric"),
+    ("exact_match", "None", False, "unanswerable"),
+    ("percentage_exact", "Float", True, "percentage"),
+    ("choice_exact_match", "Str", True, "single_choice"),
+)
+
+
+@pytest.mark.parametrize(
+    ("verification_rule", "answer_format", "answerable", "expected"),
+    RELEASED_RULE_MAPPING,
+)
+def test_released_verification_rules_map_to_expected_answer_type(
+    verification_rule: str,
+    answer_format: str,
+    answerable: bool,
+    expected: str,
+) -> None:
+    question = _rule_question(
+        verification_rule,
+        answer_format=answer_format,
+        answerable=answerable,
+    )
+    assert answer_type(question) == expected
+
+
+def test_released_rule_mapping_covers_every_released_rule() -> None:
+    """A newly-seen rule must fail here, not silently take the entity default."""
+    exercised = {rule for rule, _, _, _ in RELEASED_RULE_MAPPING}
+    assert exercised == set(RELEASED_VERIFICATION_RULES)
+
+
+def test_exact_match_never_reaches_the_relaxed_entity_path() -> None:
+    """All 188 released `exact_match` rows are unanswerable rows.
+
+    The unanswerable guard runs before rule dispatch, so `exact_match` is
+    scored by abstention detection and not by the relaxed entity predicate.
+    """
+    question = _rule_question("exact_match", answer_format="None", answerable=False)
+    assert answer_type(question) == "unanswerable"
+    # No released row pairs `exact_match` with an answerable question. This
+    # pins which path such a row would take if a future release added one.
+    answerable_variant = _rule_question(
+        "exact_match", answer_format="Str", answerable=True
+    )
+    assert answer_type(answerable_variant) == "entity"
+
+
+def test_numeric_routing_is_a_substring_test_on_the_rule_name() -> None:
+    """Characterization: an unseen rule containing `tolerance` takes numeric.
+
+    This is not desired behavior; it is pinned so that any future change to the
+    dispatch is deliberate. See deviation 5 in `docs/specs/evaluation.md`.
+    """
+    unseen = _rule_question(
+        "some_future_tolerance_rule", answer_format="Str", answerable=True
+    )
+    assert "some_future_tolerance_rule" not in RELEASED_VERIFICATION_RULES
+    assert answer_type(unseen) == "numeric"
+
+
+def test_percentage_shares_the_numeric_relative_tolerance() -> None:
+    """Characterization: `percentage_exact` is not scored exactly.
+
+    The percentage path applies the same 5% *relative* tolerance as numeric,
+    despite the released rule name. The tolerance value itself has no source in
+    the release. See deviations 2 and 3 in `docs/specs/evaluation.md`.
+    """
+    assert NUMERIC_RELATIVE_TOLERANCE == 0.05
+    for kind in ("numeric", "percentage"):
+        assert accuracy_score("21", "20", kind) == 1.0  # +5.0%, at the bound
+        assert accuracy_score("19", "20", kind) == 1.0  # -5.0%, at the bound
+        assert accuracy_score("21.1", "20", kind) == 0.0  # +5.5%, outside
+        assert accuracy_score("18.9", "20", kind) == 0.0  # -5.5%, outside
+        # Relative, not absolute: the same 1.0 gap passes at 20 and fails at 2.
+        assert accuracy_score("3", "2", kind) == 0.0
+        # Gold zero is special-cased to a near-exact absolute check.
+        assert accuracy_score("0", "0", kind) == 1.0
+        assert accuracy_score("0.1", "0", kind) == 0.0
+    # The percentage path compares bare numbers, so a value and its percent
+    # rendering are treated as equal.
+    assert accuracy_score("5%", "5", "percentage") == 1.0
+
+
+def test_unanswerable_scoring_is_phrase_substring_matching() -> None:
+    """Characterization: abstention is detected by phrase, not by structure.
+
+    See deviation 4 in `docs/specs/evaluation.md`.
+    """
+    for phrase in (
+        "Not answerable",
+        "unanswerable",
+        "This cannot be determined",
+        "It cannot be answered",
+        "There is not enough information",
+        "INSUFFICIENT_EVIDENCE",
+    ):
+        assert accuracy_score(phrase, "None", "unanswerable") == 1.0
+    # A confident wrong answer scores 1.0 whenever it embeds a listed phrase.
+    assert (
+        accuracy_score(
+            "Revenue rose 12%, though some figures are unanswerable.",
+            "None",
+            "unanswerable",
+        )
+        == 1.0
+    )
+    # A valid abstention phrased outside the list scores 0.0.
+    assert accuracy_score("The document does not say.", "None", "unanswerable") == 0.0
+    assert accuracy_score("N/A", "None", "unanswerable") == 0.0
+
+
+def test_entity_path_is_laxer_than_casefold_exact_match() -> None:
+    """Characterization: the 822 `casefold_exact_match` rows are scored loosely.
+
+    Substring containment or a Levenshtein ratio >= 0.8 both score 1.0. See
+    deviation 1 in `docs/specs/evaluation.md`.
+    """
+    # Substring containment, not equality.
+    assert accuracy_score("The answer is revenue increased", "revenue", "entity") == 1.0
+    # Near-miss accepted by the 0.8 Levenshtein ratio.
+    assert accuracy_score("revenu", "revenue", "entity") == 1.0
+    # Far enough away to fail.
+    assert accuracy_score("costs", "revenue", "entity") == 0.0
