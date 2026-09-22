@@ -383,7 +383,9 @@ gold pages or quotes, are defined in the
   and quote-eligible summaries are now computed and rendered alongside the
   aggregate, but eligibility keys on a question's answerable flag rather than
   on it having annotated gold pages, so an answerable question with no gold
-  pages still contributes a vacuous score. The canonical development and
+  pages still contributes a vacuous score. No such question occurs in
+  `xldev24`, where all six zero-gold-page questions are unanswerable; one
+  XL100 question is affected. The canonical development and
   holdout reports predate this reporting; only the
   [metric-audit rerun](results/retrieval/xlholdout6b-metric-audit/report.md)
   publishes the answerable-only tables.
