@@ -162,19 +162,35 @@ Consequences, audited across the consumers of `retrieve()` and `pack()`:
 
 ### Fixed defect: the structural arm could not retrieve heading vocabulary
 
-**Status: fixed.** `RetrievalConfig.structural_heading_search_context`
-defaults to `True`, and with it `structural_chunks` sets each chunk's
-`search_text` to its heading trail joined above the chunk text, exactly as the
-compiler's candidates already did. Setting the field to `False` reproduces the
-pre-fix behaviour exactly -- structural `search_text` stays `None` -- so the
-defect can be ablated rather than merely described. The rest of this section
-records what the defect was, because **every published pre-fix structural
-number was measured in the `False` state and carries it.**
+**Status: fixed.** `RetrievalConfig.heading_search_context` defaults to
+`True`, and with it `structural_chunks` sets each chunk's `search_text` to its
+heading trail joined above the chunk text, exactly as the compiler's candidates
+already did. Setting the field to `False` reproduces the pre-fix behaviour
+exactly -- `search_text` stays `None` -- so the defect can be ablated rather
+than merely described. The rest of this section records what the defect was,
+because **every published pre-fix structural number was measured in the
+`False` state and carries it.**
 
-The fix is search-only. `retrieval_text` is `search_text or text`; the emitted
-chunk `text`, its `token_count`, the chunk id, provenance and every budget are
-byte-identical in both positions of the field, and the fixed, long-context and
-compiler arms are untouched.
+**The field is read by both heading-bearing units, not only the structural
+one.** It was originally named `structural_heading_search_context` and only
+`structural_chunks` read it; it is now `heading_search_context` and
+`compiler/candidates.py` reads it too, so `node_chunks` builds heading-bearing
+`search_text` only in the `True` position. That is what makes the factorial's
+heading-context factor answerable: the compiler's node candidates have always
+carried heading context unconditionally, so an ablation that could only turn it
+off on the structural unit could not separate "IR nodes beat structural chunks"
+from "IR nodes carry heading context". The rename rekeys every derived index,
+because `RetrievalConfig` is part of the index key payload; the pinned literals
+in `test_index_key_is_stable_for_a_fixed_revision` were re-derived, not
+re-recorded, and the key name is the whole of the difference.
+
+The fix is search-only on both units. `retrieval_text` is `search_text or
+text`; the emitted chunk `text`, its `token_count`, provenance and every budget
+are byte-identical in both positions of the field, and the fixed and
+long-context arms are untouched. The compiler node candidate's **id** does move
+between the two positions, because its payload embeds the indexed string: the
+`True` position is byte-identical to the pre-rename behaviour, and the `False`
+position is a genuinely different candidate that must not share a cached id.
 
 This was a separate defect from the channel-positivity work above. It was not
 caused by either guard; the guards only made it visible.
@@ -224,7 +240,8 @@ comparison run in the `False` state is biased **in favour of the fixed
 baseline** by an amount that has not been measured on the benchmark subsets.
 
 The compiler arm never shared the gap. `compiler/candidates.py` sets
-`search_text` explicitly via `contextual_search_text`, which joins the node's
+`search_text` via `contextual_search_text` whenever
+`heading_search_context` is on, which joins the node's
 `heading_path` above its own text (dropping the last heading when it duplicates
 the node text, so a heading node is not repeated). That helper now lives in
 `retrieval/chunking.py` and is shared by both arms, so they build the same
@@ -238,10 +255,13 @@ compiler caveat, distinct from this gap: it skips `content_layer ==
 structural number, so published structural results and the paired deltas
 against them cannot be carried across the fix. A rerun must remeasure both
 arms; a run that deliberately reproduces the old state must set
-`structural_heading_search_context=False` and say so. Adding the field changes
-`RetrievalConfig`, which is part of the derived-index key payload, so every
-cached index rekeys across the change in either direction -- a stale index is
-never reused across it.
+`heading_search_context=False` and say so -- which now also removes heading
+context from the compiler's node candidates, so the old structural state and
+the old compiler state cannot be reproduced independently through this one
+field. Adding the field, and later renaming it, changes `RetrievalConfig`,
+which is part of the derived-index key payload, so every cached index rekeys
+across the change in either direction -- a stale index is never reused across
+it.
 
 **The field moves structural numbers by two independent mechanisms, not one.**
 The first is the one described above: heading vocabulary becomes matchable. The
@@ -263,28 +283,36 @@ carried heading-bearing `search_text`. It is recorded here because an ablation
 toggling this one field measures **heading matching plus dedupe scope
 together**, and attributing the whole of the resulting delta to matching would
 be wrong. Separating the two requires a second ablation that varies the dedupe
-key independently of what is indexed; none has been run.
+key independently of what is indexed; none has been run. The same caveat
+applies to the compiler's node candidates now that they read the field: a
+single-factor delta there also carries both mechanisms, because
+`_unique_by_search_text` reads `retrieval_text` for every unit alike.
 
 **Blast radius beyond the retrieval arm.** The field is read wherever
-`structural_chunks` is called with an unpinned `RetrievalConfig`. That includes
-`evaluation/factorial.py`, which builds the `ContentUnit.STRUCTURAL` index
-through `structural_chunks(config=config.retrieval)` with no pin, so the new
-default changes the factorial's structural-unit cells too. Published
-**factorial** structural-unit results, and the unit and policy comparisons
-drawn from them, carry the old behaviour exactly as the retrieval arm's numbers
-do and cannot be carried across either. See `docs/specs/factorial.md`.
+`structural_chunks` or `node_chunks` is called with an unpinned
+`RetrievalConfig`. That includes `evaluation/factorial.py`, which builds the
+`ContentUnit.STRUCTURAL` and `ContentUnit.IR` indexes with no pin, so the
+default changes the factorial's structural-unit and IR-unit cells alike.
+Published **factorial** structural-unit results, and the unit and policy
+comparisons drawn from them, carry the old behaviour exactly as the retrieval
+arm's numbers do and cannot be carried across either. The factorial now crosses
+the field explicitly as `FactorialConfig.heading_contexts`; see
+`docs/specs/factorial.md`.
 
-**The compiler arm is untouched because of an explicit pin, not automatically.**
-`compiler/expand.py` builds oversized-table fragments with `structural_chunks`
-and pins `structural_heading_search_context=False` at that one call site. That
-pin is the whole of the isolation: remove it and table fragment reranker scores
-move, and the expanded candidate also keeps a stale `search_text` -- the
-heading trail above the *un-rendered* fragment body -- which shadows the
-rendered `text` for every downstream reader of `retrieval_text`, including the
-coverage and table-reference terms in `compiler/pack.py`. The pin is covered by
-`test_table_fragments_pin_structural_heading_search_context_off`. Any new
-`structural_chunks` call site inside the compiler needs the same pin, or the
-change stops being scoped to Arm B.
+**Compiler table fragments are protected by an explicit pin, not
+automatically.** `compiler/expand.py` builds oversized-table fragments with
+`structural_chunks` and pins `heading_search_context=False` at that one call
+site. That pin is the whole of the isolation: remove it and table fragment
+reranker scores move, and the expanded candidate also keeps a stale
+`search_text` -- the heading trail above the *un-rendered* fragment body --
+which shadows the rendered `text` for every downstream reader of
+`retrieval_text`, including the coverage and table-reference terms in
+`compiler/pack.py`. The pin is covered by
+`test_table_fragments_pin_heading_search_context_off`. It is a separate concern
+from the compiler's node candidates, which do read the field: the pin stays in
+place in both positions of the factor, so an ablation moves what the node index
+matches on and never what a rendered table fragment carries. Any new
+`structural_chunks` call site inside the compiler needs the same pin.
 
 ### How much the sparse defect cost each arm
 

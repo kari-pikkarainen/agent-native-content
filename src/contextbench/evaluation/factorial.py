@@ -11,6 +11,7 @@ import time
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
+from itertools import product
 from pathlib import Path
 
 from docling_core.types.doc import DoclingDocument
@@ -190,9 +191,10 @@ def run_factorial_benchmark(
             for document_id, document in sorted(corpus.documents.items())
         },
         systems=tuple(
-            _system_name(unit, policy)
+            _system_name(unit, policy, heading_context)
             for unit in config.content_units
             for policy in config.selection_policies
+            for heading_context in config.heading_contexts
         ),
         token_budgets=config.budgets,
         seed=config.seed,
@@ -233,34 +235,50 @@ def _build_factorial_indexes(
     tokenizer: TokenCounter,
     embedder: EmbeddingModel,
     reranker: Reranker,
-) -> dict[tuple[ContentUnit, SelectionPolicy], HybridIndex]:
-    chunks_by_unit: dict[ContentUnit, tuple[RetrievalChunk, ...]] = {}
-    if ContentUnit.FIXED in config.content_units:
-        chunks_by_unit[ContentUnit.FIXED] = tuple(
-            chunk
-            for document in documents
-            for chunk in fixed_chunks(
-                document,
-                config=config.retrieval,
-                tokenizer=tokenizer,
+) -> dict[tuple[ContentUnit, SelectionPolicy, bool], HybridIndex]:
+    """Build one index per content unit and heading-context position.
+
+    Each heading position gets its own ``RetrievalConfig``, so it also gets its
+    own derived-index key: a cached index is never reused across the factor.
+    The fixed unit's chunks are identical in both positions because
+    ``fixed_chunks`` does not read the field, which is exactly why its rows are
+    constant across the factor.
+    """
+    chunks_by_cell: dict[tuple[ContentUnit, bool], tuple[RetrievalChunk, ...]] = {}
+    configs_by_heading = {
+        heading_context: config.retrieval.model_copy(
+            update={"heading_search_context": heading_context}
+        )
+        for heading_context in config.heading_contexts
+    }
+    for heading_context, retrieval_config in configs_by_heading.items():
+        if ContentUnit.FIXED in config.content_units:
+            chunks_by_cell[(ContentUnit.FIXED, heading_context)] = tuple(
+                chunk
+                for document in documents
+                for chunk in fixed_chunks(
+                    document,
+                    config=retrieval_config,
+                    tokenizer=tokenizer,
+                )
             )
-        )
-    if ContentUnit.STRUCTURAL in config.content_units:
-        chunks_by_unit[ContentUnit.STRUCTURAL] = tuple(
-            chunk
-            for document in documents
-            for chunk in structural_chunks(
-                document,
-                sources_by_ir_id[document.id],
-                config=config.retrieval,
-                tokenizer=tokenizer,
+        if ContentUnit.STRUCTURAL in config.content_units:
+            chunks_by_cell[(ContentUnit.STRUCTURAL, heading_context)] = tuple(
+                chunk
+                for document in documents
+                for chunk in structural_chunks(
+                    document,
+                    sources_by_ir_id[document.id],
+                    config=retrieval_config,
+                    tokenizer=tokenizer,
+                )
             )
-        )
-    if ContentUnit.IR in config.content_units:
-        chunks_by_unit[ContentUnit.IR] = node_chunks(
-            documents,
-            tokenizer=tokenizer,
-        )
+        if ContentUnit.IR in config.content_units:
+            chunks_by_cell[(ContentUnit.IR, heading_context)] = node_chunks(
+                documents,
+                tokenizer=tokenizer,
+                config=retrieval_config,
+            )
 
     arm_by_unit = {
         ContentUnit.FIXED: RetrievalArm.FIXED,
@@ -268,9 +286,9 @@ def _build_factorial_indexes(
         ContentUnit.IR: RetrievalArm.COMPILER,
     }
     return {
-        (unit, policy): HybridIndex.from_chunks(
-            chunks_by_unit[unit],
-            config=config.retrieval,
+        (unit, policy, heading_context): HybridIndex.from_chunks(
+            chunks_by_cell[(unit, heading_context)],
+            config=configs_by_heading[heading_context],
             documents=documents,
             arm=arm_by_unit[unit],
             artifacts_root=artifacts_root,
@@ -280,6 +298,7 @@ def _build_factorial_indexes(
         )
         for unit in config.content_units
         for policy in config.selection_policies
+        for heading_context in config.heading_contexts
     }
 
 
@@ -287,7 +306,7 @@ def _evaluate_factorial_cells(
     corpus: EvaluationCorpus,
     *,
     config: FactorialConfig,
-    indexes: Mapping[tuple[ContentUnit, SelectionPolicy], HybridIndex],
+    indexes: Mapping[tuple[ContentUnit, SelectionPolicy, bool], HybridIndex],
     tokenizer: TokenCounter,
 ) -> tuple[tuple[FactorialEvaluationRecord, ...], tuple[dict[str, object], ...]]:
     records: list[FactorialEvaluationRecord] = []
@@ -297,8 +316,11 @@ def _evaluate_factorial_cells(
             corpus.documents[document_id].id for document_id in question.document_ids
         }
         for unit in config.content_units:
-            for policy in config.selection_policies:
-                index = indexes[(unit, policy)]
+            for policy, heading_context in product(
+                config.selection_policies,
+                config.heading_contexts,
+            ):
+                index = indexes[(unit, policy, heading_context)]
                 retrieval_started = time.perf_counter_ns()
                 candidates = index.retrieve_candidates(
                     question.question,
@@ -329,6 +351,7 @@ def _evaluate_factorial_cells(
                         ranked,
                         unit=unit,
                         policy=policy,
+                        heading_context=heading_context,
                         token_budget=budget,
                         tokenizer=tokenizer,
                     )
@@ -341,6 +364,7 @@ def _evaluate_factorial_cells(
                             question_id=question.id,
                             content_unit=unit,
                             selection_policy=policy,
+                            heading_context=heading_context,
                             token_budget=budget,
                             token_count=packet.token_count,
                             selected_evidence_ids=tuple(
@@ -355,6 +379,7 @@ def _evaluate_factorial_cells(
                             "question_id": question.id,
                             "content_unit": unit.value,
                             "selection_policy": policy.value,
+                            "heading_context": heading_context,
                             "token_budget": budget,
                             "context": packet.model_dump(mode="json"),
                         }
@@ -368,6 +393,7 @@ def _pack_factorial_context(
     *,
     unit: ContentUnit,
     policy: SelectionPolicy,
+    heading_context: bool,
     token_budget: int,
     tokenizer: TokenCounter,
 ) -> ContextPacket:
@@ -399,6 +425,7 @@ def _pack_factorial_context(
             "experiment": "content-unit-selection-policy-factorial-v1",
             "content_unit": unit.value,
             "selection_policy": policy.value,
+            "heading_context": _heading_label(heading_context),
         },
     )
 
@@ -407,21 +434,27 @@ def summarize_factorial(
     run_id: str,
     records: Sequence[FactorialEvaluationRecord],
 ) -> FactorialSummary:
-    """Aggregate every unit × policy × budget cell."""
+    """Aggregate every unit × policy × heading-context × budget cell."""
     rows: list[FactorialSummaryRow] = []
     cells = sorted(
         {
-            (record.content_unit, record.selection_policy, record.token_budget)
+            (
+                record.content_unit,
+                record.selection_policy,
+                record.heading_context,
+                record.token_budget,
+            )
             for record in records
         },
-        key=lambda value: (value[0].value, value[1].value, value[2]),
+        key=lambda value: (value[0].value, value[1].value, not value[2], value[3]),
     )
-    for unit, policy, budget in cells:
+    for unit, policy, heading_context, budget in cells:
         selected = [
             record
             for record in records
             if record.content_unit == unit
             and record.selection_policy == policy
+            and record.heading_context == heading_context
             and record.token_budget == budget
         ]
         tokens_to_full = [
@@ -433,6 +466,7 @@ def summarize_factorial(
             FactorialSummaryRow(
                 content_unit=unit,
                 selection_policy=policy,
+                heading_context=heading_context,
                 token_budget=budget,
                 question_count=len(selected),
                 mean_evidence_page_recall=statistics.fmean(
@@ -482,14 +516,16 @@ def factorial_markdown_report(summary: FactorialSummary) -> str:
         "No structural expansion, table joins, page-neighbor backfill, or answer "
         "model participates in this controlled experiment.",
         "",
-        "| Unit | Policy | Budget | Page recall | Verified recall | Full pages | "
-        "Quote recall | Full quotes | Mean tokens | Redundancy | Latency (ms) |",
-        "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | "
+        "| Unit | Policy | Heading | Budget | Page recall | Verified recall | "
+        "Full pages | Quote recall | Full quotes | Mean tokens | Redundancy | "
+        "Latency (ms) |",
+        "| --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | "
         "---: | ---: |",
     ]
     for row in summary.rows:
         lines.append(
             f"| {row.content_unit.value} | {row.selection_policy.value} | "
+            f"{_heading_label(row.heading_context)} | "
             f"{row.token_budget} | {row.mean_evidence_page_recall:.3f} | "
             f"{row.mean_content_verified_page_recall:.3f} | "
             f"{row.full_evidence_coverage_rate:.3f} | "
@@ -500,61 +536,124 @@ def factorial_markdown_report(summary: FactorialSummary) -> str:
         )
 
     by_cell = {
-        (row.content_unit, row.selection_policy, row.token_budget): row
+        (
+            row.content_unit,
+            row.selection_policy,
+            row.heading_context,
+            row.token_budget,
+        ): row
         for row in summary.rows
     }
+    headings = sorted(
+        {row.heading_context for row in summary.rows},
+        key=lambda value: not value,
+    )
+    budgets = sorted({row.token_budget for row in summary.rows})
+    if len(headings) > 1:
+        lines.extend(
+            [
+                "",
+                "## Heading-context factor",
+                "",
+                "Rows are reported separately for each position of "
+                "`heading_contexts`. The factor sets "
+                "`RetrievalConfig.heading_search_context`, which only the "
+                "structural and IR units read. The fixed unit does not read "
+                "it -- its windows already concatenate heading nodes -- so its "
+                "`heading-on` and `heading-off` rows are identical by "
+                "construction and an unchanged fixed row is not evidence about "
+                "heading context.",
+                "",
+                "A delta across this factor moves two things at once: heading "
+                "vocabulary becomes matchable, and the candidate dedupe key "
+                "widens. See `docs/specs/retrieval.md`.",
+                "",
+            ]
+        )
+        for unit in ContentUnit:
+            for budget in budgets:
+                on = by_cell.get((unit, SelectionPolicy.RANKED, True, budget))
+                off = by_cell.get((unit, SelectionPolicy.RANKED, False, budget))
+                if on is None or off is None:
+                    continue
+                page_delta = (
+                    on.mean_evidence_page_recall - off.mean_evidence_page_recall
+                )
+                quote_delta = (
+                    on.mean_evidence_quote_recall - off.mean_evidence_quote_recall
+                )
+                lines.append(
+                    f"- {unit.value} at {budget} under ranked: "
+                    f"{page_delta:+.3f} page recall, "
+                    f"{quote_delta:+.3f} quote recall."
+                )
+
     lines.extend(["", "## Policy effect within each content unit", ""])
     for unit in ContentUnit:
-        for budget in sorted({row.token_budget for row in summary.rows}):
-            control = by_cell.get((unit, SelectionPolicy.RANKED, budget))
-            enhanced = by_cell.get(
-                (unit, SelectionPolicy.FACETED_COVERAGE, budget)
-            )
-            if control is None or enhanced is None:
-                continue
-            page_delta = (
-                enhanced.mean_evidence_page_recall
-                - control.mean_evidence_page_recall
-            )
-            quote_delta = (
-                enhanced.mean_evidence_quote_recall
-                - control.mean_evidence_quote_recall
-            )
-            lines.append(
-                f"- {unit.value} at {budget}: "
-                f"{page_delta:+.3f} page recall, "
-                f"{quote_delta:+.3f} quote recall."
-            )
+        for heading_context in headings:
+            for budget in budgets:
+                control = by_cell.get(
+                    (unit, SelectionPolicy.RANKED, heading_context, budget)
+                )
+                enhanced = by_cell.get(
+                    (
+                        unit,
+                        SelectionPolicy.FACETED_COVERAGE,
+                        heading_context,
+                        budget,
+                    )
+                )
+                if control is None or enhanced is None:
+                    continue
+                page_delta = (
+                    enhanced.mean_evidence_page_recall
+                    - control.mean_evidence_page_recall
+                )
+                quote_delta = (
+                    enhanced.mean_evidence_quote_recall
+                    - control.mean_evidence_quote_recall
+                )
+                lines.append(
+                    f"- {unit.value} at {budget} "
+                    f"({_heading_label(heading_context)}): "
+                    f"{page_delta:+.3f} page recall, "
+                    f"{quote_delta:+.3f} quote recall."
+                )
 
     lines.extend(["", "## IR effect under each selection policy", ""])
     for policy in SelectionPolicy:
-        for budget in sorted({row.token_budget for row in summary.rows}):
-            ir = by_cell.get((ContentUnit.IR, policy, budget))
-            chunk_rows = [
-                by_cell.get((unit, policy, budget))
-                for unit in (ContentUnit.FIXED, ContentUnit.STRUCTURAL)
-            ]
-            available = [row for row in chunk_rows if row is not None]
-            if ir is None or not available:
-                continue
-            best_chunk = max(
-                available,
-                key=lambda row: row.mean_evidence_page_recall,
-            )
-            page_delta = (
-                ir.mean_evidence_page_recall
-                - best_chunk.mean_evidence_page_recall
-            )
-            quote_delta = (
-                ir.mean_evidence_quote_recall
-                - best_chunk.mean_evidence_quote_recall
-            )
-            lines.append(
-                f"- {policy.value} at {budget}: IR vs best chunk unit "
-                f"({best_chunk.content_unit.value}) is "
-                f"{page_delta:+.3f} page recall and "
-                f"{quote_delta:+.3f} quote recall."
-            )
+        for heading_context in headings:
+            for budget in budgets:
+                ir = by_cell.get(
+                    (ContentUnit.IR, policy, heading_context, budget)
+                )
+                chunk_rows = [
+                    by_cell.get((unit, policy, heading_context, budget))
+                    for unit in (ContentUnit.FIXED, ContentUnit.STRUCTURAL)
+                ]
+                available = [row for row in chunk_rows if row is not None]
+                if ir is None or not available:
+                    continue
+                best_chunk = max(
+                    available,
+                    key=lambda row: row.mean_evidence_page_recall,
+                )
+                page_delta = (
+                    ir.mean_evidence_page_recall
+                    - best_chunk.mean_evidence_page_recall
+                )
+                quote_delta = (
+                    ir.mean_evidence_quote_recall
+                    - best_chunk.mean_evidence_quote_recall
+                )
+                lines.append(
+                    f"- {policy.value} at {budget} "
+                    f"({_heading_label(heading_context)}): "
+                    f"IR vs best chunk unit "
+                    f"({best_chunk.content_unit.value}) is "
+                    f"{page_delta:+.3f} page recall and "
+                    f"{quote_delta:+.3f} quote recall."
+                )
     lines.extend(
         [
             "",
@@ -634,5 +733,13 @@ def _json_hash(value: object) -> str:
     return hashlib.sha256(serialized.encode()).hexdigest()
 
 
-def _system_name(unit: ContentUnit, policy: SelectionPolicy) -> str:
-    return f"{unit.value}:{policy.value}"
+def _system_name(
+    unit: ContentUnit,
+    policy: SelectionPolicy,
+    heading_context: bool,
+) -> str:
+    return f"{unit.value}:{policy.value}:{_heading_label(heading_context)}"
+
+
+def _heading_label(heading_context: bool) -> str:
+    return "heading-on" if heading_context else "heading-off"

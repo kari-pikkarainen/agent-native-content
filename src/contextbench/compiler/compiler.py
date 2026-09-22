@@ -105,7 +105,11 @@ def compile_context_with_trace(
             )
     index = hybrid_index
     if index is None:
-        chunks = node_chunks(scope.documents, tokenizer=counter)
+        chunks = node_chunks(
+            scope.documents,
+            tokenizer=counter,
+            config=my_config.retrieval,
+        )
         index = HybridIndex(
             chunks,
             config=my_config.retrieval,

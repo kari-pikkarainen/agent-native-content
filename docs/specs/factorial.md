@@ -20,6 +20,52 @@ configuration, embedding model, reciprocal-rank fusion, cross-encoder,
 candidate limits, and token budgets. Both policies apply the same exact source
 provenance deduplication before packing.
 
+### Third factor: heading context
+
+`FactorialConfig.heading_contexts` is a tuple of booleans crossed with
+`content_units` and `selection_policies` exactly as those are crossed with each
+other. Each value sets `RetrievalConfig.heading_search_context` for the index
+the cell retrieves from, so each position gets its own chunks and its own
+derived-index key and no cached index is reused across the factor. The value is
+recorded in every record, summary row and context, in the packet metadata, and
+in the manifest's system names as `unit:policy:heading-on|heading-off`.
+
+It defaults to `(True,)`. Single-valued, the cell set and every cell's metrics
+are identical to a run without the factor, so nothing already measured moves
+until the ablation is asked for. `(True, False)` doubles the cell count.
+
+What the factor controls, by unit:
+
+| Content unit | Reads the factor | Effect of turning it off |
+| --- | --- | --- |
+| Fixed 512/64 chunks | No | None: rows are constant across the factor |
+| Docling structural chunks | Yes | `search_text` stays `None`; heading trail leaves the indexes |
+| Content IR nodes | Yes | `search_text` stays `None`; heading trail leaves the indexes |
+
+**The fixed unit's rows are constant across this factor by construction, and an
+unchanged fixed row is not evidence about heading context.** `fixed_chunks`
+never reads the field. It gets heading text anyway, incidentally: it windows
+over every text-bearing IR node in ordinal order, title and heading nodes
+included, so heading vocabulary is already inside its chunk text in both
+positions. The generated report states this wherever it reports the factor.
+
+**A delta across this factor carries two mechanisms, not one.** Turning the
+field off both removes heading vocabulary from what is matched and narrows the
+candidate dedupe key, because `HybridIndex._unique_by_search_text` dedupes on
+`retrieval_text`. This is already recorded in `docs/specs/retrieval.md` for the
+structural unit and applies unchanged to the IR unit. Attributing a
+single-factor delta wholly to heading matching would be wrong; separating them
+needs a second ablation that varies the dedupe key independently, which has not
+been run.
+
+Why the factor exists on both heading-bearing units rather than one: the
+compiler's node candidates have always carried heading context unconditionally.
+While only the structural unit could be ablated, "IR nodes beat structural
+chunks" could not be told apart from "IR nodes carry heading context". The
+compiler's oversized-table fragments keep their own pin
+(`heading_search_context=False` in `compiler/expand.py`) in both positions;
+that pin protects rendered fragment text and is not part of this factor.
+
 The enhanced policy uses deterministic lexical facets and the existing
 coverage objective. It does not use structural expansion, heading injection,
 sibling or list expansion, table preservation, keyed table joins, page-neighbor
@@ -28,8 +74,9 @@ backfill, or an answer model.
 ### The structural unit moved: published factorial numbers do not carry across
 
 The `Docling structural chunks` row is built by `evaluation/factorial.py`
-through `structural_chunks(config=config.retrieval)` with no pin, so it reads
-`RetrievalConfig.structural_heading_search_context` at its live default. That
+through `structural_chunks` with no pin, so it reads
+`RetrievalConfig.heading_search_context` at whatever value its cell was
+assigned, and at the live default when the factor is single-valued. That
 default changed from off to on, which gives structural chunks a `search_text`
 of their heading trail above their body. The field changes two things at once:
 heading vocabulary becomes matchable, and the candidate dedupe key widens so
@@ -46,7 +93,10 @@ Consequences for this experiment:
 - `RetrievalConfig` is part of the derived-index key payload, so the change
   rekeys cached indexes in either direction and no stale index is reused.
 - A run that deliberately reproduces the old state must set
-  `structural_heading_search_context=False` and record that it did.
+  `heading_contexts=(False,)` and record that it did. Since the field now also
+  reaches the IR unit, that run reproduces the old *structural* state while
+  also removing heading context from the IR unit, which the published IR rows
+  had. The two old states cannot be reproduced separately through this field.
 
 ## Interpretation
 
@@ -56,6 +106,11 @@ Consequences for this experiment:
   effect.
 - Treat a larger IR gain under the enhanced policy as a possible interaction,
   to be confirmed on a broader preregistered set.
+- Compare units and policies only within one heading-context position. The
+  report's policy and IR contrasts are emitted per position for that reason.
+- Read the heading-context contrast as "heading matching plus dedupe scope",
+  and read the fixed unit's zero delta as "the factor does not apply", not as
+  a measurement.
 
 The initial two-question table subset is diagnostic only. It keeps the full
 XLDev24 retrieval corpus fixed so index statistics and candidate competition

@@ -24,10 +24,14 @@ class RetrievalConfig(BaseModel):
     structural_chunk_tokens: int = Field(default=512, ge=1)
     # Default on: this is the fix for the structural arm's inability to
     # retrieve heading vocabulary. Off reproduces the pre-fix behaviour
-    # exactly, leaving structural ``search_text`` as ``None``, which is what
-    # keeps the ablation measurable. Neither position changes emitted chunk
-    # text or token counts; see ``docs/specs/retrieval.md``.
-    structural_heading_search_context: bool = True
+    # exactly, leaving ``search_text`` as ``None``, which is what keeps the
+    # ablation measurable. Read by both heading-bearing content units -- the
+    # structural chunker and the compiler's IR-node candidates -- so an
+    # ablation can toggle the factor on both and separate representation from
+    # heading context. The fixed unit does not read it: its windows already
+    # include heading nodes incidentally. Neither position changes emitted
+    # chunk text or token counts; see ``docs/specs/retrieval.md``.
+    heading_search_context: bool = True
     sparse_k1: float = Field(default=1.5, gt=0)
     sparse_b: float = Field(default=0.75, ge=0, le=1)
     rrf_k: int = Field(default=60, ge=1)

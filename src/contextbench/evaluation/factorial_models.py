@@ -58,6 +58,14 @@ class FactorialConfig(BaseModel):
     budgets: tuple[int, ...] = DEFAULT_TOKEN_BUDGETS
     content_units: tuple[ContentUnit, ...] = tuple(ContentUnit)
     selection_policies: tuple[SelectionPolicy, ...] = tuple(SelectionPolicy)
+    # Crossed with the other two factors. Single-valued by default so the cell
+    # set is unchanged until the ablation is asked for. Each value sets
+    # ``RetrievalConfig.heading_search_context`` for the index that cell
+    # retrieves from, which applies to the structural and IR units. The fixed
+    # unit does not read the field -- its windows concatenate every node,
+    # heading nodes included -- so its rows are constant across this factor and
+    # an unchanged fixed row is not evidence about heading context.
+    heading_contexts: tuple[bool, ...] = (True,)
     seed: int = 20260919
     retrieval: RetrievalConfig = Field(default_factory=RetrievalConfig)
     faceting: FactorialFacetConfig = Field(default_factory=FactorialFacetConfig)
@@ -76,19 +84,26 @@ class FactorialConfig(BaseModel):
             set(self.selection_policies)
         ):
             raise ValueError("selection_policies must be non-empty and unique")
+        if not self.heading_contexts or len(self.heading_contexts) != len(
+            set(self.heading_contexts)
+        ):
+            raise ValueError("heading_contexts must be non-empty and unique")
         if self.faceting.retrieval != self.retrieval:
             raise ValueError("faceting and shared retrieval configs must match")
         return self
 
 
 class FactorialEvaluationRecord(BaseModel):
-    """Evidence metrics for one question × unit × policy × budget cell."""
+    """Evidence metrics for one question × unit × policy × heading × budget cell."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     question_id: str
     content_unit: ContentUnit
     selection_policy: SelectionPolicy
+    # Constant across this factor for ``ContentUnit.FIXED``, which does not
+    # read it; see ``FactorialConfig.heading_contexts``.
+    heading_context: bool
     token_budget: int = Field(ge=1)
     token_count: int = Field(ge=0)
     selected_evidence_ids: tuple[str, ...]
@@ -111,12 +126,13 @@ class FactorialEvaluationRecord(BaseModel):
 
 
 class FactorialSummaryRow(BaseModel):
-    """Aggregate metrics for one content-unit and policy cell at one budget."""
+    """Aggregate metrics for one unit, policy and heading cell at one budget."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     content_unit: ContentUnit
     selection_policy: SelectionPolicy
+    heading_context: bool
     token_budget: int
     question_count: int
     mean_evidence_page_recall: float

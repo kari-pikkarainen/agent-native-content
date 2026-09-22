@@ -298,7 +298,11 @@ def _build_indexes(
             artifacts_root=artifacts_root,
         )
     if BenchmarkSystem.COMPILER in systems:
-        chunks = node_chunks(documents, tokenizer=tokenizer)
+        chunks = node_chunks(
+            documents,
+            tokenizer=tokenizer,
+            config=config.retrieval,
+        )
         index = HybridIndex.from_chunks(
             chunks,
             config=config.retrieval,

@@ -317,7 +317,7 @@ def _structural_index(
         [ir],
         arm=RetrievalArm.STRUCTURAL,
         config=config.model_copy(
-            update={"structural_heading_search_context": heading_context}
+            update={"heading_search_context": heading_context}
         ),
         source_documents={ir.id: source},
         tokenizer=FixtureTokenCounter(),
@@ -334,7 +334,7 @@ def test_structural_chunks_index_heading_vocabulary_when_enabled(
     ``methods`` appears in the fixture as a level-1 heading and nowhere in any
     chunk body: the chunk under it carries only ``print('measured')``. So a hit
     here can only have come from ``search_text`` carrying the heading trail,
-    which is what ``structural_heading_search_context`` turns on.
+    which is what ``heading_search_context`` turns on.
     """
     index = _structural_index(tmp_path, retrieval_fixture, heading_context=True)
 
@@ -491,7 +491,7 @@ def test_heading_context_widens_candidate_dedupe_scope(tmp_path: Path) -> None:
             [ir],
             arm=RetrievalArm.STRUCTURAL,
             config=config.model_copy(
-                update={"structural_heading_search_context": heading_context}
+                update={"heading_search_context": heading_context}
             ),
             source_documents={ir.id: source},
             tokenizer=counter,
@@ -1002,19 +1002,28 @@ def test_index_key_is_stable_for_a_fixed_revision() -> None:
     defaults would strand every cached index under a new key, so that change
     has to be made deliberately.
 
-    Both literals moved once, deliberately, when ``RetrievalConfig`` gained
-    ``structural_heading_search_context``. The key payload embeds
-    ``config.model_dump(mode="json")``, so a new config field rekeys every
+    Both literals moved once when ``RetrievalConfig`` gained
+    ``structural_heading_search_context``, and again when that field was
+    renamed to ``heading_search_context`` so both heading-bearing content
+    units could read it. The key payload embeds
+    ``config.model_dump(mode="json")``, so a renamed config field rekeys every
     cached index -- which is correct here, because the flag changes what the
-    structural arm indexes and a stale index must not be reused across it.
+    structural and IR units index and a stale index must not be reused across
+    it.
 
-    Derived rather than re-recorded: rebuilding this exact payload with the
-    single new key deleted from the config dump, and hashing it the same way,
+    Derived rather than re-recorded, at both steps. For the rename: rebuilding
+    this exact payload with the one config key renamed back to
+    ``structural_heading_search_context`` and hashing it the same way
     reproduces the previous literals byte for byte --
+    ``3dff8843ce030b48bd9ff9ca59eec5826e2be6c9d62409dfc9ae1b7f9e15d105``
+    offline and ``8bc92172223a345ab003704cf6081998ac06d393fadf012cd30eb285f44
+    17b23`` hub-backed -- and the symmetric difference of the two config dumps
+    is exactly the old and new key names with an unchanged value. The rename is
+    therefore the whole of the difference. For the field's introduction before
+    it: deleting the key entirely reproduced
     ``09fca44765c922c8ba0b5a1812ae172ab0a578842a7e52ff1887a14e40bdf99e``
     offline and ``fcafc11e9de5b97151c6b0bb473435f3fd6196e6e7fe3d247403fdb7b5
-    c2e927`` hub-backed. The added key is therefore the whole of the
-    difference; nothing else in the payload moved.
+    c2e927`` hub-backed.
     """
     assert _key(
         embedding_model="hash-256-v1",
@@ -1023,9 +1032,9 @@ def test_index_key_is_stable_for_a_fixed_revision() -> None:
         reranker_model="lexical-overlap-v1",
         reranker_version="1",
         reranker_revision=None,
-    ) == "3dff8843ce030b48bd9ff9ca59eec5826e2be6c9d62409dfc9ae1b7f9e15d105"
+    ) == "1df0d2dc8403e51f8e109387922e7a4fabafc38abd5787b174b726addf17d449"
 
-    assert _key() == "8bc92172223a345ab003704cf6081998ac06d393fadf012cd30eb285f4417b23"
+    assert _key() == "5d6ebb7ee0a00513a67ad06516d9ab2e1215a55df13389fc66442d5e9841baf6"
 
 
 def test_configured_hub_model_requires_a_revision() -> None:

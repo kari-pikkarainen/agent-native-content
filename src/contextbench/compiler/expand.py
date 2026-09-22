@@ -91,11 +91,19 @@ def expand_candidates(
                         # Pinned off so giving the structural arm heading
                         # context does not move the compiler. These fragments
                         # are scored by the reranker, which reads
-                        # ``retrieval_text``; leaving the flag at its new
+                        # ``retrieval_text``; leaving the flag at its live
                         # default would change table fragment scores here as a
                         # side effect of a change scoped to Arm B. Measured on
                         # the oversized-table fixture, query "Results": every
                         # fragment scores 0.0 with this pin and 1.0 without it.
+                        #
+                        # This pin is about table *fragments*, not about the
+                        # compiler's node candidates. The node candidates read
+                        # ``heading_search_context`` so the factorial can
+                        # ablate heading context on the IR unit; this call site
+                        # stays pinned regardless of that factor, because the
+                        # stale-``search_text`` defect below is a separate
+                        # concern from what the node index matches on.
                         #
                         # The sharper reason is that the pin also keeps
                         # ``search_text`` out of the *expanded* candidate. The
@@ -118,7 +126,7 @@ def expand_candidates(
                         # The compiler adds heading context to the rendered
                         # fragment itself through ``include_heading_context``,
                         # so nothing is lost by pinning this off.
-                        "structural_heading_search_context": False,
+                        "heading_search_context": False,
                     }
                 )
                 table_chunks = structural_chunks(

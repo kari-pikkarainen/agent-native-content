@@ -859,15 +859,19 @@ def test_oversized_table_uses_reranked_docling_chunks(tmp_path: Path) -> None:
     assert "109" in packet.items[0].content
 
 
-def test_table_fragments_pin_structural_heading_search_context_off(
+def test_table_fragments_pin_heading_search_context_off(
     tmp_path: Path,
 ) -> None:
     """The pin at the table-fragment call site is load-bearing; keep it.
 
     ``expand_candidates`` builds table fragments with ``structural_chunks``,
-    and pins ``structural_heading_search_context`` off there so that giving the
+    and pins ``heading_search_context`` off there so that giving the
     structural arm heading context does not move the compiler. Delete the pin
     and this test fails on both assertions below.
+
+    The pin is about table *fragments* and is independent of the compiler's
+    node candidates, which read the same field so the factorial can ablate
+    heading context on the IR unit. This call site stays pinned either way.
 
     Two distinct effects, both measured on this fixture with the query
     ``"Results"`` -- the heading the table sits under:

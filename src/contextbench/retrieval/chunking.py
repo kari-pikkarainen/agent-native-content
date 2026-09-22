@@ -172,7 +172,7 @@ def structural_chunks(
         # only what the indexes read gains the heading trail.
         search_text = (
             contextual_search_text(raw_chunk.text, heading_path)
-            if config.structural_heading_search_context and heading_path
+            if config.heading_search_context and heading_path
             else None
         )
         chunks.append(
