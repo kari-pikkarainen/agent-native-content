@@ -314,3 +314,74 @@ def test_eval_commands_forward_pinned_model_revisions(
     assert captured["factorial"]["reranker_revision"] == (
         "233902d25c440f23af6f7d6e94d2946bac0bee0a"
     )
+
+
+def test_eval_commands_refuse_a_new_model_id_on_the_default_revision(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """A default revision pins the default weights and nothing else.
+
+    Each default revision is the commit its own default model ID resolved to.
+    Left in place beside a different model ID it would record a hash that never
+    belonged to those weights, so the CLI must refuse before the run rather
+    than leave the mismatch for the hub to notice.
+    """
+    calls: list[str] = []
+
+    def fake_run_xl_retrieval(**kwargs):
+        calls.append("retrieval")
+        return SimpleNamespace(
+            path=tmp_path / "artifacts" / "runs" / "run-1",
+            manifest=SimpleNamespace(run_id="run-1"),
+        )
+
+    def fake_run_xl_factorial(**kwargs):
+        calls.append("factorial")
+        return SimpleNamespace(
+            path=tmp_path / "artifacts" / "factorial-runs" / "run-2",
+            manifest=SimpleNamespace(run_id="run-2"),
+        )
+
+    monkeypatch.setattr(
+        "contextbench.evaluation.xl_docbench.run_xl_retrieval",
+        fake_run_xl_retrieval,
+    )
+    monkeypatch.setattr(
+        "contextbench.evaluation.factorial_xl.run_xl_factorial",
+        fake_run_xl_factorial,
+    )
+
+    embedding = runner.invoke(
+        app,
+        ["eval-retrieval", "--embedding-model", "other/embedding-v2"],
+    )
+    reranker = runner.invoke(
+        app,
+        ["eval-factorial", "--reranker-model", "other/reranker-v2"],
+    )
+
+    assert embedding.exit_code == 1
+    assert "--embedding-revision" in embedding.output
+    assert "other/embedding-v2" in embedding.output
+    assert reranker.exit_code == 1
+    assert "--reranker-revision" in reranker.output
+    assert "other/reranker-v2" in reranker.output
+    assert calls == []
+
+    paired = runner.invoke(
+        app,
+        [
+            "eval-retrieval",
+            "--artifacts-root",
+            str(tmp_path / "artifacts"),
+            "--run-id",
+            "run-1",
+            "--embedding-model",
+            "other/embedding-v2",
+            "--embedding-revision",
+            "c" * 40,
+        ],
+    )
+
+    assert paired.exit_code == 0, paired.output
+    assert calls == ["retrieval"]

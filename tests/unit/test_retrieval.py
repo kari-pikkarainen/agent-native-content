@@ -723,11 +723,14 @@ _UNCHANGED_RANKING_QUERIES = (
     "margin recovery",
     "quarterly metrics",
     "region 42",
+    # The only query whose reranked order differs from the fused order, which
+    # is what makes reranker and BM25 scoring changes observable here.
+    "europe costs identifier",
 )
 
 
 def _ranking_corpus() -> tuple[RetrievalChunk, ...]:
-    """Build a corpus where dense, sparse, and reranked orders disagree."""
+    """Build the fixed offline corpus the pre-pin ranking table was captured from."""
     return tuple(
         RetrievalChunk(
             id=f"ranking-chunk-{position:02d}",
@@ -753,9 +756,11 @@ def _observed_rankings(index: HybridIndex) -> dict[str, tuple[tuple[str, int], .
     }
 
 
-# Captured from the pre-pin implementation at d7f427e, before the embedding and
-# reranker revisions entered the index key, so the rekey is provably a cache
-# invalidation rather than a change in results.
+# Captured by running the pre-pin implementation at d7f427e against this exact
+# corpus, before the embedding and reranker revisions entered the index key, so
+# the rekey is provably a cache invalidation rather than a change in results.
+# Recapture the same way, from an extracted d7f427e tree, if the corpus or the
+# queries change; never by recording what the current code prints.
 _RANKINGS_BEFORE_THE_REVISION_PIN = {
     "revenue by region": (
         ("ranking-chunk-00", 1),
@@ -793,6 +798,13 @@ _RANKINGS_BEFORE_THE_REVISION_PIN = {
         ("ranking-chunk-05", 3),
         ("ranking-chunk-01", 4),
     ),
+    # Fusion ranks these 09, 06, 03, 12; the reranker swaps the last two.
+    "europe costs identifier": (
+        ("ranking-chunk-09", 1),
+        ("ranking-chunk-06", 2),
+        ("ranking-chunk-12", 3),
+        ("ranking-chunk-03", 4),
+    ),
 }
 
 
@@ -802,11 +814,26 @@ def test_offline_index_rankings_are_unchanged_by_the_revision_pin() -> None:
     Every cached index rekeys because the key payload gained two fields, so a
     key assertion alone cannot tell a cache invalidation from a regression.
     This compares the ranking itself: for each query the ordered
-    ``(chunk.id, rank)`` pairs must equal what the pre-pin code produced from
-    the same corpus. The corpus is built so dense, sparse, and reranked orders
-    disagree, so a change in chunk selection, BM25 scoring, RRF fusion,
-    reranking, candidate limits, or tie-breaking reorders or drops a pair and
-    fails elementwise.
+    ``(chunk.id, rank)`` pairs must equal what the pre-pin code at d7f427e
+    produced from the same corpus.
+
+    Scope, measured by mutation rather than asserted. Dropping the dense
+    contribution from RRF, negating or flattening the reranker score,
+    reversing or unscaling BM25, removing BM25 length normalization, and
+    dropping the ``HashEmbeddingModel`` sign bit each change at least one row
+    and fail elementwise. Only ``europe costs identifier`` has a reranked
+    order that differs from its fused order (fusion gives 09, 06, 03, 12; the
+    reranker swaps the last two), so it alone catches a constant reranker
+    score, and it alone catches dropping the BM25 idf factor. The other six
+    queries absorb BM25 score-scaling changes in RRF fusion and the top-four
+    rerank cut even when the sparse top-five genuinely changes.
+
+    So this is a cache-invalidation check over one small offline corpus, not a
+    general scoring guard. A regression that preserves relative order at every
+    stage, or one confined to score magnitudes these seven queries absorb,
+    passes here: changing ``rrf_k`` from 60 to 1, for instance, leaves the
+    fused order identical. Any change to chunking, BM25, fusion, or reranking
+    needs its own evidence; a green run of this table is not that evidence.
     """
     index = HybridIndex(
         _ranking_corpus(),

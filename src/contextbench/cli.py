@@ -192,7 +192,12 @@ def evaluate_retrieval(
     ] = None,
     embedding_model: Annotated[
         str,
-        typer.Option(help="SentenceTransformers embedding model ID."),
+        typer.Option(
+            help=(
+                "SentenceTransformers embedding model ID. A non-default ID "
+                "requires an explicit --embedding-revision."
+            )
+        ),
     ] = DEFAULT_EMBEDDING_MODEL,
     embedding_revision: Annotated[
         str,
@@ -200,7 +205,12 @@ def evaluate_retrieval(
     ] = DEFAULT_EMBEDDING_REVISION,
     reranker_model: Annotated[
         str,
-        typer.Option(help="SentenceTransformers cross-encoder model ID."),
+        typer.Option(
+            help=(
+                "SentenceTransformers cross-encoder model ID. A non-default ID "
+                "requires an explicit --reranker-revision."
+            )
+        ),
     ] = DEFAULT_RERANKER_MODEL,
     reranker_revision: Annotated[
         str,
@@ -279,6 +289,12 @@ def evaluate_retrieval(
     from contextbench.ir.project import IRProjectionError
     from contextbench.retrieval import RetrievalConfig
 
+    _require_matching_revisions(
+        embedding_model=embedding_model,
+        embedding_revision=embedding_revision,
+        reranker_model=reranker_model,
+        reranker_revision=reranker_revision,
+    )
     retrieval = RetrievalConfig(
         embedding_model=embedding_model,
         reranker_model=reranker_model,
@@ -367,7 +383,12 @@ def evaluate_factorial(
     ] = None,
     embedding_model: Annotated[
         str,
-        typer.Option(help="SentenceTransformers embedding model ID."),
+        typer.Option(
+            help=(
+                "SentenceTransformers embedding model ID. A non-default ID "
+                "requires an explicit --embedding-revision."
+            )
+        ),
     ] = DEFAULT_EMBEDDING_MODEL,
     embedding_revision: Annotated[
         str,
@@ -375,7 +396,12 @@ def evaluate_factorial(
     ] = DEFAULT_EMBEDDING_REVISION,
     reranker_model: Annotated[
         str,
-        typer.Option(help="SentenceTransformers cross-encoder model ID."),
+        typer.Option(
+            help=(
+                "SentenceTransformers cross-encoder model ID. A non-default ID "
+                "requires an explicit --reranker-revision."
+            )
+        ),
     ] = DEFAULT_RERANKER_MODEL,
     reranker_revision: Annotated[
         str,
@@ -419,6 +445,12 @@ def evaluate_factorial(
     from contextbench.ir.project import IRProjectionError
     from contextbench.retrieval import RetrievalConfig
 
+    _require_matching_revisions(
+        embedding_model=embedding_model,
+        embedding_revision=embedding_revision,
+        reranker_model=reranker_model,
+        reranker_revision=reranker_revision,
+    )
     retrieval = RetrievalConfig(
         embedding_model=embedding_model,
         reranker_model=reranker_model,
@@ -883,6 +915,55 @@ def _require_xl_docbench(dataset_name: str) -> None:
         raise typer.BadParameter(
             f"unsupported dataset {dataset_name!r}; expected 'xl-docbench'"
         )
+
+
+def _require_matching_revisions(
+    *,
+    embedding_model: str,
+    embedding_revision: str,
+    reranker_model: str,
+    reranker_revision: str,
+) -> None:
+    """Refuse a non-default model ID still carrying the default revision.
+
+    Each default revision is the commit its own default model ID resolved to.
+    Pairing it with a different model ID would stamp a manifest with a hash
+    that never belonged to those weights, so fail before the run starts rather
+    than leave the hub to reject the pair mid-download.
+    """
+    pairs = (
+        (
+            "--embedding-model",
+            embedding_model,
+            DEFAULT_EMBEDDING_MODEL,
+            "--embedding-revision",
+            embedding_revision,
+            DEFAULT_EMBEDDING_REVISION,
+        ),
+        (
+            "--reranker-model",
+            reranker_model,
+            DEFAULT_RERANKER_MODEL,
+            "--reranker-revision",
+            reranker_revision,
+            DEFAULT_RERANKER_REVISION,
+        ),
+    )
+    for (
+        model_flag,
+        model,
+        default_model,
+        revision_flag,
+        revision,
+        default_revision,
+    ) in pairs:
+        if model != default_model and revision == default_revision:
+            _abort(
+                f"{model_flag} {model} is not the default model, and "
+                f"{revision_flag} is still the default revision "
+                f"{default_revision}, which pins {default_model}. Pass "
+                f"{revision_flag} <commit> naming the commit of {model}."
+            )
 
 
 def _abort(message: str) -> NoReturn:

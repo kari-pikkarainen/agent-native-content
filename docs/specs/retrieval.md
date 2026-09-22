@@ -47,6 +47,33 @@ revision fails rather than resolving whatever `main` points at.
 uv sync --extra retrieval
 ```
 
+The revision is not part of `RetrievalConfig`, so a programmatic caller
+constructs the adapters itself and passes them to `HybridIndex.build`:
+
+```python
+from contextbench.retrieval import (
+    RetrievalConfig,
+    SentenceTransformerCrossEncoderReranker,
+    SentenceTransformerEmbeddingModel,
+)
+
+config = RetrievalConfig(
+    embedding_model="BAAI/bge-small-en-v1.5",
+    reranker_model="cross-encoder/ms-marco-MiniLM-L-6-v2",
+)
+embedder = SentenceTransformerEmbeddingModel(
+    config.embedding_model,
+    revision="5c38ec7c405ec4b44b94cc5a9bb96e735b38267a",
+)
+reranker = SentenceTransformerCrossEncoderReranker(
+    config.reranker_model,
+    revision="233902d25c440f23af6f7d6e94d2946bac0bee0a",
+)
+```
+
+Each revision must be the commit its own model ID resolved to; both adapters
+refuse an empty or missing revision.
+
 The same selected model configuration must be used for Arms A and B. Model
 loading is lazy; importing the retrieval package does not make network calls.
 
@@ -59,10 +86,11 @@ artifacts/indexes/<content-and-config-sha256>/index.json
 ```
 
 The key includes the arm, IR document IDs, chunk IDs, retrieval configuration,
-and resolved embedding, reranker, and tokenizer identities and implementation
-versions. The serialized artifact includes the same provenance plus canonical
-chunks and vectors, so a changed implementation selects a different derived
-index path.
+resolved embedding, reranker, and tokenizer identities and implementation
+versions, and the pinned embedding and reranker model revisions. The serialized
+artifact includes the same provenance plus canonical chunks and vectors, so a
+changed implementation, or the same model ID repinned to different weights,
+selects a different derived index path.
 
 Benchmark evaluation may build a single index per arm over all subset source
 documents. `retrieve(..., document_ids=...)` and `pack(..., document_ids=...)`
@@ -80,6 +108,10 @@ index = HybridIndex.build(
     config=RetrievalConfig(),
     source_documents={ir_document.id: docling_document},
     artifacts_root=Path("artifacts"),
+    # Omit both to get the offline `hash-256-v1` and `lexical-overlap-v1`
+    # fallbacks; hub-backed models are passed in already pinned, as above.
+    embedder=embedder,
+    reranker=reranker,
 )
 ranked = index.retrieve("Which region grew?")
 packet = index.pack("Which region grew?", token_budget=2048)

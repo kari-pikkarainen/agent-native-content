@@ -128,6 +128,72 @@ def test_generation_runner_reuses_immutable_contexts_and_writes_costs(
         )
 
 
+def test_generation_manifest_separates_offline_models_from_unpinned_ones(
+    tmp_path: Path,
+) -> None:
+    """A null carried revision must not read the same in both upstream cases.
+
+    Copying only the revisions made an offline upstream run, which has no hub
+    identity to record, indistinguishable from a run made before revisions
+    were pinned, which has a hub identity and no record of which commit it
+    resolved to. The model name carried beside each revision separates them
+    without opening the upstream run, which is the whole point of the copy.
+    """
+    retrieval = _run(tmp_path, run_id="retrieval-offline")
+
+    offline_run = run_generation_benchmark(
+        retrieval.path,
+        _corpus(tmp_path).questions,
+        config=_generation_config(),
+        provider=FixtureProvider(),
+        artifacts_root=tmp_path / "artifacts",
+        run_id="generation-offline",
+        git_commit="b" * 40,
+        git_dirty=False,
+        clock=lambda: datetime(2026, 9, 20, tzinfo=UTC),
+    )
+    offline = json.loads(
+        (offline_run.path / "manifest.json").read_text(encoding="utf-8")
+    )
+
+    assert offline["embedding_model"] == "hash-256-v1"
+    assert offline["embedding_revision"] is None
+    assert offline["reranker_model"] == "lexical-overlap-v1"
+    assert offline["reranker_revision"] is None
+
+    upstream_path = retrieval.path / "manifest.json"
+    upstream = json.loads(upstream_path.read_text(encoding="utf-8"))
+    upstream["embedding_model"] = "BAAI/bge-small-en-v1.5"
+    upstream["reranker_model"] = "cross-encoder/ms-marco-MiniLM-L-6-v2"
+    upstream["embedding_revision"] = None
+    upstream["reranker_revision"] = None
+    upstream_path.write_text(json.dumps(upstream), encoding="utf-8")
+
+    unpinned_run = run_generation_benchmark(
+        retrieval.path,
+        _corpus(tmp_path).questions,
+        config=_generation_config(),
+        provider=FixtureProvider(),
+        artifacts_root=tmp_path / "artifacts",
+        run_id="generation-unpinned",
+        git_commit="b" * 40,
+        git_dirty=False,
+        clock=lambda: datetime(2026, 9, 20, tzinfo=UTC),
+    )
+    unpinned = json.loads(
+        (unpinned_run.path / "manifest.json").read_text(encoding="utf-8")
+    )
+
+    assert unpinned["embedding_model"] == "BAAI/bge-small-en-v1.5"
+    assert unpinned["embedding_revision"] is None
+    assert unpinned["reranker_model"] == "cross-encoder/ms-marco-MiniLM-L-6-v2"
+    assert unpinned["reranker_revision"] is None
+    carried = ("embedding_model", "embedding_revision", "reranker_model")
+    assert [offline[field] for field in carried] != [
+        unpinned[field] for field in carried
+    ]
+
+
 def test_answer_parser_is_strict_but_accepts_json_fences() -> None:
     answer, citations, valid = parse_answer_response(
         '```json\n{"answer":"42","citations":["evidence_1"]}\n```'

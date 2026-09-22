@@ -835,7 +835,9 @@ system
 system_config_hash
 
 embedding_model
+embedding_revision
 reranker_model
+reranker_revision
 answer_model
 
 tokenizer
@@ -845,6 +847,11 @@ random_seed
 
 environment info
 ```
+
+`embedding_revision` and `reranker_revision` record the exact model weights,
+because a model ID alone names a moving branch. A hub-backed model is loaded at
+an explicit revision or not at all; the offline deterministic models record no
+revision, and their model names say so.
 
 `git_dirty` records whether the worktree differed from `git_commit`. The
 check fails closed, so an unknown worktree state, such as one left by a

@@ -315,8 +315,16 @@ def run_generation_benchmark(
         "retrieval_artifact_sha256": _artifact_hash(manifest_path, contexts_path),
         # Carried from the retrieval manifest so a generation run states which
         # model weights produced the contexts it answered from, without a
-        # reader having to open the upstream run.
+        # reader having to open the upstream run. The model names travel with
+        # the revisions because a null revision alone is ambiguous: an offline
+        # run has no hub identity to record, while a run made before revisions
+        # were pinned names a hub model and records no revision for it. With
+        # the name present the two are distinguishable, so a null revision
+        # beside a hub model ID reads as unpinned provenance rather than as a
+        # deterministic local model.
+        "embedding_model": manifest.get("embedding_model"),
         "embedding_revision": manifest.get("embedding_revision"),
+        "reranker_model": manifest.get("reranker_model"),
         "reranker_revision": manifest.get("reranker_revision"),
         "provider": provider.name,
         "provider_version": provider.version,
