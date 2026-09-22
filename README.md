@@ -45,21 +45,35 @@ the advantage at 2K and 4K tokens, but fixed RAG wins at 8K and 16K:
 
 | Budget | Dev compiler | Dev best RAG | Holdout compiler | Holdout best RAG |
 | ---: | ---: | ---: | ---: | ---: |
-| 2K | **0.727** | 0.502 | **0.513** | 0.390 |
-| 4K | **0.791** | 0.631 | **0.626** | 0.546 |
-| 8K | **0.864** | 0.755 | 0.815 | **0.856** |
+| 2K | **0.727** | 0.533 | **0.513** | 0.425 |
+| 4K | **0.791** | 0.634 | **0.626** | 0.565 |
+| 8K | **0.868** | 0.755 | 0.815 | **0.856** |
 | 16K | **0.922** | 0.836 | 0.935 | **1.000** |
 
 Values are mean gold-evidence page recall at the stated context budget. The
 development set has 24 questions over 11 documents; the directional holdout
 has six questions over six previously unused documents. No answer model was
-used for these results. An earlier six-question holdout mostly rejected the
-preceding compiler configuration and remains published as negative evidence.
+used for these results.
+
+These figures come from the 2026-09-22 re-baseline, after nine defect fixes.
+The compiler's own numbers barely moved; the baselines improved, mostly
+because the structural arm can now retrieve on heading vocabulary it was
+previously blind to. The margin is therefore narrower than this page
+previously reported, not wider. At 2K on the holdout the paired interval
+against fixed RAG is [+0.033, +0.233], and at 16K it is [−0.121, −0.017],
+so both the low-budget win and the high-budget loss exclude zero.
+
+Read this table with the page-recall caveat under
+[known limitations](#known-limitations): on the matched factorial the IR unit
+leads on page recall far more consistently than on exact quote recall.
+
 See the canonical
-[development report](results/retrieval/xldev24-coverage/report.md),
-[first holdout report](results/retrieval/xlholdout6/report.md),
-[holdout report](results/retrieval/xlholdout6b/report.md), and
-[results index](results/README.md) for the full evidence and caveats.
+[development report](results/retrieval/xldev24-rebaseline/report.md),
+[holdout report](results/retrieval/xlholdout6b-rebaseline/report.md),
+[content-unit factorial](results/factorial/xldev24-content-policy-heading/report.md),
+and [results index](results/README.md) for the full evidence and caveats. An
+earlier six-question holdout mostly rejected the preceding compiler
+configuration and remains published as superseded negative evidence.
 
 **Decision:** keep the compiler as a credible low-budget treatment, do not
 claim that it replaces RAG, and postpone the full XL100 run until answer-quality
@@ -410,10 +424,21 @@ gold pages or quotes, are defined in the
   `report.md` keeps the legend wording of the run that produced it.
 - Evidence retrieval has been measured more thoroughly than end-to-end answer
   quality. No answer-generation or economic result exists yet.
-- Compiler retrieval is currently slower: about 4.7–5.4 seconds per holdout
-  query versus 1.4 seconds for fixed RAG and 2.2 seconds for structural RAG on
-  the same development machine.
-- The holdout rejects high-budget dominance: fixed RAG wins at 8K and 16K.
+- Compiler retrieval is slower, though less so than before the re-baseline:
+  about 1.56 seconds per holdout query against 0.42 for fixed RAG and 0.44 for
+  structural RAG on the same development machine, a ratio of roughly 3.7×. The
+  earlier figure on this page, 4.7–5.4 seconds, predates the two positivity
+  guards; refusing non-matching chunks in both channels shrinks the fused
+  candidate set, so there is less to rerank. Phase 1 targets at most 2×.
+- The holdout still rejects high-budget dominance. After the re-baseline the
+  compiler loses to fixed RAG at 16K by 0.065 page recall, with a paired
+  interval of [−0.121, −0.017] that excludes zero, so this is now a measured
+  loss rather than a directional one. Against structural chunks it still leads
+  at 16K, so the problem is specifically fixed windows.
+- Page recall over-credits the compiler, and the size is now measured. On the
+  full development factorial IR nodes beat the better chunk unit in eight of
+  eight matched cells on page recall and three of eight on exact quote recall,
+  never by more than 0.021 on the latter.
 - Agent enrichment is deterministic and mostly extractive. It is not a
   semantic knowledge graph or an abstractive document rewrite.
 - On the two-question representation diagnostic, IR used about 49% more tokens
@@ -426,152 +451,58 @@ gold pages or quotes, are defined in the
 
 ## Next decision gate
 
-The active gate is Gate 0 of the
-[improvement plan](docs/plans/2026-09-21-improvement-plan.md): re-baseline the
-measurement. A 2026-09-21 code review found three shared retrieval and
-reporting defects: BM25 returning every chunk with a zero score into rank
-fusion, embedding and reranker models loaded without a pinned revision, and
-run manifests that do not record whether the worktree was dirty. All three are
-fixed on this branch, as is the fourth defect that review found in the dense
-channel. A fifth, found on 2026-09-22 after that review, is fixed here too and
-is the one that matters most for the arm comparison: the structural arm could
-not retrieve on heading vocabulary. Unlike the four above it moved one arm's
-numbers and not the others', so it does not cancel in a paired delta at all.
-Nothing has been remeasured: every absolute figure and
-paired delta published on this page comes from a run made before those fixes
-and stays provisional until the affected runs are repeated. The BM25 defect
-did not cost every arm the same amount, which is why the paired deltas must be
-remeasured rather than carried over. Measured on the fixture corpora, 6 of 35
-sparse ranks were unearned on the ranking corpus, 15 of 30 on the fixed
-retrieval fixture, and 15 of 20 on the structural one, where five queries had
-no genuine sparse hit at all and their whole sparse channel was noise ordered
-by chunk ID.
+**Gate 0 has passed and is recorded in
+[the research log](docs/research-log/gate0-rebaseline-67aef47.md).** The active
+gate is now Gate 1 of the
+[improvement plan](docs/plans/2026-09-21-improvement-plan.md).
 
-The fourth defect was the dense channel's copy of the first. It awarded rank
-credit, and so reciprocal-rank-fusion credit, to chunks whose similarity to
-the query is not positive, in chunk-ID order, exactly as the sparse channel
-did before the BM25 fix. It is now fixed the same way: `_dense_search` drops
-any chunk whose similarity is not strictly positive. Both channels now refuse
-what they did not score; see
-[the retrieval specification](docs/specs/retrieval.md).
+Gate 0 asked whether the low-budget advantage on this page was real or an
+artifact of broken measurement. It is real. It survived nine defect fixes,
+including two the code review did not find: the dense channel held a copy of
+the BM25 zero-score defect, and the structural baseline could not retrieve on
+its own heading vocabulary, which had been handicapping a baseline rather than
+the treatment. On the remeasured `xldev24` the paired source-cluster interval
+for the compiler against both RAG baselines excludes zero at 2K and at 4K,
+which is the condition the gate was stated on.
 
-It does not block the rerun, and the earlier claim on this page that it moves
-published numbers was wrong. It has been measured against the embedder the
-published runs actually used. Across all 31 cached indexes the stored
-`BAAI/bge-small-en-v1.5` vectors are mutually positive: 3,715,675,587 distinct
-chunk pairs, none with a cosine at or below zero, minimum `+0.1108`. Embedding
-the 24 `xldev24` questions at the pinned revision
-`5c38ec7c405ec4b44b94cc5a9bb96e735b38267a` and scoring them against those same
-stored vectors gives 6,928,752 query-chunk similarities, again none at or below
-zero, minimum `+0.1878`, and none inside any top-40. The guard therefore could
-not have fired on any published run, and fixing it cannot move a published
-number. The defect was real and worth fixing, but it is reachable only under
-the offline `hash-256-v1` model used by fixtures, whose sign-bit vectors are
-sparse enough to make exact zeros routine.
+The re-baselined results are published under
+[`results/`](results/README.md) and the four earlier ones are marked
+superseded there, with the reason. Every figure on this page that predates
+them has been replaced or removed. The new runs are the first in this project
+reproducible from a config and a SHA: their manifests record a clean worktree
+and both model weights pinned to a resolved commit.
 
-The research question that held the fix open has been decided: an empty
-retrieval is the correct answer. Under the hash model the guard, combined with
-the BM25 guard already in place, can leave a query with no candidates at all
-rather than with hash-ordered non-matches -- it empties 7 of the 20 fixture
-(arm, query) pairs outright, and shortens one row of the pinned offline
-ranking table from four results to three. A channel with no evidence returns
-nothing, which is what BM25 has already done since its own guard landed, and
-the asymmetry between the two channels was the defect rather than the
-emptiness. No floor is applied, because returning the top-k anyway would
-reinstate exactly the hash-ordered credit the guard removes. Downstream
-consumers were audited against this: an empty packet is a valid packet, scores
-recall `0.0` against annotated gold pages rather than a vacuous `1.0`, and
-yields an answer that cites nothing and so scores zero on citation validity.
+The gate also narrowed the claim in three ways worth stating alongside it:
 
-### The structural arm could not retrieve on its own headings
+- **Page recall over-credits the compiler.** On the full development factorial
+  IR nodes beat the better chunk unit in eight of eight matched cells on page
+  recall and three of eight on exact quote recall. The gate is stated on page
+  recall and passed on it; Phase 2 promotes quote recall to co-primary for
+  exactly this reason, so the pass is a screening result, not a validation.
+- **The holdout loss at 16K is now measured.** The compiler loses to fixed RAG
+  there by 0.065 page recall with an interval excluding zero. The development
+  set and the holdout disagree at that budget, which is why a holdout exists.
+- **The compiler was paying a heading tax.** Joining heading trails into node
+  search text costs the IR unit between 2 and 5 points of page recall at every
+  budget, measured by an ablation built to answer a different question. A
+  heading trail repeated under every node in a section is a constant,
+  non-discriminative term.
 
-**The defect and its fix.** Structural chunks kept the heading trail beside
-the body as `heading_path` metadata, while both retrieval channels read
-`RetrievalChunk.retrieval_text`, which is `search_text or text`. `search_text`
-was `None` on every structural chunk, so heading and title strings reached
-neither BM25, nor the dense embedding, nor the reranker. The other two arms
-were never blind to them: the fixed arm indexes headings incidentally, because
-it windows over every IR node that carries text, title and heading nodes
-included, and the compiler joins each node's heading trail above its own text
-into its search text. Only this baseline was blind, which handicapped a
-baseline rather than the treatment and so inflated both the fixed and the
-compiler margin over it. Measured on the development set, 4 of the 24
-`xldev24` questions use a term the fixed arm reaches and the structural arm
-did not, concentrated in the questions that name a section by its title --
-the class a structure-preserving representation is supposed to be best at.
-The fix gives structural chunks the same search text the compiler builds,
-behind `RetrievalConfig.heading_search_context`, which defaults on; emitted
-text, token counts, chunk ids and provenance are identical in both positions,
-and the off position reproduces the previous structural behaviour exactly. The
-compiler reads the same field, but it has always carried heading context, so
-its off position is a new state rather than an old one.
+Phase 1 follows, and its target is concrete rather than directional: the
+compiler must never be worse than fixed RAG at any budget, against a measured
+16K loss. Its cheapest available improvement is to stop paying the heading tax.
+Latency is also in scope: compiler retrieval is roughly 3.7× fixed RAG after
+the re-baseline, against a Phase 1 target of at most 2×.
 
-**The ablation.** `FactorialConfig.heading_contexts` crosses that field with
-the content units and the selection policies, exactly as those are crossed
-with each other. It is single-valued by default, so a run that does not ask
-for the ablation is unchanged, and it is now settable from the command line:
+`xlholdout6c` is frozen and
+[recorded](docs/research-log/xlholdout6c-freeze.md), with all six sources
+preflight-verified. It is run once, at Gate 1, with the configuration chosen
+on `xldev24`, and is never tuned on.
 
-```shell
-uv run --extra retrieval contextbench eval-factorial \
-  --heading-context on --heading-context off \
-  --run-id xldev2-factorial-heading
-```
-
-The factor governs the structural unit and the IR unit, the two that read the
-field. The fixed unit does not read it and its chunks are identical in both
-positions by construction, so an unchanged fixed row is not evidence about
-heading context.
-
-**What a delta across the factor carries: three mechanisms, not one.**
-Heading vocabulary becomes matchable; the candidate dedupe key widens,
-because the pre-rerank dedupe keys on `retrieval_text`, so two identical
-bodies under different headings collapse into one candidate in the off
-position and both survive in the on position -- which changes results even
-for a query containing no heading term; and, in `FACETED_COVERAGE` cells,
-the coverage objective changes, because the packer derives each candidate's
-coverage terms and table references from `retrieval_text` as well, a
-policy-side effect of a factor meant to isolate representation. Attributing a
-single-factor delta wholly to heading matching would be wrong. All three are
-detailed in the
-[retrieval specification](docs/specs/retrieval.md).
-
-**What is superseded.** Published structural numbers were measured in the old
-state and cannot be carried across, and neither can the paired deltas drawn
-against them. Published IR numbers do not carry across either, for a second
-reason found while making the factor safe: the IR candidate id used to be
-derived from the indexed string, so toggling the factor permuted ids that are
-tie-break sort keys throughout retrieval and packing. That derivation is now
-text-only, which moved default-configuration IR results on the committed
-fixtures. In the factorial both effects land on rows: the structural-unit and
-IR-unit rows are superseded and the fixed-unit rows are unaffected by either
-change, so a partial rerun that refreshes one and keeps the other would
-compare cells measured under two different behaviours.
-
-**A CLI gap remains.** `--heading-context` is the only factorial factor the
-command exposes. `content_units`, `selection_policies` and `budgets` are
-still unreachable from `eval-factorial` and always take their defaults, so a
-run that varies them can only be made from Python.
-
-Pinning the model revisions changed the derived-index key, so all 31 cached
-indexes under `artifacts/indexes/` are now unreachable by key and must be
-rebuilt. That is cache invalidation rather than a change in results, but the
-first rerun pays full index construction rather than reusing a warm cache.
-
-That re-baselining is in progress and not complete. It ends with continuous
-integration green on `main`, a fresh `xlholdout6c` holdout frozen before any
-compiler change, and republished `xldev24` and `xlholdout6b` results. The gate
-closes only if, on the remeasured `xldev24`, the paired source-cluster
-bootstrap interval for the compiler against the best RAG baseline excludes zero
-at both 2K and 4K. If it does not, the plan is to stop and write that up.
-
-Only after that does the plan harden the compiler and then run the content-unit
-by policy factorial on the full development set. That factorial is the
-comparison that can separate representation from retrieval policy; the existing
-factorial evidence is a two-question diagnostic. Guarded answer generation at
-2K and 4K is implemented and preregistered but has produced no result, so no
-answer-quality or economic claim is available yet, and expansion to an
-untouched cross-document set, a second benchmark, and realistic 64K/128K long
-context stays behind that. See the [research roadmap](docs/roadmap.md).
+One Gate 0 item is deferred rather than done: the exploratory answer-generation
+run over the re-baselined `xlholdout6b` contexts needs an API key and a fresh,
+explicitly exploratory preregistration. It does not block Phase 1. No
+answer-quality or economic result exists yet.
 
 ## Repository map
 
