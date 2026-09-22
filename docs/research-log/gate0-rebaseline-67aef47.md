@@ -165,3 +165,20 @@ an improvement at all.
 - `xlholdout6c` was frozen but not run, and must not be run before Gate 1.
 - The gate's own evidence is a development set plus a six-question holdout that
   disagree at 16K. Neither is a population that can support a validation claim.
+
+## Later note: 2026-09-22
+
+The "Decision" section above names removing heading trails from compiler node
+search as one of Phase 1's cheapest available improvements, valued by the
+ablation at 2 to 5 points. That recommendation is **withdrawn**. It was stated
+on page recall alone, which is the reading this project's own joint-metric rule
+exists to prevent.
+
+It was tested directly on the full pipeline at `edd196f` and rejected: page
+recall improves at all four budgets, but exact quote recall does not, and the
+acceptance rule required both. See
+[the ablation record](compiler-heading-free-edd196f.md). The heading tax on
+page recall reproduces and stands; the recommendation built on it does not.
+
+Nothing else in this record changes. The gate result, its interval, and the
+holdout comparison are unaffected — the change was never applied.
