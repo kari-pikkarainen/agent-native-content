@@ -30,6 +30,28 @@ The returned `RankedEvidence` records dense, sparse, fused, and reranked scores.
 Packed `ContextItem` values carry document IDs, pages, heading paths, IR node
 IDs, Docling source item IDs, and an evidence ID suitable for answer citations.
 
+### Known defect: the dense channel ranks non-matches
+
+Stage 1 returns only chunks that match at least one query term: a chunk scoring
+zero under BM25 carries no lexical evidence, so giving it a rank gave it
+reciprocal-rank-fusion credit ordered by chunk ID, which is a hash rather than
+relevance.
+
+Stage 2 still has that defect. `HybridIndex._dense_search` applies no
+positivity guard: it sorts every similarity, including exactly `0.0` and
+negative values, truncates to the candidate limit, and breaks ties by chunk ID.
+A chunk with zero similarity to the query therefore receives a dense rank in
+hash order and the full `1 / (rrf_k + rank)` credit that rank is worth, exactly
+as zero-score chunks once did on the sparse side. Short queries against the
+default 256-dimension hash embedding leave most chunks at similarity exactly
+`0.0`, so this is the common case rather than a corner.
+
+This is recorded, not fixed. Fixing it moves published numbers, so it must be
+its own change with its own re-measurement, not a rider on the BM25 fix. Any
+rerun that republishes a baseline should decide this first: if the dense mirror
+is fixed after a baseline is republished, every number in that baseline moves
+again and the rerun is wasted.
+
 ## Models
 
 The default `hash-256-v1` embedding and `lexical-overlap-v1` reranker are

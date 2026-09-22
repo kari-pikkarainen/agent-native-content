@@ -57,6 +57,17 @@ class BM25Index:
                 # A chunk matching no query term is not a sparse hit. Appending
                 # it anyway gave it a rank, and so reciprocal-rank-fusion
                 # credit, ordered by chunk id -- a hash, not relevance.
+                #
+                # This drops only non-matches because every term contributes a
+                # strictly positive amount: the smoothed idf above is the
+                # log(1 + ...) form, positive even for a term in every chunk
+                # (its floor, ~0.0339 at N=14), and ``k1`` is constrained gt=0
+                # so the tf factor is positive too. Switching to the classic
+                # Robertson idf, which goes negative once df > N/2, would make
+                # this test silently discard genuine matches on common terms.
+                # The test is ``<= 0.0`` rather than ``== 0.0`` deliberately:
+                # it must stay a non-match filter, so change the idf form and
+                # this guard together or not at all.
                 continue
             scored.append((index, score))
         scored.sort(key=lambda pair: (-pair[1], self.chunks[pair[0]].id))

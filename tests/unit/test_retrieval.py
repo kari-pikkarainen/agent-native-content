@@ -86,6 +86,16 @@ def test_fixture_queries_return_ranked_traceable_evidence(
     assert ranked[0].chunk.source_node_ids
     assert ranked[0].chunk.source_item_ids
     assert ranked[0].scores.dense >= -1
+    # Deliberately not tightened to ``> 0``. BM25 no longer returns zero-score
+    # chunks, so a positive sparse score on the top hit would be the stronger
+    # claim -- but it is false here: 7 of these 20 (arm, query) pairs rank a
+    # chunk first with sparse and dense both exactly 0.0, reaching rank 1 on
+    # dense rank credit alone. (fixed: "metrics", "growth conclusion";
+    # structural: "quarterly report", "metrics", "methods", "report
+    # highlights", "growth conclusion".) Those are the dense-channel defect
+    # noted on ``test_unmatched_chunks_earn_no_sparse_fusion_credit``, and
+    # they are also why ``fused > 0`` below is weaker than it looks. Tighten
+    # this only once the dense channel filters non-matches too.
     assert ranked[0].scores.sparse >= 0
     assert ranked[0].scores.fused > 0
     assert packet.token_count <= 12
@@ -760,6 +770,18 @@ def test_unmatched_chunks_earn_no_sparse_fusion_credit() -> None:
     zero-score sparse entry used to be worth as much as a genuine match at
     the same rank. Any candidate that BM25 did not hit must now score exactly
     its dense reciprocal-rank term and nothing more.
+
+    This describes current behavior; it does not endorse it. The dense channel
+    has the same defect BM25 just lost: ``HybridIndex._dense_search`` applies
+    no positivity guard, so it sorts every similarity including exactly 0.0
+    and negative ones, slices to the limit, and breaks ties by ``chunk.id``.
+    Zero-similarity chunks therefore still collect a dense rank in hash order
+    and full RRF credit for it -- and with short queries against 256
+    dimensions that is the common case, not a corner. The ``dense_rank`` term
+    asserted below is often exactly such a rank. Fixing the dense channel is
+    deliberately out of scope for the BM25 change, so if it is fixed later,
+    expect this assertion to need rewriting rather than treating a failure
+    here as a regression.
     """
     chunks = _sparse_probe_corpus()
     config = RetrievalConfig(candidate_limit=10, rerank_limit=10)
@@ -858,7 +880,17 @@ def _observed_rankings(index: HybridIndex) -> dict[str, tuple[tuple[str, int], .
 # One row is no longer a pure d7f427e capture. Stopping BM25 from returning
 # zero-score chunks moved ``quarterly metrics``; that row was re-derived from
 # the reciprocal-rank arithmetic, not re-recorded, and the derivation is on the
-# row itself. The other six rows still hold their d7f427e values.
+# row itself.
+#
+# The other six rows still hold their d7f427e *values*, but two of them no
+# longer hold them for the d7f427e *reasons*. Three rows lost zero-score sparse
+# padding: ``quarterly metrics`` (moved), ``margin recovery`` (the padding
+# chunk sat below the top-four rerank cut either way, so nothing moved) and
+# ``region 42`` (the padding chunk was inside the pool and its slot now rests
+# on a different quantity -- see the note on that row). Treat an unchanged
+# value as evidence about the value only. If one of these rows later flips,
+# the first place to look is the derivation recorded beside it, not a
+# regression in a subsystem the row never depended on.
 _RANKINGS_BEFORE_THE_REVISION_PIN = {
     "revenue by region": (
         ("ranking-chunk-00", 1),
@@ -898,6 +930,19 @@ _RANKINGS_BEFORE_THE_REVISION_PIN = {
         ("ranking-chunk-10", 3),
         ("ranking-chunk-04", 4),
     ),
+    # Value unchanged from d7f427e, derivation changed. Only 12, 00 and 05
+    # contain "region" or "42" (08 has "regions", a different token), so the
+    # pre-fix sparse top-five padded itself with 01 and 02 at score 0.0, and
+    # both landed inside the rerank pool. Pre-fix the 4th entry, chunk-01, held
+    # its slot on sparse rank 4 plus dense rank 4, 1/64 + 1/64 = 0.031250,
+    # clear of chunk-02's 1/65 + 1/65 = 0.030769. Post-fix it is dense-only:
+    # 1/64 = 0.015625 against chunk-02's 1/65 = 0.015385. Same four chunks in
+    # the same order, but slot 4 now survives on a single dense rank. Note that
+    # both chunks have dense similarity exactly 0.0 here, so that surviving
+    # dense rank is itself awarded in chunk-id order -- the dense channel still
+    # does what BM25 stopped doing (see
+    # ``test_unmatched_chunks_earn_no_sparse_fusion_credit``). A one-rank
+    # margin on a hash-ordered tie is the whole reason this row holds.
     "region 42": (
         ("ranking-chunk-12", 1),
         ("ranking-chunk-00", 2),
