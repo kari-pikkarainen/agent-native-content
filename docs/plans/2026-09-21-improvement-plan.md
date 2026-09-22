@@ -67,16 +67,33 @@ review above:
 
 | Defect | Location | Effect |
 | --- | --- | --- |
-| Structural chunks keep heading text in `heading_path` metadata only; both channels read `retrieval_text`, which is `search_text or text`, and `search_text` is `None` on every structural chunk | `src/contextbench/retrieval/chunking.py:159`, `retrieval/models.py:88-90` | Only the `structural` arm is blind to heading vocabulary. `fixed` windows over every node carrying text, title and headings included (`chunking.py:64-68`), and the compiler joins the heading trail into `search_text` (`compiler/candidates.py:28,50-54`). Over the unit fixture `quarterly`, `report`, `results` and `methods` are indexed by `fixed` and by the compiler, and by no structural chunk |
-| Compiler candidates skip list-group nodes and `content_layer == "furniture"` nodes as non-evidence | `src/contextbench/compiler/candidates.py:10,22-26` | Asymmetric the other way and smaller: the group name `Highlights` is indexed by `fixed` but by neither the compiler nor `structural` |
+| **Fixed on this branch** (see below). Structural chunks keep heading text in `heading_path` metadata only; both channels read `retrieval_text`, which is `search_text or text`, and `search_text` is `None` on every structural chunk | `src/contextbench/retrieval/chunking.py:173-177`, `retrieval/models.py:98-100` | Only the `structural` arm is blind to heading vocabulary. `fixed` windows over every node carrying text, title and headings included (`chunking.py:78-81`), and the compiler joins the heading trail into `search_text` (`compiler/candidates.py:39-43`). Over the unit fixture `quarterly`, `report`, `results` and `methods` are indexed by `fixed` and by the compiler, and by no structural chunk |
+| Compiler candidates skip list-group nodes and `content_layer == "furniture"` nodes as non-evidence | `src/contextbench/compiler/candidates.py:11,31-36` | Asymmetric the other way and smaller: the group name `Highlights` is indexed by `fixed` but by neither the compiler nor `structural` |
 
 The first row handicaps a baseline, not the treatment, so it inflates both the
 fixed and the compiler margin over structural chunks. It bears hardest on the
 matched content-unit × policy factorial, the experiment meant to separate
 representation from policy: "IR nodes beat structural chunks" there can partly
 mean "the compiler indexes headings and the structural baseline does not".
-Correcting it can only strengthen `structural`. It is unfixed by choice; the
-measurement, and the decision it forces on the rerun, are in the
+Correcting it can only strengthen `structural`.
+
+**Fixed on this branch.** `RetrievalConfig.heading_search_context`, default
+`True`, gives structural chunks a `search_text` of their heading trail joined
+above their body, as the compiler's node candidates already had. The fix is
+search-only: emitted chunk `text`, token counts, budgets and provenance are
+identical in both positions, and only the string the channels match against
+changes. Heading context is also a crossed factorial factor
+(`FactorialConfig.heading_contexts`, `eval-factorial --heading-context
+on|off`), reading that one field on both heading-bearing units, so the effect
+is measured rather than assumed; the fixed unit does not read it, so its rows
+are constant across the factor by construction. Published numbers do not carry
+across -- structural because of this fix, IR because the node-candidate id is
+now derived from node text alone rather than from the indexed string, a
+separate change made to keep the ablation arm-symmetric -- while the
+factorial's fixed-unit rows are unaffected, so a partial rerun would mix
+behaviours. A single-factor delta carries three mechanisms, not one: heading
+vocabulary becoming matchable, candidate dedupe scope, and the
+coverage-selection terms of `faceted_coverage` cells; all three are in the
 [retrieval specification](../specs/retrieval.md).
 
 Compiler defects, which change the treatment and are therefore fixed
