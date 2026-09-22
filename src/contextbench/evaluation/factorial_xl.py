@@ -33,6 +33,7 @@ def run_xl_factorial(
     config: FactorialConfig,
     docling_artifacts_dir: Path | None = None,
     run_id: str | None = None,
+    allow_dirty: bool = False,
     progress: ProgressCallback | None = None,
 ) -> FactorialRun:
     """Run the controlled factorial on an XL subset and fixed parent corpus."""
@@ -109,6 +110,7 @@ def run_xl_factorial(
         ),
         run_id=run_id,
         tokenizer=tokenizer,
+        allow_dirty=allow_dirty,
     )
 
 

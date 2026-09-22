@@ -14,7 +14,7 @@ from pathlib import Path
 from statistics import mean
 
 from contextbench.datasets.base import BenchmarkQuestion
-from contextbench.experiments import current_git_commit, utc_now
+from contextbench.experiments import resolve_git_state, utc_now
 from contextbench.generation.models import (
     AnswerModelConfig,
     AnswerRequest,
@@ -73,6 +73,7 @@ def run_generation_benchmark(
     artifacts_root: Path,
     run_id: str | None = None,
     git_commit: str | None = None,
+    allow_dirty: bool = False,
     clock: Callable[[], datetime] = utc_now,
 ) -> GenerationRun:
     """Generate and score answers from a completed retrieval run."""
@@ -110,6 +111,11 @@ def run_generation_benchmark(
     final_path = artifacts_root / "generation-runs" / resolved_run_id
     if final_path.exists():
         raise GenerationError(f"completed run already exists: {final_path}")
+    resolved_commit, resolved_dirty = resolve_git_state(
+        git_commit=git_commit,
+        allow_dirty=allow_dirty,
+        error=GenerationError,
+    )
 
     context_rows = _read_jsonl(contexts_path)
     selected_rows = [
@@ -297,7 +303,8 @@ def run_generation_benchmark(
     generation_manifest = {
         "run_id": resolved_run_id,
         "created_at": created_at.isoformat(),
-        "git_commit": git_commit or current_git_commit(),
+        "git_commit": resolved_commit,
+        "git_dirty": resolved_dirty,
         "retrieval_run_id": retrieval_run_id,
         "retrieval_artifact_sha256": _artifact_hash(manifest_path, contexts_path),
         "provider": provider.name,

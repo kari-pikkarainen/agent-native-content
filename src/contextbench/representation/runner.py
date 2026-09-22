@@ -24,7 +24,7 @@ from contextbench.agentdoc import (
 )
 from contextbench.datasets.base import BenchmarkQuestion
 from contextbench.evaluation.runner import EvaluationCorpus
-from contextbench.experiments import current_git_commit, utc_now
+from contextbench.experiments import resolve_git_state, utc_now
 from contextbench.generation import (
     AnswerProvider,
     AnswerRequest,
@@ -84,6 +84,7 @@ def run_gold_representation_benchmark(
     run_id: str | None = None,
     tokenizer: TokenCounter | None = None,
     git_commit: str | None = None,
+    allow_dirty: bool = False,
     clock: Callable[[], datetime] = utc_now,
 ) -> RepresentationRun:
     """Compare three encodings of identical gold evidence without retrieval."""
@@ -121,6 +122,11 @@ def run_gold_representation_benchmark(
     final_path = artifacts_root / "representation-runs" / resolved_run_id
     if final_path.exists():
         raise RepresentationError(f"completed run already exists: {final_path}")
+    resolved_commit, resolved_dirty = resolve_git_state(
+        git_commit=git_commit,
+        allow_dirty=allow_dirty,
+        error=RepresentationError,
+    )
 
     enrichment_started = time.perf_counter_ns()
     enrichments: dict[str, AgentDocument] = {}
@@ -241,7 +247,8 @@ def run_gold_representation_benchmark(
     manifest = {
         "run_id": resolved_run_id,
         "created_at": created_at.isoformat(),
-        "git_commit": git_commit or current_git_commit(),
+        "git_commit": resolved_commit,
+        "git_dirty": resolved_dirty,
         "dataset": dataset,
         "dataset_version": dataset_version,
         "dataset_revision": dataset_revision,

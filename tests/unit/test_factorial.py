@@ -120,6 +120,8 @@ def test_factorial_runner_crosses_every_unit_and_policy(tmp_path: Path) -> None:
     }
 
     manifest = json.loads((result.path / "manifest.json").read_text())
+    assert manifest["git_commit"] == "a" * 40
+    assert manifest["git_dirty"] is False
     assert manifest["systems"] == [
         f"{unit.value}:{policy.value}"
         for unit in ContentUnit

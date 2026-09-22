@@ -37,6 +37,7 @@ def run_xl_gold_representation(
     provider: AnswerProvider,
     docling_artifacts_dir: Path | None = None,
     run_id: str | None = None,
+    allow_dirty: bool = False,
     progress: ProgressCallback | None = None,
 ) -> RepresentationRun:
     """Prepare selected XL documents and compare gold-page representations."""
@@ -103,4 +104,5 @@ def run_xl_gold_representation(
         subset_sha256=hashlib.sha256(subset_file.read_bytes()).hexdigest(),
         run_id=run_id,
         tokenizer=tokenizer,
+        allow_dirty=allow_dirty,
     )

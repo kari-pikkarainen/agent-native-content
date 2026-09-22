@@ -245,6 +245,16 @@ def evaluate_retrieval(
         str | None,
         typer.Option(help="Optional immutable run identifier."),
     ] = None,
+    allow_dirty: Annotated[
+        bool,
+        typer.Option(
+            "--allow-dirty",
+            help=(
+                "Record a run from a modified worktree, stamping "
+                "git_dirty: true in the manifest."
+            ),
+        ),
+    ] = False,
 ) -> None:
     """Run the evidence-only A/B/C/D benchmark on a committed XL subset."""
     # Keep evaluation and model imports off lightweight CLI paths.
@@ -285,6 +295,7 @@ def evaluate_retrieval(
             docling_artifacts_dir=docling_artifacts_dir,
             config=config,
             run_id=run_id,
+            allow_dirty=allow_dirty,
             progress=lambda message: typer.echo(message, err=True),
         )
     except (DatasetError, IngestionError, IRProjectionError, RuntimeError) as exc:
@@ -366,6 +377,16 @@ def evaluate_factorial(
         str | None,
         typer.Option(help="Optional immutable factorial run identifier."),
     ] = None,
+    allow_dirty: Annotated[
+        bool,
+        typer.Option(
+            "--allow-dirty",
+            help=(
+                "Record a run from a modified worktree, stamping "
+                "git_dirty: true in the manifest."
+            ),
+        ),
+    ] = False,
 ) -> None:
     """Cross content units with ranked and faceted-coverage policies."""
     from contextbench.evaluation import FactorialConfig, FactorialFacetConfig
@@ -401,6 +422,7 @@ def evaluate_factorial(
             docling_artifacts_dir=docling_artifacts_dir,
             config=config,
             run_id=run_id,
+            allow_dirty=allow_dirty,
             progress=lambda message: typer.echo(message, err=True),
         )
     except (DatasetError, IngestionError, IRProjectionError, RuntimeError) as exc:
@@ -486,6 +508,16 @@ def evaluate_generation(
         str | None,
         typer.Option(help="Optional immutable generation run identifier."),
     ] = None,
+    allow_dirty: Annotated[
+        bool,
+        typer.Option(
+            "--allow-dirty",
+            help=(
+                "Record a run from a modified worktree, stamping "
+                "git_dirty: true in the manifest."
+            ),
+        ),
+    ] = False,
 ) -> None:
     """Generate and score answers from immutable retrieval contexts."""
     from contextbench.evaluation import BenchmarkSystem
@@ -541,6 +573,7 @@ def evaluate_generation(
             provider=OpenAIAnswerProvider(),
             artifacts_root=artifacts_root,
             run_id=run_id,
+            allow_dirty=allow_dirty,
         )
     except (DatasetError, GenerationError, OSError, RuntimeError, ValueError) as exc:
         _abort(str(exc))
@@ -623,6 +656,16 @@ def evaluate_representation(
         str | None,
         typer.Option(help="Optional immutable representation run identifier."),
     ] = None,
+    allow_dirty: Annotated[
+        bool,
+        typer.Option(
+            "--allow-dirty",
+            help=(
+                "Record a run from a modified worktree, stamping "
+                "git_dirty: true in the manifest."
+            ),
+        ),
+    ] = False,
 ) -> None:
     """Compare RAW, IR, and enriched encodings of identical gold pages."""
     from contextbench.generation import OpenAIAnswerProvider, PricingMetadata
@@ -672,6 +715,7 @@ def evaluate_representation(
             provider=OpenAIAnswerProvider(),
             docling_artifacts_dir=docling_artifacts_dir,
             run_id=run_id,
+            allow_dirty=allow_dirty,
             progress=lambda message: typer.echo(message, err=True),
         )
     except (

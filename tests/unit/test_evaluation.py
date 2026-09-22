@@ -22,6 +22,7 @@ from contextbench.evaluation import (
 from contextbench.evaluation.evidence import evaluate_context
 from contextbench.evaluation.models import RetrievalSummaryRow
 from contextbench.evaluation.reports import markdown_report, summarize
+from contextbench.experiments import manifest
 from contextbench.ir import project_document
 from contextbench.retrieval import (
     ContextItem,
@@ -431,3 +432,56 @@ def test_stage_audit_requires_compiler_system() -> None:
             systems=(BenchmarkSystem.STRUCTURAL,),
             compiler_stage_audit=True,
         )
+
+
+def _run_from_worktree(
+    tmp_path: Path,
+    *,
+    run_id: str,
+    allow_dirty: bool,
+):
+    return run_retrieval_benchmark(
+        _corpus(tmp_path),
+        config=_config(),
+        artifacts_root=tmp_path / "artifacts",
+        dataset="fixture",
+        dataset_version="v1",
+        dataset_revision="revision-1",
+        subset_name="fixture-one",
+        subset_sha256="1" * 64,
+        run_id=run_id,
+        tokenizer=FixtureTokenCounter(),
+        embedder=HashEmbeddingModel(),
+        reranker=LexicalOverlapReranker(),
+        git_commit=None,
+        allow_dirty=allow_dirty,
+        clock=lambda: datetime(2026, 9, 21, tzinfo=UTC),
+    )
+
+
+def test_dirty_worktree_is_refused_before_any_artifact_is_written(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(manifest, "current_git_commit", lambda: "d" * 40)
+    monkeypatch.setattr(manifest, "current_git_dirty", lambda: True)
+    artifacts_root = tmp_path / "artifacts"
+
+    with pytest.raises(EvaluationError, match="modified worktree"):
+        _run_from_worktree(tmp_path, run_id="dirty-run", allow_dirty=False)
+
+    assert not artifacts_root.exists()
+
+
+def test_allow_dirty_stamps_the_manifest_instead_of_hiding_the_state(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(manifest, "current_git_commit", lambda: "d" * 40)
+    monkeypatch.setattr(manifest, "current_git_dirty", lambda: True)
+
+    result = _run_from_worktree(tmp_path, run_id="dirty-run", allow_dirty=True)
+
+    written = json.loads((result.path / "manifest.json").read_text())
+    assert written["git_commit"] == "d" * 40
+    assert written["git_dirty"] is True

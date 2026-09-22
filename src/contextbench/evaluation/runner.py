@@ -42,8 +42,8 @@ from contextbench.evaluation.stages import (
 from contextbench.experiments import (
     DocumentProvenance,
     RunManifest,
-    current_git_commit,
     environment_info,
+    resolve_git_state,
     utc_now,
 )
 from contextbench.ir.models import IRDocument
@@ -106,6 +106,7 @@ def run_retrieval_benchmark(
     embedder: EmbeddingModel | None = None,
     reranker: Reranker | None = None,
     git_commit: str | None = None,
+    allow_dirty: bool = False,
     clock: Callable[[], datetime] = utc_now,
 ) -> BenchmarkRun:
     """Run all configured evidence-only cells and publish immutable artifacts."""
@@ -134,6 +135,11 @@ def run_retrieval_benchmark(
     final_path = artifacts_root / "runs" / resolved_run_id
     if final_path.exists():
         raise EvaluationError(f"completed run already exists: {final_path}")
+    resolved_commit, resolved_dirty = resolve_git_state(
+        git_commit=git_commit,
+        allow_dirty=allow_dirty,
+        error=EvaluationError,
+    )
 
     ordered_document_ids = sorted(corpus.documents)
     documents = [corpus.documents[document_id] for document_id in ordered_document_ids]
@@ -180,7 +186,8 @@ def run_retrieval_benchmark(
     manifest = RunManifest(
         run_id=resolved_run_id,
         created_at=created_at.isoformat(),
-        git_commit=git_commit or current_git_commit(),
+        git_commit=resolved_commit,
+        git_dirty=resolved_dirty,
         dataset=dataset,
         dataset_version=dataset_version,
         dataset_revision=dataset_revision,

@@ -29,6 +29,7 @@ class RunManifest(BaseModel):
     run_id: str
     created_at: str
     git_commit: str
+    git_dirty: bool
     dataset: str
     dataset_version: str
     dataset_revision: str
@@ -69,6 +70,53 @@ def current_git_commit() -> str:
             raise RuntimeError("could not resolve the current Git commit") from error
         return commit
     return result.stdout.strip()
+
+
+def current_git_dirty() -> bool:
+    """Report whether tracked or untracked files differ from the commit.
+
+    Fails closed: an unavailable or failing Git executable leaves the worktree
+    state unknown, and an unknown state is recorded as dirty so that a run can
+    never claim reproducibility it has not demonstrated.
+    """
+    try:
+        result = subprocess.run(
+            ["git", "status", "--porcelain"],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+    except (FileNotFoundError, subprocess.CalledProcessError):
+        return True
+    return bool(result.stdout.strip())
+
+
+def resolve_git_state(
+    *,
+    git_commit: str | None,
+    git_dirty: bool | None = None,
+    allow_dirty: bool = False,
+    error: type[Exception] = RuntimeError,
+) -> tuple[str, bool]:
+    """Resolve the provenance recorded in a manifest and refuse dirty runs.
+
+    A caller that supplies ``git_commit`` owns the provenance it records, so the
+    worktree is not inspected at all and ``git_dirty`` defaults to ``False``.
+    Otherwise both values are read from the worktree, and a dirty worktree
+    raises ``error`` unless ``allow_dirty`` is set.
+    """
+    if git_commit is not None:
+        return git_commit, bool(git_dirty)
+
+    resolved_commit = current_git_commit()
+    resolved_dirty = current_git_dirty() if git_dirty is None else bool(git_dirty)
+    if resolved_dirty and not allow_dirty:
+        raise error(
+            "refusing to record a benchmark run from a modified worktree: "
+            "commit or stash the changes so the result is reproducible from "
+            f"{resolved_commit}, or pass --allow-dirty to stamp the run as dirty"
+        )
+    return resolved_commit, resolved_dirty
 
 
 def _read_git_head(start: Path) -> str | None:

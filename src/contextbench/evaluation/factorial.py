@@ -32,8 +32,8 @@ from contextbench.evaluation.runner import EvaluationCorpus, EvaluationError
 from contextbench.experiments import (
     DocumentProvenance,
     RunManifest,
-    current_git_commit,
     environment_info,
+    resolve_git_state,
     utc_now,
 )
 from contextbench.ir.models import IRDocument
@@ -81,6 +81,7 @@ def run_factorial_benchmark(
     embedder: EmbeddingModel | None = None,
     reranker: Reranker | None = None,
     git_commit: str | None = None,
+    allow_dirty: bool = False,
     clock: Callable[[], datetime] = utc_now,
 ) -> FactorialRun:
     """Run every configured content unit under every selection policy."""
@@ -111,6 +112,11 @@ def run_factorial_benchmark(
     final_path = artifacts_root / "factorial-runs" / resolved_run_id
     if final_path.exists():
         raise EvaluationError(f"completed run already exists: {final_path}")
+    resolved_commit, resolved_dirty = resolve_git_state(
+        git_commit=git_commit,
+        allow_dirty=allow_dirty,
+        error=EvaluationError,
+    )
 
     ordered_document_ids = sorted(corpus.documents)
     documents = tuple(
@@ -140,7 +146,8 @@ def run_factorial_benchmark(
     manifest = RunManifest(
         run_id=resolved_run_id,
         created_at=created_at.isoformat(),
-        git_commit=git_commit or current_git_commit(),
+        git_commit=resolved_commit,
+        git_dirty=resolved_dirty,
         dataset=dataset,
         dataset_version=dataset_version,
         dataset_revision=dataset_revision,
