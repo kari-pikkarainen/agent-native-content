@@ -514,15 +514,22 @@ The gate also narrowed the claim in three ways worth stating alongside it:
 - **The holdout loss at 16K is now measured.** The compiler loses to fixed RAG
   there by 0.065 page recall with an interval excluding zero. The development
   set and the holdout disagree at that budget, which is why a holdout exists.
-- **The compiler was paying a heading tax.** Joining heading trails into node
-  search text costs the IR unit between 2 and 5 points of page recall at every
-  budget, measured by an ablation built to answer a different question. A
-  heading trail repeated under every node in a section is a constant,
-  non-discriminative term.
+- **The heading tax is real on page recall and was not worth taking.** Joining
+  heading trails into node search text costs the IR unit between 2 and 5 points
+  of page recall at every budget. Phase 1 tested removing it on the full
+  pipeline and **rejected the change**: page recall improved at all four
+  budgets, but exact quote recall did not, and the preregistered rule required
+  both. The effect rests on two of eighteen questions, which `xldev24` cannot
+  separate from noise. See
+  [the ablation record](docs/research-log/compiler-heading-free-edd196f.md).
 
 Phase 1 follows, and its target is concrete rather than directional: the
 compiler must never be worse than fixed RAG at any budget, against a measured
-16K loss. Its cheapest available improvement is to stop paying the heading tax.
+16K loss. Its three correctness fixes are
+[delivered and measured](docs/research-log/phase1-correctness-fixes-9110e70.md).
+The active experiment is **budget-adaptive packing**: coverage-pack until the
+facets are covered, then backfill in reranked order, judged against a
+preregistered rule on all three metrics rather than on page recall alone.
 Latency is also in scope: compiler retrieval is roughly 3.7× fixed RAG after
 the re-baseline, against a Phase 1 target of at most 2×.
 
