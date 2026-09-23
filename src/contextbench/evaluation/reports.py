@@ -5,11 +5,14 @@ import statistics
 from collections.abc import Iterable, Sequence
 
 from contextbench.evaluation.models import (
+    NON_INFERIORITY_MARGIN,
     BenchmarkSystem,
     RetrievalBenchmarkSummary,
     RetrievalEvaluationRecord,
+    RetrievalNonInferiorityCheck,
     RetrievalPairedInterval,
     RetrievalSummaryRow,
+    _minimum_units_for_margin,
 )
 
 
@@ -92,15 +95,72 @@ def summarize(
                 ),
             )
         )
+    intervals = _paired_intervals(
+        records,
+        seed=seed,
+        bootstrap_resamples=bootstrap_resamples,
+    )
     return RetrievalBenchmarkSummary(
         run_id=run_id,
         rows=tuple(rows),
-        paired_intervals=_paired_intervals(
-            records,
-            seed=seed,
-            bootstrap_resamples=bootstrap_resamples,
-        ),
+        paired_intervals=intervals,
+        non_inferiority=_non_inferiority_checks(intervals),
     )
+
+
+def _non_inferiority_checks(
+    intervals: Sequence[RetrievalPairedInterval],
+) -> tuple[RetrievalNonInferiorityCheck, ...]:
+    """Judge each page-recall interval against the prespecified margin.
+
+    Derived from intervals that already exist; nothing is recomputed and no
+    number changes. The gated metric is ``answerable_page_recall`` because
+    that is what the plan specifies, and it is not widened even though Phase 1
+    established that page recall alone can mislead -- ``markdown_report``
+    renders the content-verified and quote intervals beside each verdict so a
+    reader sees all three, but only this one decides.
+
+    A check is emitted for both baselines. The plan names fixed RAG; A2 of
+    ``docs/research-log/prereg-adaptive-packing.md`` applies the same margin to
+    fixed and structural. Emitting both lets either rule be read straight off
+    the artifact, and each record names its own baseline, so nothing is
+    conflated into a single verdict that answers neither question.
+    """
+    minimum_units = _minimum_units_for_margin(NON_INFERIORITY_MARGIN)
+    checks: list[RetrievalNonInferiorityCheck] = []
+    for interval in intervals:
+        if interval.metric != "answerable_page_recall":
+            continue
+        # Strictly above: the plan says "the interval's lower bound is above
+        # the margin", and a bound sitting exactly on the margin has not
+        # excluded a loss of the full margin.
+        margin_satisfied = interval.ci95_low > NON_INFERIORITY_MARGIN
+        confirmatory = (
+            interval.eligible_question_count >= minimum_units
+            and interval.source_cluster_count >= minimum_units
+        )
+        checks.append(
+            RetrievalNonInferiorityCheck(
+                treatment=interval.treatment,
+                baseline=interval.baseline,
+                token_budget=interval.token_budget,
+                metric=interval.metric,
+                margin=NON_INFERIORITY_MARGIN,
+                mean_delta=interval.mean_delta,
+                ci95_low=interval.ci95_low,
+                eligible_question_count=interval.eligible_question_count,
+                source_cluster_count=interval.source_cluster_count,
+                minimum_confirmatory_questions=minimum_units,
+                minimum_confirmatory_clusters=minimum_units,
+                margin_satisfied=margin_satisfied,
+                confirmatory=confirmatory,
+                status=(
+                    f"{'confirmatory' if confirmatory else 'screening'} "
+                    f"{'pass' if margin_satisfied else 'fail'}"
+                ),
+            )
+        )
+    return tuple(checks)
 
 
 def _is_answerable_with_pages(record: RetrievalEvaluationRecord) -> bool:
@@ -347,6 +407,7 @@ def markdown_report(summary: RetrievalBenchmarkSummary) -> str:
             f"{interval.source_cluster_count} | {interval.mean_delta:+.3f} | "
             f"[{interval.ci95_low:+.3f}, {interval.ci95_high:+.3f}] |"
         )
+    lines.extend(_non_inferiority_section(summary))
     lines.extend(
         [
             "",
@@ -356,6 +417,90 @@ def markdown_report(summary: RetrievalBenchmarkSummary) -> str:
         ]
     )
     return "\n".join(lines)
+
+
+def _non_inferiority_section(summary: RetrievalBenchmarkSummary) -> list[str]:
+    """Render the margin verdicts with their companion metrics alongside.
+
+    The section is emitted on every run, including one with nothing to judge.
+    The plan asks for the check to be reported always, and an omitted section
+    cannot be told apart from a check that was never run.
+    """
+    if not summary.non_inferiority:
+        return [
+            "",
+            "## Non-inferiority check",
+            "",
+            "No paired page-recall contrast was available in this run, so "
+            "there is nothing to judge against the margin. This is the "
+            "absence of an input, not a pass and not a failure.",
+        ]
+    margin = summary.non_inferiority[0].margin
+    minimum_questions = summary.non_inferiority[0].minimum_confirmatory_questions
+    minimum_clusters = summary.non_inferiority[0].minimum_confirmatory_clusters
+    companions = {
+        (interval.baseline, interval.token_budget, interval.metric): interval
+        for interval in summary.paired_intervals
+    }
+    lines = [
+        "",
+        "## Non-inferiority check",
+        "",
+        f"Margin: **{margin:+.2f}** on answerable page recall. A check passes "
+        "when the lower bound of the paired 95% interval is strictly above "
+        "the margin. Page recall alone decides the verdict, as specified; the "
+        "content-verified and quote intervals are shown beside it because "
+        "page recall has moved opposite to quote recall on this benchmark, "
+        "and a verdict read without them is a verdict read half-blind.",
+        "",
+        "**A pass is confirmatory only where one unit cannot cross the "
+        f"margin on its own.** That needs at least {minimum_questions} "
+        f"eligible questions and at least {minimum_clusters} source clusters: "
+        f"below either, a delta moves by more than {abs(margin):.2f} when a "
+        "single question flips or a single cluster is resampled away, so the "
+        "interval is being tested against a threshold finer than the "
+        "instrument that produced it. Every such row is reported as "
+        "*screening*, and a screening pass is not evidence of non-inferiority.",
+        "",
+        "| Baseline | Budget | Page delta | Page 95% interval | Status | "
+        "Content-verified delta | Quote delta |",
+        "| --- | ---: | ---: | ---: | --- | ---: | ---: |",
+    ]
+    for check in summary.non_inferiority:
+        content = companions.get(
+            (
+                check.baseline,
+                check.token_budget,
+                "answerable_content_verified_page_recall",
+            )
+        )
+        quote = companions.get(
+            (check.baseline, check.token_budget, "quoted_exact_quote_recall")
+        )
+        page = companions.get(
+            (check.baseline, check.token_budget, "answerable_page_recall")
+        )
+        upper = (
+            f"{page.ci95_high:+.3f}" if page is not None else "n/a"
+        )
+        lines.append(
+            f"| {check.baseline.value} | {check.token_budget} | "
+            f"{check.mean_delta:+.3f} | "
+            f"[{check.ci95_low:+.3f}, {upper}] | "
+            f"{check.status} | "
+            f"{_companion(content)} | {_companion(quote)} |"
+        )
+    return lines
+
+
+def _companion(interval: RetrievalPairedInterval | None) -> str:
+    """Render a non-gating metric's delta and interval, or mark it missing."""
+    if interval is None:
+        return "n/a"
+    return (
+        f"{interval.mean_delta:+.3f} "
+        f"[{interval.ci95_low:+.3f}, {interval.ci95_high:+.3f}]"
+    )
 
 
 def _metric(value: float | None) -> str:

@@ -21,8 +21,17 @@ from contextbench.evaluation import (
 )
 from contextbench.evaluation import runner as evaluation_runner
 from contextbench.evaluation.evidence import evaluate_context
-from contextbench.evaluation.models import RetrievalSummaryRow
-from contextbench.evaluation.reports import markdown_report, summarize
+from contextbench.evaluation.models import (
+    NON_INFERIORITY_MARGIN,
+    RetrievalPairedInterval,
+    RetrievalSummaryRow,
+    _minimum_units_for_margin,
+)
+from contextbench.evaluation.reports import (
+    _non_inferiority_checks,
+    markdown_report,
+    summarize,
+)
 from contextbench.experiments import manifest
 from contextbench.ir import project_document
 from contextbench.retrieval import (
@@ -670,3 +679,249 @@ def test_clean_worktree_run_completes_and_records_git_dirty_false(
     written = json.loads((result.path / "manifest.json").read_text())
     assert written["git_commit"] == "e" * 40
     assert written["git_dirty"] is False
+
+
+_PUBLISHED_RESULTS = Path(__file__).resolve().parents[2] / "results" / "retrieval"
+
+
+def _interval(
+    *,
+    baseline: BenchmarkSystem = BenchmarkSystem.FIXED,
+    budget: int = 2048,
+    metric: str = "answerable_page_recall",
+    ci95_low: float,
+    questions: int = 18,
+    clusters: int = 9,
+) -> RetrievalPairedInterval:
+    return RetrievalPairedInterval(
+        treatment=BenchmarkSystem.COMPILER,
+        baseline=baseline,
+        token_budget=budget,
+        metric=metric,
+        eligible_question_count=questions,
+        source_cluster_count=clusters,
+        mean_delta=ci95_low + 0.1,
+        ci95_low=ci95_low,
+        ci95_high=ci95_low + 0.2,
+        bootstrap_resamples=10_000,
+    )
+
+
+@pytest.mark.parametrize(
+    ("ci95_low", "margin_satisfied"),
+    [
+        (0.1654, True),      # comfortably above
+        (-0.0103, True),     # negative but above the margin
+        (-0.0299, True),     # just above
+        (NON_INFERIORITY_MARGIN, False),  # exactly on the margin
+        (-0.0301, False),    # just below
+        (-0.0412, False),    # comfortably below
+    ],
+)
+def test_non_inferiority_passes_only_strictly_above_the_margin(
+    ci95_low: float, margin_satisfied: bool
+) -> None:
+    """The plan says "above the margin", so sitting on it is not a pass.
+
+    A bound exactly at -0.03 has not excluded a loss of the full margin, which
+    is the quantity the check exists to rule out.
+    """
+    (check,) = _non_inferiority_checks((_interval(ci95_low=ci95_low),))
+
+    assert check.margin == NON_INFERIORITY_MARGIN
+    assert check.margin_satisfied is margin_satisfied
+    assert check.status.endswith("pass" if margin_satisfied else "fail")
+
+
+def test_non_inferiority_is_screening_until_one_unit_cannot_cross_the_margin() -> None:
+    """A population too small to resolve the margin can only screen.
+
+    The threshold is derived from the margin rather than chosen: with a margin
+    of 0.03, a population under 1/0.03 units lets a single question -- or a
+    single resampled cluster -- move the delta by more than the whole margin.
+    """
+    minimum = _minimum_units_for_margin(NON_INFERIORITY_MARGIN)
+    assert minimum == 34
+
+    development = _non_inferiority_checks(
+        (_interval(ci95_low=0.2, questions=18, clusters=9),)
+    )[0]
+    holdout = _non_inferiority_checks(
+        (_interval(ci95_low=0.2, questions=6, clusters=3),)
+    )[0]
+    enough = _non_inferiority_checks(
+        (_interval(ci95_low=0.2, questions=minimum, clusters=minimum),)
+    )[0]
+    questions_only = _non_inferiority_checks(
+        (_interval(ci95_low=0.2, questions=minimum, clusters=minimum - 1),)
+    )[0]
+
+    # All four satisfy the margin; only the population differs.
+    assert all(
+        check.margin_satisfied
+        for check in (development, holdout, enough, questions_only)
+    )
+    assert development.confirmatory is False
+    assert development.status == "screening pass"
+    assert holdout.confirmatory is False
+    assert holdout.status == "screening pass"
+    assert enough.confirmatory is True
+    assert enough.status == "confirmatory pass"
+    # Questions alone are not enough: the bootstrap resamples clusters.
+    assert questions_only.confirmatory is False
+    assert questions_only.status == "screening pass"
+    # The eligibility condition travels with the record.
+    assert development.minimum_confirmatory_questions == minimum
+    assert development.minimum_confirmatory_clusters == minimum
+
+
+def test_non_inferiority_gates_on_page_recall_only() -> None:
+    """Page recall decides the verdict; the other metrics are not judged."""
+    intervals = (
+        _interval(metric="answerable_page_recall", ci95_low=0.2),
+        _interval(
+            metric="answerable_content_verified_page_recall", ci95_low=-0.9
+        ),
+        _interval(metric="quoted_exact_quote_recall", ci95_low=-0.9),
+    )
+
+    checks = _non_inferiority_checks(intervals)
+
+    assert [check.metric for check in checks] == ["answerable_page_recall"]
+    assert checks[0].margin_satisfied is True
+
+
+def test_non_inferiority_judges_both_baselines() -> None:
+    """The plan names fixed; prereg A2 applies the margin to structural too."""
+    intervals = (
+        _interval(baseline=BenchmarkSystem.FIXED, ci95_low=0.2),
+        _interval(baseline=BenchmarkSystem.STRUCTURAL, ci95_low=-0.2),
+    )
+
+    checks = _non_inferiority_checks(intervals)
+
+    assert [check.baseline for check in checks] == [
+        BenchmarkSystem.FIXED,
+        BenchmarkSystem.STRUCTURAL,
+    ]
+    assert [check.margin_satisfied for check in checks] == [True, False]
+
+
+@pytest.mark.parametrize(
+    ("run", "baseline", "budget", "ci95_low", "margin_satisfied"),
+    [
+        ("xldev24-phase1-fixes", "fixed", 2048, 0.1654, True),
+        ("xldev24-phase1-fixes", "fixed", 16384, -0.0103, True),
+        ("xldev24-packing-adaptive", "structural", 8192, -0.0412, False),
+    ],
+)
+def test_non_inferiority_matches_published_runs(
+    run: str, baseline: str, budget: int, ci95_low: float, margin_satisfied: bool
+) -> None:
+    """Anchor the check on numbers that are already published.
+
+    These three are read out of ``results/retrieval/`` rather than restated, so
+    the fixture cannot drift away from the artifacts it claims to describe.
+    """
+    summary_path = _PUBLISHED_RESULTS / run / "summary.json"
+    summary = RetrievalBenchmarkSummary.model_validate_json(
+        summary_path.read_text(encoding="utf-8")
+    )
+
+    checks = {
+        (check.baseline.value, check.token_budget): check
+        for check in _non_inferiority_checks(summary.paired_intervals)
+    }
+    check = checks[(baseline, budget)]
+
+    assert check.ci95_low == pytest.approx(ci95_low, abs=5e-5)
+    assert check.margin_satisfied is margin_satisfied
+    # Every published run to date is development-scale, so none can confirm.
+    assert check.confirmatory is False
+
+
+def test_published_summaries_without_the_check_still_load() -> None:
+    """Adding a field must not strand any readable published artifact."""
+    loaded = 0
+    for path in sorted(_PUBLISHED_RESULTS.glob("*/summary.json")):
+        raw = json.loads(path.read_text(encoding="utf-8"))
+        if "non_inferiority" in raw:
+            continue
+        if "quoted_mean_evidence_quote_recall" not in (raw["rows"] or [{}])[0]:
+            # Pre-existing row-schema drift in the oldest artifacts, unrelated
+            # to this field and unchanged by it.
+            continue
+        summary = RetrievalBenchmarkSummary.model_validate(raw)
+        assert summary.non_inferiority == ()
+        loaded += 1
+    assert loaded >= 4
+
+
+def test_report_renders_the_check_and_marks_screening() -> None:
+    """A reader of the rendered report must see the verdict and its status."""
+    summary = RetrievalBenchmarkSummary(
+        run_id="margin-render",
+        rows=(),
+        paired_intervals=(
+            _interval(metric="answerable_page_recall", ci95_low=-0.0103),
+            _interval(
+                metric="answerable_content_verified_page_recall", ci95_low=-0.02
+            ),
+            _interval(metric="quoted_exact_quote_recall", ci95_low=-0.15),
+        ),
+    )
+    summary = summary.model_copy(
+        update={"non_inferiority": _non_inferiority_checks(summary.paired_intervals)}
+    )
+
+    report = markdown_report(summary)
+
+    assert "## Non-inferiority check" in report
+    assert "screening pass" in report
+    assert "a screening pass is not evidence of non-inferiority" in report
+    assert "-0.03" in report
+    # The companion metrics are rendered beside the gated one.
+    assert "Content-verified delta" in report
+    assert "Quote delta" in report
+
+
+def test_report_states_when_there_is_nothing_to_check() -> None:
+    """Silence would be indistinguishable from the check never running."""
+    summary = RetrievalBenchmarkSummary(run_id="no-intervals", rows=())
+
+    report = markdown_report(summary)
+
+    assert "## Non-inferiority check" in report
+    assert "nothing to judge against the margin" in report
+
+
+def test_summarize_emits_the_check_on_every_run(tmp_path: Path) -> None:
+    """The plan requires the check in the report, not available on request.
+
+    Without this, every other test here would still pass with ``summarize``
+    never populating the field, because they all build the checks themselves.
+    """
+    result = _run(tmp_path, run_id="margin-on-every-run")
+
+    summary = summarize("margin-on-every-run", result.records, bootstrap_resamples=10)
+
+    page_intervals = [
+        interval
+        for interval in summary.paired_intervals
+        if interval.metric == "answerable_page_recall"
+    ]
+    # Premise: this run has page-recall contrasts to judge.
+    assert page_intervals
+    assert len(summary.non_inferiority) == len(page_intervals)
+    assert {check.metric for check in summary.non_inferiority} == {
+        "answerable_page_recall"
+    }
+    assert all(
+        check.margin == NON_INFERIORITY_MARGIN for check in summary.non_inferiority
+    )
+    # And it survives the round trip a published artifact takes.
+    restored = RetrievalBenchmarkSummary.model_validate_json(
+        summary.model_dump_json()
+    )
+    assert restored.non_inferiority == summary.non_inferiority
+    assert "## Non-inferiority check" in markdown_report(restored)

@@ -1,6 +1,8 @@
 """Schemas for evidence-only retrieval benchmark artifacts."""
 
+import math
 from enum import StrEnum
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -157,6 +159,64 @@ class RetrievalPairedInterval(BaseModel):
     bootstrap_resamples: int = Field(ge=1)
 
 
+# Prespecified in ``docs/plans/2026-09-21-improvement-plan.md`` and restated as
+# A2 of ``docs/research-log/prereg-adaptive-packing.md``. It is a module
+# constant and deliberately not an argument to ``summarize``: a margin a caller
+# can pass per run is a margin that can be chosen after seeing the result,
+# which is the one thing "prespecified" forbids. Changing it means editing this
+# line in a reviewable commit, and every run pins its commit, so the value that
+# judged any published artifact is recoverable. Each emitted record also
+# carries the margin it was judged against, so an artifact is self-describing
+# even if this constant later moves.
+NON_INFERIORITY_MARGIN = -0.03
+
+
+def _minimum_units_for_margin(margin: float) -> int:
+    """Smallest population in which one unit is worth no more than the margin.
+
+    A delta over ``n`` units moves by at least ``1 / n`` when a single unit
+    flips outright. If ``1 / n`` exceeds the margin, the comparison is finer
+    than the instrument making it: the interval is being tested against a
+    threshold that one question, or one resampled cluster, can cross on its
+    own. That is the plan's "large enough to reach that bound", derived from
+    the margin rather than imported from a convention.
+    """
+    return math.ceil(1 / abs(margin))
+
+
+class RetrievalNonInferiorityCheck(BaseModel):
+    """Verdict on one paired page-recall interval against the fixed margin.
+
+    ``margin_satisfied`` is the mechanical fact: the interval's lower bound is
+    strictly above the margin. ``confirmatory`` is whether the population can
+    support reading that fact as a non-inferiority result at all. They are
+    independent, and ``status`` spells out the combination in words so a
+    reader of either artifact cannot take a screening pass for a confirmation.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    treatment: BenchmarkSystem
+    baseline: BenchmarkSystem
+    token_budget: int = Field(ge=1)
+    metric: str
+    margin: float
+    mean_delta: float
+    ci95_low: float
+    eligible_question_count: int = Field(ge=1)
+    source_cluster_count: int = Field(ge=1)
+    minimum_confirmatory_questions: int = Field(ge=1)
+    minimum_confirmatory_clusters: int = Field(ge=1)
+    margin_satisfied: bool
+    confirmatory: bool
+    status: Literal[
+        "confirmatory pass",
+        "confirmatory fail",
+        "screening pass",
+        "screening fail",
+    ]
+
+
 class RetrievalBenchmarkSummary(BaseModel):
     """Machine-readable comparison summary."""
 
@@ -165,3 +225,6 @@ class RetrievalBenchmarkSummary(BaseModel):
     run_id: str
     rows: tuple[RetrievalSummaryRow, ...]
     paired_intervals: tuple[RetrievalPairedInterval, ...] = ()
+    # Defaulted so every published ``summary.json`` written before this check
+    # existed still validates unchanged.
+    non_inferiority: tuple[RetrievalNonInferiorityCheck, ...] = ()
