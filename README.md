@@ -31,8 +31,10 @@ explores packaging content with source-grounded, agent-usable features prepared
 once and reused by many queries.
 
 This is a **falsification-oriented research prototype**, not a production RAG
-platform. The current evidence is promising at low token budgets, but it does
-not establish general superiority over RAG.
+platform. The retrieval evidence is promising at low token budgets, but the
+first answer-generation test did not translate that advantage into better
+answers or citations. The project does not establish general superiority over
+RAG.
 
 ## Current status
 
@@ -68,6 +70,13 @@ pauses for a per-question failure analysis. Each difference is one question, and
 in both cells where the arms disagree, quote recall predicted the answer and
 page recall predicted the opposite. See
 [the Gate 2 decision](docs/research-log/gate2-stage1-xlholdout6c-generation.md).
+
+The run also exposed a token-accounting problem. Although the compiler obeyed
+the configured packed-content budget, its many small evidence items each added
+prompt framing. Its nominal 2K context therefore produced an average 6,279-token
+model input, larger than fixed RAG's 5,150-token input at a nominal 4K budget.
+This overhead must be included in the failure analysis and in any future budget
+comparison.
 
 The frozen compiler leads the best RAG baseline on **page** recall on the
 24-question development set at every tested budget. On **exact quote** recall
@@ -161,9 +170,11 @@ See the canonical
 earlier six-question holdout mostly rejected the preceding compiler
 configuration and remains published as superseded negative evidence.
 
-**Decision:** keep the compiler as a credible low-budget treatment, do not
-claim that it replaces RAG, and postpone the full XL100 run until answer-quality
-validation shows that the extra retrieval work is worthwhile.
+**Decision:** retain the compiler as a credible low-budget page-selection
+treatment, but do not claim that it replaces RAG or improves end-to-end answer
+quality. Pause algorithm expansion and the larger XL100 run while the
+per-question failure analysis examines missing exact evidence, budget
+under-fill, context fragmentation, and prompt-framing overhead.
 
 ## How it works
 
@@ -282,7 +293,7 @@ uv run --extra retrieval contextbench eval-factorial \
 
 Heading context is a third, crossed factor, single-valued by default; pass
 `--heading-context on --heading-context off` to run the ablation, and read
-[the next decision gate](#next-decision-gate) before interpreting it.
+[the decision history](#decision-history-and-next-step) before interpreting it.
 
 The command deliberately excludes compiler-only structural expansion, table
 joins, and page-neighbor backfill. Its defaults use this same two-question
@@ -510,8 +521,15 @@ gold pages or quotes, are defined in the
   question, so recomputing that run's `summary.json` from its own records under
   the new eligibility reproduces the published file byte for byte. Its
   `report.md` keeps the legend wording of the run that produced it.
-- Evidence retrieval has been measured more thoroughly than end-to-end answer
-  quality. No answer-generation or economic result exists yet.
+- End-to-end answer quality has been measured only once, on six questions with
+  one answer model. That preregistered run was negative: the compiler answered
+  one question correctly at each budget while fixed RAG answered two, and the
+  compiler did not improve citation entailment.
+- Packed-content tokens are not the same as model-input tokens. On the Astra
+  run, per-item evidence framing expanded the compiler's nominal 2K packet to
+  6,279 input tokens on average and its nominal 4K packet to 11,657, versus
+  3,052 and 5,150 for fixed RAG. Future comparisons must either budget the
+  rendered prompt or report both quantities as co-primary resource measures.
 - Compiler retrieval remains slower. A within-process measurement with caches
   cleared before each call put it at 2.29×, 2.32×, 2.40×, and 3.92× fixed RAG
   from 2K through 16K, missing Phase 1's 2× target. Pair-level score reuse can
@@ -554,7 +572,7 @@ gold pages or quotes, are defined in the
 - Current experiments use English PDFs, local retrieval models, and a single
   benchmark release; generalization is unknown.
 
-## Next decision gate
+## Decision history and next step
 
 **Gates 0 and 1 have passed**, recorded in
 [the Gate 0 decision](docs/research-log/gate0-rebaseline-67aef47.md) and
@@ -654,10 +672,11 @@ preflight-verified, and has now been run once, at Gate 1, with the
 configuration chosen on `xldev24`. It is spent: it is not run again and is
 never tuned on.
 
-One Gate 0 item is deferred rather than done: the exploratory answer-generation
-run over the re-baselined `xlholdout6b` contexts needs an API key and a fresh,
-explicitly exploratory preregistration. It does not block Phase 1. No
-answer-quality or economic result exists yet.
+The earlier exploratory generation proposal for the already-inspected
+`xlholdout6b` holdout is intentionally not run. The preregistered
+`xlholdout6c` Astra experiment now provides the answer-quality and economic
+result that matters for the active decision, and the next work is its
+per-question failure analysis rather than another small generation run.
 
 ## Repository map
 
