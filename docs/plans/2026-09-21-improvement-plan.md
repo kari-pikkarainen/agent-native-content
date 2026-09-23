@@ -2,8 +2,10 @@
 
 Status: revised after two review rounds on 2026-09-21. Phase 0 complete (Gate 0
 passed, `30f14a1`). Phase 1 tasks 1 to 8 complete and the configuration frozen
-at `c7e56fa`; Gate 1 (task 9) is next and `xlholdout6c` has not been run. Task
-10 follows only if Gate 1 passes. Updated 2026-09-23.
+at `c7e56fa`. Gate 1 (task 9) passed on its one run of `xlholdout6c`, with
+exact quote recall pointing the other way; see
+`docs/research-log/gate1-xlholdout6c-60e5836.md`. Task 10, the confirmatory
+generation run, is next. Updated 2026-09-23.
 Date: 2026-09-21
 Baseline commit: `0b57eab`
 

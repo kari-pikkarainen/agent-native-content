@@ -4,8 +4,9 @@ Date: 2026-09-22
 
 Precommit: `f6522f7`
 
-Canonical run: none. This subset has not been run and must not be run before
-Gate 1.
+Canonical run: `xlholdout6c-gate1-60e5836`, made once, at Gate 1, on
+2026-09-23, and recorded in [the Gate 1 decision](gate1-xlholdout6c-60e5836.md).
+This subset has now been spent and must not be run again or used for tuning.
 
 ## Status
 

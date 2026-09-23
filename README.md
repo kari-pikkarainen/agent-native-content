@@ -49,11 +49,15 @@ The complete evidence-only benchmark pipeline is implemented:
 - guarded answer-generation evaluation over already-saved contexts; and
 - portable agent-document bundles plus a controlled representation experiment.
 
-**Phase 1 is closed and its configuration is frozen. Gate 1 — one run of the
-untouched `xlholdout6c` holdout — is next, and has not been run.** The frozen
-configuration, its development evidence and every pin the holdout run will be
-held to are in the
-[Phase 1 close-out](docs/research-log/phase1-closeout-c7e56fa.md).
+**Gate 1 passed on its one run of the `xlholdout6c` holdout — on page recall,
+the metric it was preregistered on. On exact quote recall the same run points
+the other way**: the compiler trails fixed RAG at every budget, with the
+interval excluding zero at 4K and 16K. Both are in
+[the Gate 1 decision](docs/research-log/gate1-xlholdout6c-60e5836.md). The
+frozen configuration and its development evidence are in the
+[Phase 1 close-out](docs/research-log/phase1-closeout-c7e56fa.md). The next step
+is the confirmatory answer-generation run, which decides whether better page
+selection produces better answers at all.
 
 The frozen compiler leads the best RAG baseline on **page** recall on the
 24-question development set at every tested budget. On **exact quote** recall
@@ -71,8 +75,14 @@ Values are mean gold-evidence page recall at the stated context budget. The
 development set has 24 questions over 11 documents; the directional holdout
 has six questions over six previously unused documents. No answer model was
 used for these results. The holdout columns are `xlholdout6b`, which predates
-both the Phase 1 fixes and the freeze and was not re-run; `xlholdout6c`, the
-Gate 1 holdout, is still unopened.
+both the Phase 1 fixes and the freeze and was not re-run. The Gate 1 holdout,
+`xlholdout6c`, is reported separately below, because it was run once at the
+frozen configuration and is not comparable with these columns.
+
+On `xlholdout6c`, answerable page recall, compiler against fixed RAG: +0.087
+at 2K, +0.162 at 4K, +0.093 at 8K and +0.064 at 16K, every interval including
+zero. Exact quote recall on the same run: −0.108, −0.192, −0.108 and −0.233,
+excluding zero at 4K and 16K. Six questions; screening, not confirmation.
 
 Exact quote recall over the same development run, on the 18 questions that
 carry gold quotes:
@@ -591,13 +601,23 @@ on. The latency target of at most twice fixed RAG was measured and **not met**;
 the owner ruled that a documented limitation rather than a Gate 1 blocker,
 because the Gate 1 rule was preregistered without a latency clause.
 
-**The active step is Gate 1: `xlholdout6c`, run exactly once, against the
-exact commit, configuration, quote policy and model revisions pinned in
-[the close-out](docs/research-log/phase1-closeout-c7e56fa.md).** It has not
-been run. Gate 1 passes when, on that holdout, the compiler's paired point
-estimate against fixed RAG on page recall is positive at 2K and 4K and its
-interval at 8K and 16K does not lie entirely below the −3pp margin. The result
-is published whatever it shows, and the configuration is not revised after it.
+**Gate 1 has passed**, on one run of `xlholdout6c` against the commit,
+configuration, quote policy and model revisions pinned in
+[the close-out](docs/research-log/phase1-closeout-c7e56fa.md) before it existed.
+The compiler's page-recall point estimate against fixed RAG is positive at all
+four budgets and no interval lies below the −3pp margin, which is what the rule
+asks. Every one of those intervals also includes zero, and on exact quote
+recall the same run has the compiler behind fixed RAG at every budget. The
+[Gate 1 decision](docs/research-log/gate1-xlholdout6c-60e5836.md) records both,
+and two mechanisms behind the second: the compiler reaches the right pages
+while missing the quoted spans on them, and in some packets it stops filling
+its budget where fixed RAG does not.
+
+**The active step is task 10, the confirmatory answer-generation run at 2K and
+4K.** It needs its own preregistration first, and that preregistration should
+state in advance the hypothesis the holdout raises: that contexts carrying
+fewer exact quoted passages may produce worse-supported answers despite
+reaching more gold pages.
 
 `xlholdout6c` is frozen and
 [recorded](docs/research-log/xlholdout6c-freeze.md), with all six sources
