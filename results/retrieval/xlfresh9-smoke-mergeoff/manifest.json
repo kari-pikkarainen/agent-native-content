@@ -1,0 +1,220 @@
+{
+  "config": {
+    "budgets": [
+      2048,
+      4096,
+      8192,
+      16384
+    ],
+    "compiler": {
+      "budget_accounting": "rendered_evidence",
+      "evidence_render_version": "evidence-render-v2",
+      "expanded_candidate_token_mass_multiple": null,
+      "group_adjacent_list_items": true,
+      "heading_context_depth": null,
+      "include_heading_context": true,
+      "include_next_sibling": true,
+      "include_previous_sibling": true,
+      "keyed_table_join_candidate_limit": 16,
+      "keyed_table_join_empty_marker": "[blank]",
+      "keyed_table_join_enabled": true,
+      "list_neighbor_limit": 1,
+      "list_score_penalty": 0.9,
+      "max_expanded_candidates": 500,
+      "node_merge_enabled": false,
+      "node_merge_max_page_span": 1,
+      "node_merge_max_tokens": 256,
+      "node_merge_min_tokens": 64,
+      "node_merge_target_tokens": 128,
+      "node_rerank_candidate_limit": 250,
+      "packing_strategy": "coverage",
+      "page_neighbor_candidate_limit": 64,
+      "page_neighbor_min_budget": 16384,
+      "page_neighbor_origin_limit": 20,
+      "page_neighbor_prerank_limit": 64,
+      "page_neighbor_radius": 3,
+      "page_neighbor_score_penalty": 0.8,
+      "preserve_tables": true,
+      "query_facet_full_weight": 2.0,
+      "query_facet_limit": 3,
+      "query_facet_min_terms": 3,
+      "query_facet_rerank_candidate_limit": 250,
+      "query_facet_rerank_strategy": "batched",
+      "query_facet_rerank_token_target": null,
+      "query_faceting_enabled": true,
+      "retrieval": {
+        "candidate_limit": 40,
+        "candidate_token_multiplier": 3.0,
+        "compiler_node_heading_search_context": true,
+        "embedding_dimensions": 256,
+        "embedding_model": "BAAI/bge-small-en-v1.5",
+        "fixed_chunk_tokens": 512,
+        "fixed_overlap_tokens": 64,
+        "max_candidate_limit": 500,
+        "max_rerank_limit": 250,
+        "rerank_limit": 20,
+        "rerank_token_multiplier": 2.0,
+        "reranker_model": "cross-encoder/ms-marco-MiniLM-L-6-v2",
+        "rrf_k": 60,
+        "sparse_b": 0.75,
+        "sparse_k1": 1.5,
+        "structural_chunk_tokens": 512,
+        "structural_heading_search_context": true,
+        "tokenizer_name": "o200k_base"
+      },
+      "sibling_neighbor_limit": 1,
+      "sibling_score_penalty": 0.85,
+      "table_chunk_tokens": 512
+    },
+    "compiler_stage_audit": false,
+    "retrieval": {
+      "candidate_limit": 40,
+      "candidate_token_multiplier": 3.0,
+      "compiler_node_heading_search_context": true,
+      "embedding_dimensions": 256,
+      "embedding_model": "BAAI/bge-small-en-v1.5",
+      "fixed_chunk_tokens": 512,
+      "fixed_overlap_tokens": 64,
+      "max_candidate_limit": 500,
+      "max_rerank_limit": 250,
+      "rerank_limit": 20,
+      "rerank_token_multiplier": 2.0,
+      "reranker_model": "cross-encoder/ms-marco-MiniLM-L-6-v2",
+      "rrf_k": 60,
+      "sparse_b": 0.75,
+      "sparse_k1": 1.5,
+      "structural_chunk_tokens": 512,
+      "structural_heading_search_context": true,
+      "tokenizer_name": "o200k_base"
+    },
+    "seed": 20260919,
+    "systems": [
+      "fixed",
+      "structural",
+      "long_context",
+      "compiler"
+    ]
+  },
+  "config_sha256": "3063f5286f44c6a7cb70e2eb63983620b8906d81c39392f609c2d64f1ce8c18a",
+  "created_at": "2026-09-23T20:54:00.489929+00:00",
+  "dataset": "microsoft/XL-DocBench",
+  "dataset_revision": "72954bd70ffffe230f08b57c57fa9274ec14d7ea",
+  "dataset_version": "xldocbench_strict_1345_v1",
+  "documents": {
+    "doc_000004": {
+      "ir_document_id": "doc_2c199e482c5197779e1c394fbd9f32f2084a14f530496b090086d245b8060342",
+      "parser_core_version": "2.97.1",
+      "parser_name": "docling",
+      "parser_version": "2.129.0",
+      "source_sha256": "2c199e482c5197779e1c394fbd9f32f2084a14f530496b090086d245b8060342"
+    },
+    "doc_000019": {
+      "ir_document_id": "doc_2c0c1ca7efccabc11b2939d28e056af053b77384ac93fccd1cccff15ceff6659",
+      "parser_core_version": "2.97.1",
+      "parser_name": "docling",
+      "parser_version": "2.129.0",
+      "source_sha256": "2c0c1ca7efccabc11b2939d28e056af053b77384ac93fccd1cccff15ceff6659"
+    },
+    "doc_000020": {
+      "ir_document_id": "doc_7b39b926aacbea9f1697055107bee7f49a52c10ec3f8e9a9f9ba47932744d0ef",
+      "parser_core_version": "2.97.1",
+      "parser_name": "docling",
+      "parser_version": "2.129.0",
+      "source_sha256": "7b39b926aacbea9f1697055107bee7f49a52c10ec3f8e9a9f9ba47932744d0ef"
+    },
+    "doc_000077": {
+      "ir_document_id": "doc_22debf986d168aecd310fb92da333814e86d2d2cae15c7bc83a1c1fb67ed0430",
+      "parser_core_version": "2.97.1",
+      "parser_name": "docling",
+      "parser_version": "2.129.0",
+      "source_sha256": "22debf986d168aecd310fb92da333814e86d2d2cae15c7bc83a1c1fb67ed0430"
+    },
+    "doc_000081": {
+      "ir_document_id": "doc_af00945adca5089aad7fad5b18c5ec079aa6ebb38b9a6c39f08086ba9039bfb5",
+      "parser_core_version": "2.97.1",
+      "parser_name": "docling",
+      "parser_version": "2.129.0",
+      "source_sha256": "af00945adca5089aad7fad5b18c5ec079aa6ebb38b9a6c39f08086ba9039bfb5"
+    },
+    "doc_000108": {
+      "ir_document_id": "doc_07e72f5641b30aa2f75840b1ca7a60b686a3a9ae4a4dbfa786628e6b66e02116",
+      "parser_core_version": "2.97.1",
+      "parser_name": "docling",
+      "parser_version": "2.129.0",
+      "source_sha256": "07e72f5641b30aa2f75840b1ca7a60b686a3a9ae4a4dbfa786628e6b66e02116"
+    },
+    "doc_000121": {
+      "ir_document_id": "doc_195b87ee1bacf486f20a4d75f0c7036489956676d2d49e9fc6df87284ece8d65",
+      "parser_core_version": "2.97.1",
+      "parser_name": "docling",
+      "parser_version": "2.129.0",
+      "source_sha256": "195b87ee1bacf486f20a4d75f0c7036489956676d2d49e9fc6df87284ece8d65"
+    },
+    "doc_000150": {
+      "ir_document_id": "doc_5d5df9eb360089e0f359d9091d4d01a97025da3ffa35defbaf1989b96beb3b2f",
+      "parser_core_version": "2.97.1",
+      "parser_name": "docling",
+      "parser_version": "2.129.0",
+      "source_sha256": "5d5df9eb360089e0f359d9091d4d01a97025da3ffa35defbaf1989b96beb3b2f"
+    },
+    "doc_000299": {
+      "ir_document_id": "doc_3ed06ad17f33091e693706d4249e9127b8bbd7277ee9ec06861c0c41aa6211c7",
+      "parser_core_version": "2.97.1",
+      "parser_name": "docling",
+      "parser_version": "2.129.0",
+      "source_sha256": "3ed06ad17f33091e693706d4249e9127b8bbd7277ee9ec06861c0c41aa6211c7"
+    }
+  },
+  "embedding_model": "BAAI/bge-small-en-v1.5",
+  "embedding_revision": "5c38ec7c405ec4b44b94cc5a9bb96e735b38267a",
+  "embedding_version": "5.7.0",
+  "git_commit": "f91654501931741836de066872cccdf8699a5147",
+  "git_dirty": false,
+  "platform": "macOS-26.6.2-arm64-arm-64bit-Mach-O",
+  "python_version": "3.14.7",
+  "question_ids": [
+    "adubench_single_000034",
+    "adubench_single_000038",
+    "adubench_single_000695",
+    "adubench_single_000843",
+    "adubench_single_000848",
+    "adubench_single_000896",
+    "adubench_single_000918",
+    "adubench_single_000976",
+    "adubench_single_001267"
+  ],
+  "reranker_model": "cross-encoder/ms-marco-MiniLM-L-6-v2",
+  "reranker_revision": "233902d25c440f23af6f7d6e94d2946bac0bee0a",
+  "reranker_version": "5.7.0",
+  "retrieval_corpus_name": "xlfresh9-smoke",
+  "retrieval_corpus_question_ids": [
+    "adubench_single_000034",
+    "adubench_single_000038",
+    "adubench_single_000695",
+    "adubench_single_000843",
+    "adubench_single_000848",
+    "adubench_single_000896",
+    "adubench_single_000918",
+    "adubench_single_000976",
+    "adubench_single_001267"
+  ],
+  "retrieval_corpus_sha256": "e8b206fafd61b8ffdc0fea9bccf41e969d4048d3fb8ca7c0c6c9a2a475889269",
+  "run_id": "xlfresh9-smoke-mergeoff-f916545",
+  "seed": 20260919,
+  "subset_name": "xlfresh9-smoke",
+  "subset_sha256": "e8b206fafd61b8ffdc0fea9bccf41e969d4048d3fb8ca7c0c6c9a2a475889269",
+  "systems": [
+    "fixed",
+    "structural",
+    "long_context",
+    "compiler"
+  ],
+  "token_budgets": [
+    2048,
+    4096,
+    8192,
+    16384
+  ],
+  "tokenizer": "o200k_base",
+  "tokenizer_version": "0.14.0"
+}
