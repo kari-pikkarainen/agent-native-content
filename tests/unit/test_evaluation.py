@@ -1167,3 +1167,48 @@ def test_summary_records_the_quote_match_policy(tmp_path: Path) -> None:
         RetrievalBenchmarkSummary.model_validate(raw).quote_match_policy
         == "literal-casefold-v1"
     )
+
+
+_BANKS = "Section 4. Chartering Special Purpose National Banks, and more."
+
+
+@pytest.mark.parametrize(
+    "quote",
+    [
+        "Chartering Special Purpose National Banks...",
+        "...Chartering Special Purpose National Banks",
+        "Chartering Special Purpose National Banks…",
+        "… Chartering Special Purpose National Banks",
+    ],
+)
+def test_a_leading_or_trailing_elision_matches_its_one_fragment(quote: str) -> None:
+    """One fragment is still a fragment, and the stated rule applies to it.
+
+    v2 branched on the fragment count, so these fell through to the contiguous
+    test with the marker attached and could never match.
+    """
+    assert _recall((quote,), _BANKS) == 1.0
+
+
+def test_a_quote_of_markers_alone_matches_nothing() -> None:
+    """No fragments means no text to find, so never a match.
+
+    The context here contains an ellipsis on purpose: under v2 a marker-only
+    quote fell through to a substring test and matched exactly such a context.
+    """
+    context = "The report continues... and ends here."
+
+    assert _recall(("...",), context) == 0.0
+    assert _recall(("…",), context) == 0.0
+    assert _recall(("... ...",), context) == 0.0
+
+
+def test_two_dots_are_not_an_elision() -> None:
+    """``..`` is not a marker, so the quote must appear exactly, dots included."""
+    assert _recall(("Chartering Special Purpose National Banks..",), _BANKS) == 0.0
+
+
+def test_a_quote_without_a_marker_is_unchanged() -> None:
+    """Contiguous matching, exactly as before, for a quote with no marker."""
+    assert _recall(("Chartering Special Purpose National Banks",), _BANKS) == 1.0
+    assert _recall(("Chartering Special Purpose State Banks",), _BANKS) == 0.0

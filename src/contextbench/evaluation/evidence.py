@@ -115,7 +115,12 @@ def _normalize_text(value: str) -> str:
 # Bumped when the comparison changes, and recorded in every summary, so an
 # artifact says how its quote figures were produced. An artifact without the
 # field predates it and is v1 by definition.
-QUOTE_MATCH_POLICY = "nfkc-unified-punctuation-ordered-elision-v2"
+#
+# v3 corrects v2's handling of a quote whose elision marker is leading or
+# trailing, and rejects a marker-only quote outright; see ``_quote_matches``.
+# A v2 artifact and a v3 artifact can disagree on those quotes and nowhere
+# else. v2 artifacts exist and are published, so the name had to change.
+QUOTE_MATCH_POLICY = "nfkc-unified-punctuation-ordered-elision-v3"
 
 # Dash, apostrophe, quotation and space variants collapse to one spelling
 # each. These are typographic renderings of the same character: a PDF
@@ -206,10 +211,24 @@ def _quote_matches(normalized_quote: str, normalized_context: str) -> bool:
     cannot afford. The cost is real and is accepted: a packet whose items
     happen to emit the fragments out of document order will not match, so this
     under-reports rather than over-reports.
+
+    The branch is on whether the quote *contains a marker*, not on how many
+    fragments it yields. v2 branched on the fragment count, so a quote with a
+    leading or trailing ellipsis -- one fragment -- fell through to the
+    contiguous test with its ``...`` still attached and could never match,
+    contradicting the rule stated above. v3 applies that rule to it.
+
+    A quote made of markers alone has no fragments and never matches. It names
+    no text, so there is nothing a retriever could have found; treating it as
+    satisfied would score it present in every context. Under v2 it was not
+    rejected on principle either: it fell through to ``"..." in context`` and
+    matched any context that itself contained an ellipsis.
     """
-    fragments = _quote_fragments(normalized_quote)
-    if len(fragments) <= 1:
+    if not _ELLIPSIS_SPLIT.search(normalized_quote):
         return normalized_quote in normalized_context
+    fragments = _quote_fragments(normalized_quote)
+    if not fragments:
+        return False
     position = 0
     for fragment in fragments:
         found = normalized_context.find(fragment, position)
