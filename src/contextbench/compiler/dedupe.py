@@ -6,22 +6,41 @@ from collections.abc import Sequence
 
 from contextbench.compiler.models import CompilerCandidate
 from contextbench.ir.models import IRDocument
+from contextbench.retrieval.models import RetrievalArm
 
 
 def deduplicate_candidates(
     candidates: Sequence[CompilerCandidate],
     documents: Sequence[IRDocument],
 ) -> tuple[CompilerCandidate, ...]:
-    """Remove exact text, source-item, and source-box duplicates."""
+    """Remove exact text, source-item, and source-box duplicates.
+
+    With merged units in the pool (``compiler/candidates.merge_node_units``)
+    one more rule applies: a node-evidence candidate is dropped if any of its
+    nodes is already in a kept node-evidence candidate. A merged unit's source
+    key is the union of its members' items, so the source-item rule alone
+    would keep both a unit and a sibling that is one of its members. The rule
+    is gated on a merged unit being present, so a pool without one -- every
+    pool when merging is off -- is deduplicated exactly as before.
+    """
     documents_by_id = {document.id: document for document in documents}
     seen_text: set[str] = set()
     seen_normalized: list[tuple[str, int | None, int | None, str]] = []
     seen_sources: set[tuple[str, ...]] = set()
     seen_spans: set[tuple[object, ...]] = set()
     kept: list[CompilerCandidate] = []
+    check_nodes = any(_is_merged_unit(candidate) for candidate in candidates)
+    seen_nodes: set[tuple[str, str]] = set()
 
     for candidate in candidates:
         chunk = candidate.chunk
+        node_keys = (
+            [(chunk.document_id, node_id) for node_id in chunk.source_node_ids]
+            if check_nodes and candidate.operator in _NODE_EVIDENCE_OPERATORS
+            else []
+        )
+        if any(key in seen_nodes for key in node_keys):
+            continue
         text_hash = hashlib.sha256(_normalize(chunk.text).encode()).hexdigest()
         normalized = _normalize(chunk.text)
         source_key = (chunk.document_id, *sorted(chunk.source_item_ids))
@@ -45,6 +64,7 @@ def deduplicate_candidates(
         if not candidate.allow_shared_source and span_key and span_key in seen_spans:
             continue
         kept.append(candidate)
+        seen_nodes.update(node_keys)
         seen_text.add(text_hash)
         seen_normalized.append(
             (chunk.document_id, chunk.page_start, chunk.page_end, normalized)
@@ -54,6 +74,20 @@ def deduplicate_candidates(
             if span_key:
                 seen_spans.add(span_key)
     return tuple(kept)
+
+
+# Candidates that are IR nodes rendered as themselves: direct retrieval, and
+# the siblings and list neighbours expansion adds. Table fragments, keyed
+# joins and page-neighbour windows are views that share nodes by design.
+_NODE_EVIDENCE_OPERATORS = frozenset({"retrieval", "sibling", "list_neighbor"})
+
+
+def _is_merged_unit(candidate: CompilerCandidate) -> bool:
+    return (
+        candidate.operator == "retrieval"
+        and candidate.chunk.arm == RetrievalArm.COMPILER
+        and len(candidate.chunk.source_node_ids) > 1
+    )
 
 
 def _span_key(

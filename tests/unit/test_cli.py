@@ -850,3 +850,86 @@ def test_eval_factorial_passes_budget_accounting_through(
 
     assert result.exit_code == 0, result.output
     assert captured["config"].budget_accounting == "content"
+
+
+def test_eval_retrieval_exposes_node_merging_and_the_mass_floor(
+    tmp_path: Path, monkeypatch
+) -> None:
+    default = _captured_config(tmp_path, monkeypatch, [])
+    merged = _captured_config(
+        tmp_path,
+        monkeypatch,
+        [
+            "--compiler-node-merge",
+            "--compiler-node-merge-min-tokens",
+            "32",
+            "--compiler-node-merge-target-tokens",
+            "96",
+            "--compiler-node-merge-max-tokens",
+            "200",
+            "--compiler-node-merge-max-page-span",
+            "2",
+            "--compiler-candidate-token-mass-multiple",
+            "1.5",
+        ],
+    )
+
+    assert default.node_merge_policy is None
+    assert default.expanded_candidate_token_mass_multiple is None
+    assert (
+        merged.node_merge_enabled,
+        merged.node_merge_min_tokens,
+        merged.node_merge_target_tokens,
+        merged.node_merge_max_tokens,
+        merged.node_merge_max_page_span,
+        merged.expanded_candidate_token_mass_multiple,
+    ) == (True, 32, 96, 200, 2, 1.5)
+
+
+def test_eval_factorial_exposes_node_merging(tmp_path: Path, monkeypatch) -> None:
+    captured = {}
+
+    def fake_run_xl_factorial(**kwargs):
+        captured.update(kwargs)
+        return SimpleNamespace(
+            path=tmp_path / "artifacts" / "factorial-runs" / "run",
+            manifest=SimpleNamespace(run_id="run"),
+        )
+
+    monkeypatch.setattr(
+        "contextbench.evaluation.factorial_xl.run_xl_factorial",
+        fake_run_xl_factorial,
+    )
+
+    result = runner.invoke(
+        app,
+        [
+            "eval-factorial",
+            "--node-merge",
+            "--node-merge-min-tokens",
+            "32",
+            "--node-merge-target-tokens",
+            "96",
+            "--node-merge-max-tokens",
+            "200",
+            "--node-merge-max-page-span",
+            "2",
+            "--run-id",
+            "run",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    config = captured["config"]
+    assert (
+        config.node_merge_enabled,
+        config.node_merge_min_tokens,
+        config.node_merge_target_tokens,
+        config.node_merge_max_tokens,
+        config.node_merge_max_page_span,
+    ) == (True, 32, 96, 200, 2)
+
+    captured.clear()
+    result = runner.invoke(app, ["eval-factorial", "--run-id", "run"])
+    assert result.exit_code == 0, result.output
+    assert captured["config"].node_merge_policy is None

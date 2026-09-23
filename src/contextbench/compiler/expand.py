@@ -64,6 +64,23 @@ def expand_candidates(
 
     for evidence in ranked:
         document = documents_by_id[evidence.chunk.document_id]
+        if (
+            evidence.chunk.arm == RetrievalArm.COMPILER
+            and len(evidence.chunk.source_node_ids) > 1
+        ):
+            # A merged unit (``compiler/candidates.merge_node_units``). Only
+            # the node index emits multi-node compiler evidence, and only with
+            # merging on, so this branch never runs with merging off.
+            expansion_order = _expand_merged_unit(
+                evidence,
+                document,
+                expanded,
+                config=config,
+                tokenizer=tokenizer,
+                corpus_index=corpus_index,
+                expansion_order=expansion_order,
+            )
+            continue
         node = (
             corpus_index.node(document.id, evidence.chunk.source_node_ids[0])
             if corpus_index is not None
@@ -558,6 +575,95 @@ def _candidate_for_related_node(
         expansion_order=expansion_order,
         operator=operator,
     )
+
+
+def _expand_merged_unit(
+    evidence: RankedEvidence,
+    document: IRDocument,
+    expanded: list[CompilerCandidate],
+    *,
+    config: CompilerConfig,
+    tokenizer: TokenCounter,
+    corpus_index: CompilerCorpusIndex | None,
+    expansion_order: int,
+) -> int:
+    """Emit a merged unit and the neighbours of its boundary nodes.
+
+    The unit is rendered whole under its shared heading trail. Siblings and
+    list neighbours are taken as for a one-node candidate, but only outward:
+    before the first member and after the last. A node inside the unit is
+    never re-added as its own neighbour. Returns the next expansion order.
+    """
+    members = tuple(
+        corpus_index.node(document.id, node_id)
+        if corpus_index is not None
+        else document.node_by_id[node_id]
+        for node_id in evidence.chunk.source_node_ids
+    )
+    rendered = _render_content(
+        evidence.chunk.text,
+        evidence.chunk.heading_path,
+        include_headings=config.include_heading_context,
+        heading_depth=config.heading_context_depth,
+    )
+    expanded.append(
+        CompilerCandidate(
+            chunk=evidence.chunk.model_copy(
+                update={
+                    "id": _expanded_id(evidence.chunk.id, "direct", rendered),
+                    "text": rendered,
+                    "token_count": tokenizer.count(rendered),
+                }
+            ),
+            scores=evidence.scores,
+            origin_rank=evidence.rank,
+            expansion_order=expansion_order,
+        )
+    )
+    expansion_order += 1
+    for boundary, outward in ((members[0], -1), (members[-1], 1)):
+        related: list[tuple[IRNode, int, float, str, str]] = []
+        if boundary.kind == IRNodeKind.PARAGRAPH:
+            related.extend(
+                (sibling, distance, config.sibling_score_penalty, "sibling", "sibling")
+                for sibling, distance in _paragraph_siblings(
+                    boundary, document, config, corpus_index=corpus_index
+                )
+            )
+        if boundary.kind == IRNodeKind.LIST_ITEM and config.group_adjacent_list_items:
+            related.extend(
+                (
+                    neighbor,
+                    distance,
+                    config.list_score_penalty,
+                    "list-neighbor",
+                    "list_neighbor",
+                )
+                for neighbor, distance in _list_neighbors(
+                    boundary, document, config, corpus_index=corpus_index
+                )
+            )
+        for node, distance, penalty, relation, operator in related:
+            # Outward only. Every member lies strictly between the first and
+            # last member in reading order, so this also excludes them all;
+            # and with a neighbour limit at least the unit's length, the first
+            # member's forward reach would re-add the last member's neighbours.
+            if (node.ordinal - boundary.ordinal) * outward < 0:
+                continue
+            expanded.append(
+                _candidate_for_related_node(
+                    node,
+                    evidence=evidence,
+                    penalty=penalty**distance,
+                    relation=relation,
+                    operator=operator,
+                    config=config,
+                    tokenizer=tokenizer,
+                    expansion_order=expansion_order,
+                )
+            )
+            expansion_order += 1
+    return expansion_order
 
 
 def _paragraph_siblings(

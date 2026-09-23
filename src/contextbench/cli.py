@@ -354,6 +354,49 @@ def evaluate_retrieval(
             ),
         ),
     ] = 3,
+    compiler_node_merge: Annotated[
+        bool,
+        typer.Option(
+            "--compiler-node-merge/--no-compiler-node-merge",
+            help=(
+                "Join runs of source-adjacent tiny prose nodes under one "
+                "heading path into larger compiler retrieval units. Off by default."
+            ),
+        ),
+    ] = False,
+    compiler_node_merge_min_tokens: Annotated[
+        int,
+        typer.Option(
+            min=1,
+            help="A node under this many tokens may be merged; others stay alone.",
+        ),
+    ] = 64,
+    compiler_node_merge_target_tokens: Annotated[
+        int,
+        typer.Option(min=1, help="A merged unit stops growing at this size."),
+    ] = 128,
+    compiler_node_merge_max_tokens: Annotated[
+        int,
+        typer.Option(min=1, help="A merged unit never exceeds this size."),
+    ] = 256,
+    compiler_node_merge_max_page_span: Annotated[
+        int,
+        typer.Option(
+            min=1,
+            help="Pages a merged unit may cover; 1 keeps each unit on one page.",
+        ),
+    ] = 1,
+    compiler_candidate_token_mass_multiple: Annotated[
+        float | None,
+        typer.Option(
+            help=(
+                "Positive. Do not let the candidate count cap truncate the "
+                "pool until its rendered token mass reaches this multiple of "
+                "the budget. "
+                "Omitted: the count cap alone, as before."
+            ),
+        ),
+    ] = None,
     budget_accounting: Annotated[
         str,
         typer.Option(
@@ -437,6 +480,14 @@ def evaluate_retrieval(
             page_neighbor_radius=compiler_page_neighbor_radius,
             budget_accounting=budget_accounting,
             evidence_render_version=evidence_render_version,
+            node_merge_enabled=compiler_node_merge,
+            node_merge_min_tokens=compiler_node_merge_min_tokens,
+            node_merge_target_tokens=compiler_node_merge_target_tokens,
+            node_merge_max_tokens=compiler_node_merge_max_tokens,
+            node_merge_max_page_span=compiler_node_merge_max_page_span,
+            expanded_candidate_token_mass_multiple=(
+                compiler_candidate_token_mass_multiple
+            ),
         ),
     )
     try:
@@ -561,6 +612,38 @@ def evaluate_factorial(
             ),
         ),
     ] = None,
+    node_merge: Annotated[
+        bool,
+        typer.Option(
+            "--node-merge/--no-node-merge",
+            help=(
+                "Join runs of source-adjacent tiny prose nodes under one "
+                "heading path into larger IR content units. Off by default."
+            ),
+        ),
+    ] = False,
+    node_merge_min_tokens: Annotated[
+        int,
+        typer.Option(
+            min=1,
+            help="A node under this many tokens may be merged; others stay alone.",
+        ),
+    ] = 64,
+    node_merge_target_tokens: Annotated[
+        int,
+        typer.Option(min=1, help="A merged unit stops growing at this size."),
+    ] = 128,
+    node_merge_max_tokens: Annotated[
+        int,
+        typer.Option(min=1, help="A merged unit never exceeds this size."),
+    ] = 256,
+    node_merge_max_page_span: Annotated[
+        int,
+        typer.Option(
+            min=1,
+            help="Pages a merged unit may cover; 1 keeps each unit on one page.",
+        ),
+    ] = 1,
     budget_accounting: Annotated[
         str,
         typer.Option(
@@ -633,6 +716,11 @@ def evaluate_factorial(
             ),
             budget_accounting=budget_accounting,
             evidence_render_version=evidence_render_version,
+            node_merge_enabled=node_merge,
+            node_merge_min_tokens=node_merge_min_tokens,
+            node_merge_target_tokens=node_merge_target_tokens,
+            node_merge_max_tokens=node_merge_max_tokens,
+            node_merge_max_page_span=node_merge_max_page_span,
             **factors,
         )
     except ValidationError as exc:

@@ -28,7 +28,8 @@ performs budget-dependent structural expansion and packing independently.
 `CompilerConfig` contains the nested shared `RetrievalConfig` plus every
 structural decision: heading rendering, previous/next paragraph expansion,
 sibling penalties, list grouping, table preservation and chunk size, keyed
-table joining, and the maximum expanded candidate count.
+table joining, retrieval-unit merging, and the maximum expanded candidate count
+with its optional token-mass floor.
 
 ## Pipeline
 
@@ -38,6 +39,48 @@ Every content-bearing IR node becomes one retrieval chunk. List container nodes
 are omitted because their list items carry the evidence. Each candidate keeps
 its IR node ID, Docling source item IDs, heading path, page range, and exact
 token count.
+
+#### Retrieval-unit merging (optional, off by default)
+
+Some documents are shredded into thousands of tiny nodes: on the cached
+`xldev24` document behind `adubench_single_001102`, `000440` and `000441`, all
+17,435 body nodes are paragraphs under one heading path, with a median of
+5 tokens. The IR is correct to keep them apart, but one node is then too small
+to be a retrieval unit. With `node_merge_enabled=true`, `merge_node_units`
+(`compiler/candidates.py`) joins such nodes into larger units after the node
+candidates above are built. The IR, its node set and its node IDs are not
+touched; the fixed and structural arms read none of this.
+
+The rule is deterministic and query-independent: one left-to-right pass over
+a document's node candidates in reading order. A node joins the open run only
+if all of these hold:
+
+- its kind is `paragraph` or `list_item`, and it has a page range;
+- it is under `node_merge_min_tokens` (64) on its own;
+- its `heading_path` equals the run's exactly;
+- the run with it covers at most `node_merge_max_page_span` pages (1: one
+  page);
+- the joined text, members separated by a newline, stays within
+  `node_merge_max_tokens` (256).
+
+Any other candidate between two tiny nodes closes the run: a heading, table,
+caption, code or `other` node, or a node at or above the minimum, which stays
+alone. A run also closes once it reaches `node_merge_target_tokens` (128). A
+run of one node, which is a tiny node with no mergeable neighbour, is emitted
+as the unchanged one-node candidate and is never dropped. None of the four
+values is tuned. 64 and 256 are the initial bounds, and 128 lies between them.
+
+A merged unit's `source_node_ids` are its members in reading order. Its
+`source_item_ids` are the members' items in reading order, each kept at its
+first occurrence. Its page range runs from the members' first page to their
+last. Every member's bounding boxes stay reachable through its node ID. Its
+ID is `sha256("compiler-merged-v1\0" + json([document, node_ids, text]))`.
+That preimage can never equal a one-node preimage, which starts with
+`compiler-node-v3`. One-node IDs are unchanged whether merging is on or off.
+Merged chunks change the compiler's derived-index key through its chunk
+content digest, so merged and unmerged indexes never share a cache entry.
+Enabling merging with nothing small enough to merge leaves the chunks, and
+the key, identical.
 
 ### 2. Shared hybrid retrieval
 
@@ -77,6 +120,12 @@ recovers exact quoted evidence. Siblings must share the same parent and heading
 path. Their fused and reranked scores receive the configured penalty; the
 sibling's own text is not scored, so its `reranked` value is the anchor's,
 shrunk by that penalty.
+
+A merged unit is rendered whole under its shared heading trail. Siblings and
+list neighbours are taken exactly as above, but only outward: previous
+neighbours of its first member and next neighbours of its last. Every member
+lies between those two in reading order, so no member is ever re-added as a
+neighbour of its own unit.
 
 For a selected list item, adjacent items under the same list parent are included
 up to `list_neighbor_limit`. Distance compounds the configured list penalty.
@@ -141,6 +190,23 @@ Duplicates are removed using:
 Different Docling fragments of one oversized table may share a source item ID;
 they remain eligible because their text is different.
 
+When the pool contains a merged unit, one more rule applies. A node-evidence
+candidate (direct retrieval, sibling or list neighbour) is dropped if any of
+its nodes is already in a kept node-evidence candidate. Without it, a sibling
+that is a member of another retrieved unit could appear alone and again
+inside that unit, because the unit's source-item set is a union and so never
+equals the sibling's. The rule is gated on a merged unit being present, so a
+pool without one is deduplicated exactly as before.
+
+The deduplicated pool is then cut to `max_expanded_candidates` (500).
+`expanded_candidate_token_mass_multiple` (default `None`, meaning the count
+cap alone, as before) puts a token-mass floor under that cut. The count cap
+cuts only once the kept candidates' rendered cost has reached the multiple
+times the token budget. Rendered cost is content tokens plus per-item framing
+under the run's budget accounting. A pool of tiny candidates therefore cannot
+run out before the budget is spent. The floor only lengthens the prefix the
+count cap keeps and never removes a candidate.
+
 ### 6. Budget packing
 
 The compiler greedily packs deduplicated evidence in ranked order. Token counts
@@ -167,7 +233,8 @@ Every `ContextItem` contains:
 - document ID and source page range;
 - heading path;
 - final rendered content and token count;
-- all supporting IR node IDs;
+- all supporting IR node IDs (every member, in reading order, for a merged
+  unit);
 - all supporting Docling source item IDs;
 - dense, sparse, fused, and reranked scores.
 

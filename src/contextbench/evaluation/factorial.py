@@ -296,6 +296,7 @@ def _build_factorial_indexes(
                 documents,
                 tokenizer=tokenizer,
                 config=retrieval_config,
+                merge=config.node_merge_policy,
             )
 
     arm_by_unit = {

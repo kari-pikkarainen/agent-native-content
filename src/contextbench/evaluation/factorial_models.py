@@ -5,6 +5,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from contextbench.compiler.models import NodeMergePolicy
 from contextbench.evaluation.models import DEFAULT_TOKEN_BUDGETS
 from contextbench.retrieval import RetrievalConfig
 from contextbench.retrieval.rendering import (
@@ -93,6 +94,27 @@ class FactorialConfig(BaseModel):
     evidence_render_version: EvidenceRenderVersion = (
         DEFAULT_EVIDENCE_RENDER_VERSION
     )
+    # Retrieval-unit merging for the IR content unit, with the meaning and
+    # defaults of the ``CompilerConfig`` fields of the same names. Off by
+    # default. It changes only the IR unit's chunks; the fixed and structural
+    # units read none of these.
+    node_merge_enabled: bool = False
+    node_merge_min_tokens: int = Field(default=64, ge=1)
+    node_merge_target_tokens: int = Field(default=128, ge=1)
+    node_merge_max_tokens: int = Field(default=256, ge=1)
+    node_merge_max_page_span: int = Field(default=1, ge=1)
+
+    @property
+    def node_merge_policy(self) -> NodeMergePolicy | None:
+        """The merge bounds when merging is on, else ``None``."""
+        if not self.node_merge_enabled:
+            return None
+        return NodeMergePolicy(
+            min_tokens=self.node_merge_min_tokens,
+            target_tokens=self.node_merge_target_tokens,
+            max_tokens=self.node_merge_max_tokens,
+            max_page_span=self.node_merge_max_page_span,
+        )
 
     @model_validator(mode="after")
     def configuration_is_complete_and_fair(self) -> "FactorialConfig":
@@ -114,6 +136,14 @@ class FactorialConfig(BaseModel):
             raise ValueError("heading_contexts must be non-empty and unique")
         if self.faceting.retrieval != self.retrieval:
             raise ValueError("faceting and shared retrieval configs must match")
+        if not (
+            self.node_merge_min_tokens
+            <= self.node_merge_target_tokens
+            <= self.node_merge_max_tokens
+        ):
+            raise ValueError(
+                "node merge bounds must satisfy min <= target <= max tokens"
+            )
         return self
 
 

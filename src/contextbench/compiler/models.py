@@ -80,6 +80,18 @@ from contextbench.retrieval.rendering import (
 # the same grounds: a config field, hashed into every compiler packet, whose
 # addition changes the hash of every configuration; and every packet states
 # its own render version for the arms that carry no compiler hash.
+#
+# Retrieval-unit merging and the candidate token-mass floor did not bump it
+# either. Both are config fields (``node_merge_*``,
+# ``expanded_candidate_token_mass_multiple``), and adding them changed every
+# configuration's hash. The code paths they add -- merged-unit expansion, the
+# node-overlap dedupe rule, the floored pool cut -- are unreachable unless a
+# field turns them on: expansion and dedupe branch only on multi-node compiler
+# evidence, which only merging produces, and the cut is ``[:500]`` verbatim at
+# ``None``. Measured at 7a9726b against this change with defaults, 90
+# corpus packets (all 30 ``xldev24`` and ``xlholdout6c`` questions at
+# 2K/8K/16K) matched item for item; only their ``compiler_config`` hash
+# differed.
 COMPILER_VERSION = "0.10.0"
 
 # ``priority_tier`` states a candidate's class and nothing else. It must never
@@ -95,6 +107,23 @@ PRIMARY_EVIDENCE_TIER = 0
 # Tier 1 holds bounded fixed-window context added only to spend budget that
 # primary evidence left over. It must never gate primary evidence out.
 FALLBACK_CONTEXT_TIER = 1
+
+
+class NodeMergePolicy(BaseModel):
+    """Bounds for joining source-adjacent tiny IR nodes into one unit."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    min_tokens: int = Field(ge=1)
+    target_tokens: int = Field(ge=1)
+    max_tokens: int = Field(ge=1)
+    max_page_span: int = Field(ge=1)
+
+    @model_validator(mode="after")
+    def bounds_are_ordered(self) -> "NodeMergePolicy":
+        if not self.min_tokens <= self.target_tokens <= self.max_tokens:
+            raise ValueError("merge bounds must satisfy min <= target <= max")
+        return self
 
 
 class CompilerConfig(BaseModel):
@@ -156,6 +185,55 @@ class CompilerConfig(BaseModel):
     evidence_render_version: EvidenceRenderVersion = (
         DEFAULT_EVIDENCE_RENDER_VERSION
     )
+    # Retrieval-unit merging (``compiler/candidates.py``, ``merge_node_units``).
+    # Off by default: with it off, node candidates are exactly one IR node each,
+    # as every earlier run used. When on, runs of source-adjacent prose nodes
+    # under one ``heading_path`` whose nodes are each under ``min`` tokens are
+    # joined into one unit that grows to ``target`` and never past ``max``,
+    # covering at most ``max_page_span`` pages. None of the values is tuned;
+    # 64 and 256 are the owner's initial bounds and 128 sits between them.
+    # These live here and not in ``RetrievalConfig`` because they change only
+    # the compiler's unit; the merged chunks rekey the compiler index through
+    # its content digest, and the other arms' indexes are untouched.
+    node_merge_enabled: bool = False
+    node_merge_min_tokens: int = Field(default=64, ge=1)
+    node_merge_target_tokens: int = Field(default=128, ge=1)
+    node_merge_max_tokens: int = Field(default=256, ge=1)
+    node_merge_max_page_span: int = Field(default=1, ge=1)
+    # Token-mass floor under ``max_expanded_candidates``. ``None`` keeps the
+    # count cap alone, as before. A number ``m`` stops the count cap from
+    # truncating the deduplicated pool until the pool's rendered cost (content
+    # plus per-item framing) reaches ``m`` times the token budget, so a pool of
+    # tiny candidates cannot run out before the budget is spent. It never
+    # removes a candidate the count cap would have kept.
+    expanded_candidate_token_mass_multiple: float | None = Field(
+        default=None,
+        gt=0,
+    )
+
+    @property
+    def node_merge_policy(self) -> "NodeMergePolicy | None":
+        """The merge bounds when merging is on, else ``None``."""
+        if not self.node_merge_enabled:
+            return None
+        return NodeMergePolicy(
+            min_tokens=self.node_merge_min_tokens,
+            target_tokens=self.node_merge_target_tokens,
+            max_tokens=self.node_merge_max_tokens,
+            max_page_span=self.node_merge_max_page_span,
+        )
+
+    @model_validator(mode="after")
+    def node_merge_bounds_are_ordered(self) -> "CompilerConfig":
+        if not (
+            self.node_merge_min_tokens
+            <= self.node_merge_target_tokens
+            <= self.node_merge_max_tokens
+        ):
+            raise ValueError(
+                "node merge bounds must satisfy min <= target <= max tokens"
+            )
+        return self
 
     @model_validator(mode="after")
     def candidate_limit_can_satisfy_minimum(self) -> "CompilerConfig":

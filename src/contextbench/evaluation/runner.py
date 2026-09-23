@@ -302,6 +302,7 @@ def _build_indexes(
             documents,
             tokenizer=tokenizer,
             config=config.retrieval,
+            merge=config.compiler.node_merge_policy,
         )
         index = HybridIndex.from_chunks(
             chunks,

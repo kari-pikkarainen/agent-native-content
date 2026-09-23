@@ -11,6 +11,7 @@ from contextbench.compiler.expand import expand_candidates
 from contextbench.compiler.facets import query_facets, retrieve_faceted
 from contextbench.compiler.models import (
     COMPILER_VERSION,
+    CompilerCandidate,
     CompilerConfig,
     CompilerQueryCache,
     CompilerTrace,
@@ -110,6 +111,7 @@ def compile_context_with_trace(
             scope.documents,
             tokenizer=counter,
             config=my_config.retrieval,
+            merge=my_config.node_merge_policy,
         )
         index = HybridIndex(
             chunks,
@@ -153,6 +155,11 @@ def compile_context_with_trace(
             )
     if query_cache is not None:
         query_cache.begin_compilation()
+    item_overhead = evidence_item_overhead(
+        counter,
+        my_config.budget_accounting,
+        my_config.evidence_render_version,
+    )
     expanded = expand_candidates(
         query,
         ranked,
@@ -164,15 +171,15 @@ def compile_context_with_trace(
         reranker=index.reranker,
         query_cache=query_cache,
         corpus_index=corpus_index,
-        item_overhead=evidence_item_overhead(
-            counter,
-            my_config.budget_accounting,
-            my_config.evidence_render_version,
-        ),
+        item_overhead=item_overhead,
     )
-    unique = deduplicate_candidates(expanded, scope.documents)[
-        : my_config.max_expanded_candidates
-    ]
+    unique = cap_candidate_pool(
+        deduplicate_candidates(expanded, scope.documents),
+        max_count=my_config.max_expanded_candidates,
+        token_mass_multiple=my_config.expanded_candidate_token_mass_multiple,
+        token_budget=token_budget,
+        item_overhead=item_overhead,
+    )
     active_operators = []
     if my_config.query_faceting_enabled and query_facets(
         query,
@@ -204,6 +211,37 @@ def compile_context_with_trace(
         expanded_candidates=tuple(expanded),
         deduplicated_candidates=tuple(unique),
     )
+
+
+def cap_candidate_pool(
+    candidates: Sequence[CompilerCandidate],
+    *,
+    max_count: int,
+    token_mass_multiple: float | None,
+    token_budget: int,
+    item_overhead: int,
+) -> tuple[CompilerCandidate, ...]:
+    """Truncate the deduplicated pool by count, floored by token mass.
+
+    With ``token_mass_multiple`` ``None`` this is ``candidates[:max_count]``,
+    exactly what the compiler has always done. Otherwise the count cap cuts
+    only once the kept candidates' rendered cost -- each one's
+    ``token_count`` plus ``item_overhead`` -- has reached
+    ``token_mass_multiple * token_budget``. The result is always a prefix at
+    least as long as the count cap alone would keep, so this can add
+    candidates for a pool of tiny ones and never removes any.
+    """
+    if token_mass_multiple is None:
+        return tuple(candidates[:max_count])
+    floor = token_mass_multiple * token_budget
+    kept: list[CompilerCandidate] = []
+    mass = 0
+    for candidate in candidates:
+        if len(kept) >= max_count and mass >= floor:
+            break
+        kept.append(candidate)
+        mass += candidate.chunk.token_count + item_overhead
+    return tuple(kept)
 
 
 def _config_hash(config: CompilerConfig) -> str:
