@@ -1039,13 +1039,33 @@ def test_global_index_respects_per_question_document_scope(tmp_path: Path) -> No
 
 @dataclass(frozen=True)
 class _Identified:
-    """Stand-in for a document or chunk: the index key reads only the id."""
+    """Stand-in for a document: the index key reads only the id."""
 
     id: str
 
 
 _KEY_DOCUMENTS = (_Identified("ir-doc-a"), _Identified("ir-doc-b"))
-_KEY_CHUNKS = (_Identified("chunk-a"), _Identified("chunk-b"))
+
+
+def _key_chunk(identifier: str, **overrides: object) -> RetrievalChunk:
+    """A real chunk: the index key digests a chunk's whole model, not its id."""
+    fields: dict[str, object] = {
+        "id": identifier,
+        "arm": RetrievalArm.FIXED,
+        "document_id": "ir-doc-a",
+        "text": f"body text for {identifier}",
+        "token_count": 4,
+        "heading_path": ("Results",),
+        "page_start": 1,
+        "page_end": 1,
+        "source_node_ids": (f"node-{identifier}",),
+        "source_item_ids": (f"#/texts/{identifier}",),
+    }
+    fields.update(overrides)
+    return RetrievalChunk(**fields)
+
+
+_KEY_CHUNKS = (_key_chunk("chunk-a"), _key_chunk("chunk-b"))
 
 
 def _key(**overrides: object) -> str:
@@ -1073,6 +1093,70 @@ def test_index_key_changes_with_model_revision() -> None:
     assert _key(embedding_revision="0" * 40) != pinned
     assert _key(reranker_revision="0" * 40) != pinned
     assert _key(embedding_revision=None) != pinned
+    assert _key() == pinned
+
+
+def test_index_key_changes_when_chunk_content_moves_under_a_stable_id() -> None:
+    """Identical ids in identical order over different content must rekey.
+
+    This is the live exposure, not a hypothetical. A compiler node chunk's id
+    is ``compiler-node-v3\\0document\\0node\\0text`` and omits ``heading_path``,
+    so the IR ordinal repair in 0.10.0 moved the heading path of 119 of 1,034
+    node chunks on one document while their ids stood still. That release
+    rekeyed only because ordinals also permuted the id list; with the list of
+    ids as the sole chunk input, a heading-path change on its own was
+    invisible to the key.
+    """
+    pinned = _key()
+    moved_heading = (
+        _key_chunk("chunk-a", heading_path=("Results", "Revenue")),
+        _key_chunk("chunk-b"),
+    )
+
+    # The premise: the key's old chunk input is byte-identical across the two.
+    assert [chunk.id for chunk in moved_heading] == [
+        chunk.id for chunk in _KEY_CHUNKS
+    ]
+
+    assert _key(chunks=moved_heading) != pinned
+    # Every other field of the model is covered too, not just the one that bit.
+    assert _key(chunks=(_key_chunk("chunk-a", text="other"), _KEY_CHUNKS[1])) != pinned
+    assert (
+        _key(chunks=(_key_chunk("chunk-a", search_text="ctx"), _KEY_CHUNKS[1]))
+        != pinned
+    )
+    assert (
+        _key(chunks=(_key_chunk("chunk-a", token_count=9), _KEY_CHUNKS[1])) != pinned
+    )
+    assert (
+        _key(chunks=(_key_chunk("chunk-a", page_start=2, page_end=2), _KEY_CHUNKS[1]))
+        != pinned
+    )
+    assert (
+        _key(chunks=(_key_chunk("chunk-a", source_node_ids=("other",)), _KEY_CHUNKS[1]))
+        != pinned
+    )
+    assert (
+        _key(
+            chunks=(_key_chunk("chunk-a", source_item_ids=("#/texts/9",)),
+                    _KEY_CHUNKS[1])
+        )
+        != pinned
+    )
+
+
+def test_index_key_is_order_sensitive_and_otherwise_unchanged() -> None:
+    """Order is load-bearing downstream, so it has to reach the key.
+
+    ``HybridIndex.load`` compares chunk tuples positionally, so an index whose
+    chunks are the same set in a different order is not reusable. A key that
+    ignored order would claim it is and turn a cheap miss into a loud abort.
+    """
+    pinned = _key()
+
+    assert _key(chunks=tuple(reversed(_KEY_CHUNKS))) != pinned
+    # ...and identical input still lands on the identical key.
+    assert _key(chunks=(_key_chunk("chunk-a"), _key_chunk("chunk-b"))) == pinned
     assert _key() == pinned
 
 
@@ -1112,7 +1196,27 @@ def test_index_key_is_stable_for_a_fixed_revision() -> None:
     defaults would strand every cached index under a new key, so that change
     has to be made deliberately.
 
-    Both literals have moved three times, each time because
+    **Both literals moved again here, and this time not because the config
+    changed shape.** The key's chunk input changed from
+    ``"chunks": [chunk.id for chunk in chunks]`` to
+    ``"chunks_digest": _chunks_digest(chunks)``, a rolling digest of each
+    chunk's complete ``model_dump(mode="json")`` in order. The old payload read
+    identity and order only, so content that moved without moving an id --
+    ``heading_path`` on a compiler node chunk is the measured case -- produced
+    the same key over different content. Every index artifact under
+    ``artifacts/indexes/`` is therefore unreachable from this revision and must
+    be rebuilt once. Retrieval output is unchanged; only the key is.
+
+    Derived, not re-recorded, exactly as below: rebuilding this payload with
+    ``"chunks_digest"`` replaced by the old ``"chunks"`` id list, from these
+    same chunk objects, reproduces the previous literals byte for byte --
+    ``f7d25a102c55a27ea2cd7eae004c2adcf1448b4e327c4a4c34495169282ff4d3``
+    offline and ``034f7f527f5a306b5ebce87cc4c61edabc0917e15ac0d9642632487b888
+    1388b`` hub-backed. The chunk input is therefore the whole of the
+    difference. ``_KEY_CHUNKS`` also changed from id-only stand-ins to real
+    ``RetrievalChunk`` values, which it had to: the key now reads the model.
+
+    Before that, both literals moved three times, each time because
     ``RetrievalConfig`` changed shape: when it gained
     ``structural_heading_search_context``; when that field was renamed to
     ``heading_search_context`` so both heading-bearing content units read it;
@@ -1153,9 +1257,9 @@ def test_index_key_is_stable_for_a_fixed_revision() -> None:
         reranker_model="lexical-overlap-v1",
         reranker_version="1",
         reranker_revision=None,
-    ) == "f7d25a102c55a27ea2cd7eae004c2adcf1448b4e327c4a4c34495169282ff4d3"
+    ) == "bcb8d8b98c47a6906f664f4c835adaa5dab6c3154c763f06603b630ee9eabf06"
 
-    assert _key() == "034f7f527f5a306b5ebce87cc4c61edabc0917e15ac0d9642632487b8881388b"
+    assert _key() == "030e86eaa654d3e3a81ecd1d7837cf8ab6c597e627df8995dccb602cf72f35ad"
 
 
 def test_configured_hub_model_requires_a_revision() -> None:

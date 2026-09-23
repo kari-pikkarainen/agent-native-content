@@ -763,6 +763,55 @@ def _config_hash(config: RetrievalConfig) -> str:
     return hashlib.sha256(serialized.encode()).hexdigest()
 
 
+_CHUNK_DIGEST_DOMAIN = b"contextbench-index-chunks-v1"
+
+
+def _chunks_digest(chunks: Sequence[RetrievalChunk]) -> str:
+    """Digest the complete state of every chunk, in order, in one pass.
+
+    The index key used to carry ``[chunk.id for chunk in chunks]``, which is
+    identity and order but not content. A compiler node chunk's id is
+    ``compiler-node-v3\\0document\\0node\\0text`` and deliberately omits
+    ``heading_path``, so any change that moves heading paths without permuting
+    ordinals produced an identical key over different content. Measured across
+    the 0.10.0 IR ordinal repair, 119 of 1,034 node chunks on one document kept
+    their id while their heading path moved; that release only rekeyed because
+    ordinals permuted the list as well, which was luck.
+
+    ``RetrievalChunk`` is frozen with ``extra="forbid"``, so
+    ``model_dump(mode="json")`` is its entire state: ``text`` and
+    ``search_text`` (hence ``retrieval_text``, what the indexes and reranker
+    actually read), ``heading_path``, both provenance tuples, the page range
+    and ``token_count``. Digesting that closes the gap for every field at once
+    rather than for the one that happened to bite.
+
+    Streaming rather than embedding the dumps in the key payload: at corpus
+    scale this runs over tens of thousands of chunks whose text is up to a
+    full window each, so materializing them into one JSON string would build
+    hundreds of megabytes to hash once. This holds a single chunk at a time and
+    puts one hex string in the payload.
+
+    Order-sensitive, deliberately. The key it replaces already was, and order
+    is load-bearing downstream: ``HybridIndex.load`` compares chunk tuples
+    positionally, ``_document_indices`` slices by position, and BM25 and the
+    ``chunk.id`` tie-breaks depend on it. An order-insensitive digest would
+    claim an index is reusable that ``load`` then rejects -- a loud abort in
+    place of a cheap miss.
+    """
+    hasher = hashlib.sha256()
+    hasher.update(_CHUNK_DIGEST_DOMAIN)
+    hasher.update(b"\0")
+    for chunk in chunks:
+        serialized = json.dumps(
+            chunk.model_dump(mode="json"), sort_keys=True, separators=(",", ":")
+        )
+        hasher.update(serialized.encode())
+        # ``json.dumps`` escapes control characters, so a NUL byte cannot
+        # appear inside ``serialized`` and frames the entries unambiguously.
+        hasher.update(b"\0")
+    return hasher.hexdigest()
+
+
 def _index_key(
     documents: Sequence[IRDocument],
     *,
@@ -782,7 +831,11 @@ def _index_key(
         "arm": arm.value,
         "config": config.model_dump(mode="json"),
         "documents": [document.id for document in documents],
-        "chunks": [chunk.id for chunk in chunks],
+        # The chunk ids are not listed alongside this. ``id`` is a field of the
+        # dump the digest covers, so a separate list would be redundant, and
+        # leaving it in would invite a later reader to treat the id list as the
+        # thing that makes the key content-sensitive when it is not.
+        "chunks_digest": _chunks_digest(chunks),
         "embedding_model": embedding_model,
         "embedding_version": embedding_version,
         "embedding_revision": embedding_revision,
