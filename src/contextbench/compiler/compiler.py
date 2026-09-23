@@ -22,6 +22,7 @@ from contextbench.ir.tokenizer import TiktokenTokenCounter, TokenCounter
 from contextbench.retrieval.embeddings import EmbeddingModel
 from contextbench.retrieval.index import HybridIndex
 from contextbench.retrieval.models import ContextPacket, RankedEvidence
+from contextbench.retrieval.rendering import evidence_item_overhead
 from contextbench.retrieval.rerank import Reranker
 
 
@@ -163,6 +164,7 @@ def compile_context_with_trace(
         reranker=index.reranker,
         query_cache=query_cache,
         corpus_index=corpus_index,
+        item_overhead=evidence_item_overhead(counter, my_config.budget_accounting),
     )
     unique = deduplicate_candidates(expanded, scope.documents)[
         : my_config.max_expanded_candidates
@@ -180,6 +182,7 @@ def compile_context_with_trace(
         token_budget=token_budget,
         tokenizer=counter,
         strategy=my_config.packing_strategy,
+        budget_accounting=my_config.budget_accounting,
         metadata={
             "arm": "compiler",
             "compiler_version": COMPILER_VERSION,

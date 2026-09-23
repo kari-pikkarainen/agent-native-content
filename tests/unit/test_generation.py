@@ -6,7 +6,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-from test_evaluation import _corpus, _run
+from test_evaluation import _config, _corpus, _run
 
 from contextbench.datasets.base import BenchmarkQuestion
 from contextbench.evaluation import BenchmarkSystem
@@ -101,10 +101,32 @@ def _generation_config() -> GenerationConfig:
     )
 
 
+def _content_accounted_retrieval_config():
+    """The shared retrieval fixture's config, with content budget accounting.
+
+    Used where a test's premise is sized in content tokens -- here, which arm
+    packs nothing at a 12-token budget.
+    """
+    config = _config()
+    return config.model_copy(
+        update={
+            "compiler": config.compiler.model_copy(
+                update={"budget_accounting": "content"}
+            )
+        }
+    )
+
+
 def test_generation_runner_reuses_immutable_contexts_and_writes_costs(
     tmp_path: Path,
 ) -> None:
-    retrieval = _run(tmp_path, run_id="retrieval-fixture")
+    # The assertions below name the one arm that packs nothing at 12 tokens,
+    # which is a content-token premise; content accounting is pinned for it.
+    retrieval = _run(
+        tmp_path,
+        run_id="retrieval-fixture",
+        config=_content_accounted_retrieval_config(),
+    )
     provider = FixtureProvider()
 
     result = run_generation_benchmark(

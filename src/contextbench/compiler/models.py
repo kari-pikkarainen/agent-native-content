@@ -15,6 +15,10 @@ from contextbench.retrieval.models import (
     RetrievalConfig,
     RetrievalScores,
 )
+from contextbench.retrieval.rendering import (
+    DEFAULT_BUDGET_ACCOUNTING,
+    BudgetAccounting,
+)
 
 # Not a release number and not tied to the package version. It tracks one
 # thing: whether compiled packet contents can differ for a reason a config diff
@@ -61,6 +65,14 @@ from contextbench.retrieval.models import (
 # own metadata. That is "anything a config already records", which the first
 # paragraph says to leave alone. Bumping would spend the one signal reserved
 # for changes a config cannot reveal on a change it does.
+#
+# Rendered-evidence budget accounting did not bump it either, for the same
+# reason and one more. It is ``budget_accounting``, a field of this config, so
+# every compiler packet's ``compiler_config`` hash already separates the two
+# accountings; and adding the field changes that hash for *every*
+# configuration, so no post-change packet can share a hash with a pre-change
+# one. The fixed, structural and long-context arms carry no compiler hash, which
+# is why every packet now states its own ``budget_accounting``.
 COMPILER_VERSION = "0.10.0"
 
 # ``priority_tier`` states a candidate's class and nothing else. It must never
@@ -121,6 +133,13 @@ class CompilerConfig(BaseModel):
     # ``ranked`` and ``coverage`` are ablation controls and must stay.
     packing_strategy: Literal["ranked", "coverage", "adaptive"] = "coverage"
     max_expanded_candidates: int = Field(default=500, ge=1)
+    # What ``token_budget`` is checked against, for every arm: the rendered
+    # evidence block (tags, IDs, joiners and content, ``retrieval/rendering.py``)
+    # or, reachable for the re-baseline, content alone. It lives here, not in
+    # ``RetrievalConfig``, because ``RetrievalConfig`` keys every derived index
+    # and this changes packing only; the benchmark runner reads it for the
+    # fixed, structural and long-context arms too, so all arms share one value.
+    budget_accounting: BudgetAccounting = DEFAULT_BUDGET_ACCOUNTING
 
     @model_validator(mode="after")
     def candidate_limit_can_satisfy_minimum(self) -> "CompilerConfig":

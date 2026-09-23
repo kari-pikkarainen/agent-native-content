@@ -25,6 +25,7 @@ from contextbench.evaluation.evidence import (
     QUOTE_MATCH_POLICY,
     _quote_coverage,
     evaluate_context,
+    gold_answer_present,
 )
 from contextbench.evaluation.models import (
     NON_INFERIORITY_MARGIN,
@@ -1212,3 +1213,158 @@ def test_a_quote_without_a_marker_is_unchanged() -> None:
     """Contiguous matching, exactly as before, for a quote with no marker."""
     assert _recall(("Chartering Special Purpose National Banks",), _BANKS) == 1.0
     assert _recall(("Chartering Special Purpose State Banks",), _BANKS) == 0.0
+
+
+def _answer_question(
+    gold, rule: str, *, answerable: bool = True, answer_format: str = "Str"
+) -> BenchmarkQuestion:
+    return BenchmarkQuestion(
+        id="answer-question",
+        question="What is the answer?",
+        document_ids=("dataset-doc-1",),
+        gold_answer=gold,
+        answer_format=answer_format,
+        verification_rule=rule,
+        gold_evidence=(
+            GoldEvidence(
+                document_id="dataset-doc-1",
+                pages=(1,),
+                page_numbering="pdf_index",
+                items=(),
+            ),
+        ),
+        answerable=answerable,
+        task_type="single_doc",
+    )
+
+
+def _items(*contents: str) -> tuple[ContextItem, ...]:
+    return tuple(
+        ContextItem(
+            evidence_id=f"evidence_{index}",
+            document_id="doc",
+            content=content,
+            token_count=len(content.split()),
+            source_node_ids=("node",),
+            source_item_ids=("#/texts/0",),
+            scores=RetrievalScores(),
+        )
+        for index, content in enumerate(contents)
+    )
+
+
+def test_gold_answer_present_matches_strings_on_word_boundaries() -> None:
+    question = _answer_question("interest rate risk", "casefold_exact_match")
+
+    assert gold_answer_present(question, _items("Its Interest Rate Risk rose.")) is True
+    assert gold_answer_present(question, _items("Interest rate was flat.")) is False
+    # Typography is reconciled by the quote normaliser, words are not.
+    fist = _answer_question("FIST", "casefold_exact_match")
+    assert gold_answer_present(fist, _items("The FIST protocol.")) is True
+    assert gold_answer_present(fist, _items("A FISTULA was seen.")) is False
+
+
+def test_gold_answer_present_compares_numbers_by_value() -> None:
+    """Thousands separators, trailing zeros and a percent sign are tolerated."""
+    total = _answer_question("2379", "numeric_tolerance", answer_format="Int")
+    share = _answer_question("100", "percentage_exact", answer_format="Float")
+
+    assert gold_answer_present(total, _items("A total of 2,379 claims.")) is True
+    assert gold_answer_present(total, _items("It came to 2379.0 exactly.")) is True
+    assert gold_answer_present(share, _items("Coverage reached 100% in 2020.")) is True
+    # A number that merely contains the digits does not count.
+    assert gold_answer_present(total, _items("Code 12379 and 2,3790 differ.")) is False
+    six = _answer_question("6", "numeric_tolerance", answer_format="Int")
+    assert gold_answer_present(six, _items("Pages 16 and 6.5.")) is False
+    assert gold_answer_present(six, _items("Exactly 6 sites.")) is True
+    # A European decimal comma is not read as a number at all.
+    assert gold_answer_present(six, _items("A ratio of 1,6.")) is False
+
+
+def test_gold_answer_present_is_not_applicable_to_unanswerable_questions() -> None:
+    """Never a hit and never a miss, even when the text happens to appear."""
+    question = _answer_question("Not answerable", "exact_match", answerable=False)
+
+    assert gold_answer_present(question, _items("Not answerable here.")) is None
+    assert gold_answer_present(question, _items()) is None
+
+
+def test_gold_answer_present_does_not_join_items() -> None:
+    """A match must fall inside one item; joining could invent one."""
+    question = _answer_question("interest rate risk", "casefold_exact_match")
+
+    assert gold_answer_present(question, _items("interest rate", "risk")) is False
+
+
+def test_gold_answer_present_is_blind_to_computed_answers() -> None:
+    """Documented blind spot: a derived number need not be written anywhere."""
+    question = _answer_question("2379", "numeric_tolerance", answer_format="Int")
+
+    assert gold_answer_present(question, _items("1,000 plus 1,379.")) is False
+
+
+def test_answer_presence_is_summarised_overall_and_by_rule(tmp_path: Path) -> None:
+    result = _run(tmp_path, run_id="answer-presence")
+    records = tuple(
+        record.model_copy(
+            update={
+                "question_id": f"{record.question_id}-{variant}",
+                "gold_answer_present": present,
+                "verification_rule": rule,
+            }
+        )
+        for record in result.records
+        for variant, present, rule in (
+            ("a", True, "casefold_exact_match"),
+            ("b", False, "numeric_tolerance"),
+            ("c", None, "exact_match"),
+        )
+    )
+
+    summary = summarize("answer-presence", records, bootstrap_resamples=10)
+
+    row = summary.rows[0]
+    # The not-applicable variant is excluded from the count, not scored.
+    assert row.answer_present_question_count == 2
+    assert row.answer_present_rate == 0.5
+    rules = {
+        (item.system, item.token_budget, item.verification_rule): item
+        for item in summary.answer_present_by_rule
+    }
+    assert not any(rule == "exact_match" for _s, _b, rule in rules)
+    assert rules[(row.system, row.token_budget, "numeric_tolerance")].present_rate == 0
+    assert "Rendered evidence and gold-answer presence" in markdown_report(summary)
+
+
+@pytest.mark.parametrize("accounting", ["rendered_evidence", "content"])
+def test_run_records_both_token_counts_and_the_accounting(
+    tmp_path: Path, accounting: str
+) -> None:
+    """Published per-packet records carry content and rendered tokens."""
+    config = _config()
+    config = config.model_copy(
+        update={
+            "compiler": config.compiler.model_copy(
+                update={"budget_accounting": accounting}
+            )
+        }
+    )
+    result = _run(tmp_path, run_id=f"accounting-{accounting}", config=config)
+
+    rows = [
+        json.loads(line)
+        for line in (result.path / "retrieval.jsonl").read_text().splitlines()
+        if line
+    ]
+    manifest = json.loads((result.path / "manifest.json").read_text())
+
+    assert manifest["config"]["compiler"]["budget_accounting"] == accounting
+    assert {row["budget_accounting"] for row in rows} == {accounting}
+    for row in rows:
+        assert row["rendered_evidence_tokens"] >= row["token_count"]
+        enforced = (
+            row["rendered_evidence_tokens"]
+            if accounting == "rendered_evidence"
+            else row["token_count"]
+        )
+        assert enforced <= row["token_budget"]

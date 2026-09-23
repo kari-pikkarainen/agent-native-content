@@ -73,6 +73,49 @@ also construct bounded keyed-row joins. These use exact normalized identifiers
 from source-derived model/dataset columns, preserve both tables' provenance,
 and use the shared reranker. No LLM or fuzzy entity matcher participates.
 
+### What the budget counts
+
+**The token budget counts the rendered evidence block, for every arm.** That
+is the variable, system-dependent part of the answer prompt: each item
+rendered as
+
+```text
+<evidence id="{evidence_id}">
+{content}
+</evidence>
+```
+
+with items joined by a blank line — tags, evidence IDs, joiners and content.
+The question and the fixed system instructions are identical across arms and
+are not counted. One renderer, `src/contextbench/retrieval/rendering.py`,
+produces both the prompt a model is shown and the cost the packers are charged,
+so the two cannot drift.
+
+Budgets previously counted packed content only. On a poorly parsed document
+that let the compiler pack 500 items at a median of 6 tokens: 3,772 packed
+tokens at a nominal 4K budget became a 28,954-token prompt
+(`docs/research-log/gate2-failure-analysis.md`). Measured with `o200k_base`
+over real packets, framing is a median **50 tokens per item** (range 40–60):
+10 for the tags and about 39 for the 73-character evidence ID. The joiner is
+free under this tokenizer, because a closing `>` and the blank line that
+follows it tokenise together.
+
+Every packer — fixed, structural and long-context (`pack_evidence`) and the
+compiler (`pack_candidates`, including its coverage selector) — charges each
+candidate its rendered cost, skips any that does not fit, and continues, so a
+later smaller item can still use the space. The incremental sum is exact for
+`o200k_base` and for whitespace tokenizers; each packer also re-renders the
+finished block and refuses to emit a packet over budget, so a tokenizer that
+broke that assumption would fail loudly rather than overrun silently.
+
+The accounting is `CompilerConfig.budget_accounting`, one field read by every
+arm, recorded in the run manifest. `rendered_evidence` is the default;
+`content` reproduces the earlier accounting exactly and exists so a
+re-baseline can measure the change. Every packet and every `retrieval.jsonl`
+record states which accounting it used, and records both packed content
+tokens (`token_count`) and rendered evidence tokens
+(`rendered_evidence_tokens`), whichever was enforced.
+
 The preregistered budgets are 2,048, 4,096, 8,192, and 16,384 tokens. The CLI
 defaults to `BAAI/bge-small-en-v1.5` and
 `cross-encoder/ms-marco-MiniLM-L-6-v2`; both model IDs are configurable and the
@@ -86,7 +129,11 @@ Every question × system × budget cell records:
 - whether the question is answerable and its source-document scope;
 - selected evidence IDs and the complete serialized context packet;
 - selected, gold, and matched one-based PDF pages by dataset document ID;
-- exact packed token count;
+- packed content tokens (`token_count`), rendered evidence tokens
+  (`rendered_evidence_tokens`), and which of the two the budget enforced
+  (`budget_accounting`);
+- whether the gold answer is present in the packed evidence
+  (`gold_answer_present`), with the question's `verification_rule`;
 - retrieval/compilation latency in milliseconds;
 - evidence-page recall and full-evidence coverage;
 - content-verified page recall, which credits a referenced node's pages only
@@ -162,6 +209,36 @@ Tokens-to-full is the cumulative item-token count at the earliest ranked
 context prefix covering every gold page. It is null when the budget never
 achieves full coverage. Its reported median is over successful cells only and
 must be read together with full-coverage rate.
+
+Gold-answer presence is a deterministic, retrieval-only proxy for "the context
+contains the answer". No model participates. It is **not applicable** — never
+a hit and never a miss — for an unanswerable question and for an empty or
+boolean gold answer. For the numeric rules `numeric_tolerance` and
+`percentage_exact`, the gold value must equal, as a decimal, a number written
+in an item: comma thousands separators, trailing zeros and a trailing percent
+sign are tolerated, space-separated thousands are not (in a table row two
+adjacent numbers look the same), and the rule's tolerance is not applied —
+presence asks whether the value is written down, not whether a nearby answer
+would be scored correct. For every other rule, the gold answer normalised with
+the quote normaliser must occur bounded by non-word characters. The match must
+fall inside a single item's content; framing is never searched and items are
+never concatenated, because a join could manufacture a match across unrelated
+fragments. It is reported per system and budget and, separately, per
+verification rule.
+
+Its blind spots are known and it must be read against them:
+
+- **Computed answers are invisible.** An answer the question asks to be
+  derived need not be written anywhere; `adubench_single_000331`'s gold answer
+  2379 appears in no context of any arm.
+- **Short numbers are present by chance.** A gold answer of `6` is likely
+  written somewhere in any page-sized packet, so a hit on a small integer is
+  weak evidence.
+- **Presence is not sufficiency.** The value can appear in the wrong role —
+  another year, another row.
+
+Read it as a floor on retrieval failure: an absent answer is informative, a
+present one is not proof the evidence supports it.
 
 Redundancy is the fraction of word-token positions covered by a repeated
 four-token n-gram previously seen in another selected item. It is an

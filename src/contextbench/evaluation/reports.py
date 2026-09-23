@@ -8,6 +8,7 @@ from contextbench.evaluation.evidence import QUOTE_MATCH_POLICY
 from contextbench.evaluation.models import (
     NON_INFERIORITY_MARGIN,
     BenchmarkSystem,
+    RetrievalAnswerPresenceRow,
     RetrievalBenchmarkSummary,
     RetrievalEvaluationRecord,
     RetrievalNonInferiorityCheck,
@@ -41,6 +42,11 @@ def summarize(
             record for record in selected if _is_answerable_with_pages(record)
         ]
         quoted = [record for record in selected if record.gold_quote_count > 0]
+        # Not-applicable cells carry ``None`` and are excluded from both the
+        # count and the rate, never scored as a miss.
+        applicable = [
+            record for record in selected if record.gold_answer_present is not None
+        ]
         rows.append(
             RetrievalSummaryRow(
                 system=system,
@@ -94,6 +100,15 @@ def summarize(
                 quoted_full_quote_coverage_rate=_mean_or_none(
                     float(record.full_quote_coverage) for record in quoted
                 ),
+                mean_rendered_evidence_tokens=_mean_or_none(
+                    record.rendered_evidence_tokens
+                    for record in selected
+                    if record.rendered_evidence_tokens is not None
+                ),
+                answer_present_question_count=len(applicable),
+                answer_present_rate=_mean_or_none(
+                    float(bool(record.gold_answer_present)) for record in applicable
+                ),
             )
         )
     intervals = _paired_intervals(
@@ -107,6 +122,34 @@ def summarize(
         paired_intervals=intervals,
         non_inferiority=_non_inferiority_checks(intervals),
         quote_match_policy=QUOTE_MATCH_POLICY,
+        answer_present_by_rule=_answer_presence_by_rule(records),
+    )
+
+
+def _answer_presence_by_rule(
+    records: Sequence[RetrievalEvaluationRecord],
+) -> tuple[RetrievalAnswerPresenceRow, ...]:
+    """Break gold-answer presence down by system, budget and rule.
+
+    Cells whose presence is not applicable are left out entirely, so an
+    unanswerable question never appears as a rule with a zero rate.
+    """
+    groups: dict[tuple[BenchmarkSystem, int, str], list[bool]] = {}
+    for record in records:
+        if record.gold_answer_present is None or record.verification_rule is None:
+            continue
+        key = (record.system, record.token_budget, record.verification_rule)
+        groups.setdefault(key, []).append(record.gold_answer_present)
+    return tuple(
+        RetrievalAnswerPresenceRow(
+            system=system,
+            token_budget=budget,
+            verification_rule=rule,
+            applicable_question_count=len(values),
+            present_count=sum(values),
+            present_rate=sum(values) / len(values),
+        )
+        for (system, budget, rule), values in sorted(groups.items())
     )
 
 
@@ -416,6 +459,7 @@ def markdown_report(summary: RetrievalBenchmarkSummary) -> str:
             f"[{interval.ci95_low:+.3f}, {interval.ci95_high:+.3f}] |"
         )
     lines.extend(_non_inferiority_section(summary))
+    lines.extend(_budget_and_answer_section(summary))
     lines.extend(
         [
             "",
@@ -499,6 +543,54 @@ def _non_inferiority_section(summary: RetrievalBenchmarkSummary) -> list[str]:
             f"{_companion(content)} | {_companion(quote)} |"
         )
     return lines
+
+
+def _budget_and_answer_section(summary: RetrievalBenchmarkSummary) -> list[str]:
+    """Render rendered-evidence size and gold-answer presence."""
+    lines = [
+        "",
+        "## Rendered evidence and gold-answer presence",
+        "",
+        "Rendered tokens are the evidence block as the answer prompt carries it "
+        "-- tags, evidence IDs, joiners and content -- and are what the budget "
+        "counts unless a run chose content accounting. Answer presence asks "
+        "whether the normalised gold answer is written inside a single packed "
+        "item; unanswerable questions are not applicable and are excluded. It "
+        "cannot see an answer the question asks to be computed, and a short "
+        "number can be present by chance, so read it as a floor on retrieval "
+        "failure, not as answer accuracy.",
+        "",
+        "| System | Budget | Mean content tokens | Mean rendered tokens | "
+        "Answer-present n | Answer present |",
+        "| --- | ---: | ---: | ---: | ---: | ---: |",
+    ]
+    for row in summary.rows:
+        lines.append(
+            f"| {row.system.value} | {row.token_budget} | "
+            f"{row.mean_context_tokens:.1f} | "
+            f"{_rendered(row.mean_rendered_evidence_tokens)} | "
+            f"{row.answer_present_question_count} | "
+            f"{_metric(row.answer_present_rate)} |"
+        )
+    if summary.answer_present_by_rule:
+        lines.extend(
+            [
+                "",
+                "| System | Budget | Verification rule | n | Present | Rate |",
+                "| --- | ---: | --- | ---: | ---: | ---: |",
+            ]
+        )
+        for rule in summary.answer_present_by_rule:
+            lines.append(
+                f"| {rule.system.value} | {rule.token_budget} | "
+                f"{rule.verification_rule} | {rule.applicable_question_count} | "
+                f"{rule.present_count} | {rule.present_rate:.3f} |"
+            )
+    return lines
+
+
+def _rendered(value: float | None) -> str:
+    return f"{value:.1f}" if value is not None else "n/a"
 
 
 def _companion(interval: RetrievalPairedInterval | None) -> str:

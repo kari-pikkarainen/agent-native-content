@@ -346,6 +346,9 @@ def test_long_context_preserves_body_source_order_without_retrieval(
         token_budget=sum(chunk.token_count for chunk in chunks),
         tokenizer=counter,
         metadata={"arm": RetrievalArm.LONG_CONTEXT.value},
+        # The budget is the exact content sum, so the test is only meaningful
+        # under content accounting.
+        budget_accounting="content",
     )
 
     assert [chunk.source_node_ids[0] for chunk in chunks] == [
@@ -901,15 +904,19 @@ def test_fixed_retrieval_capacity_keeps_budget_contexts_nested() -> None:
     )
     index = HybridIndex(chunks, config=config, tokenizer=FixtureTokenCounter())
 
+    # Budgets of 2 and 10 tokens are sized in content tokens; the nesting
+    # property does not depend on the accounting, so content is pinned.
     small = index.pack(
         "evidence",
         token_budget=2,
         retrieval_token_budget=10,
+        budget_accounting="content",
     )
     large = index.pack(
         "evidence",
         token_budget=10,
         retrieval_token_budget=10,
+        budget_accounting="content",
     )
 
     assert small.items == large.items[: len(small.items)]

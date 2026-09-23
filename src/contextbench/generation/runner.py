@@ -32,6 +32,7 @@ from contextbench.generation.scoring import (
     token_f1_score,
 )
 from contextbench.retrieval import ContextItem, ContextPacket
+from contextbench.retrieval.rendering import render_evidence_block
 
 
 class GenerationError(RuntimeError):
@@ -414,10 +415,15 @@ def run_generation_benchmark(
 
 
 def render_answer_prompt(question: str, context: ContextPacket) -> str:
-    """Render the exact answer prompt shared by every benchmark arm."""
-    evidence = "\n\n".join(
-        f'<evidence id="{item.evidence_id}">\n{item.content}\n</evidence>'
-        for item in context.items
+    """Render the exact answer prompt shared by every benchmark arm.
+
+    The evidence block comes from ``retrieval/rendering.py``, the same code the
+    packers charge against the budget, so what a model is shown and what the
+    budget counted cannot drift apart. The output is byte-identical to the
+    inline rendering used before, which the published Gate 2 run depends on.
+    """
+    evidence = render_evidence_block(
+        (item.evidence_id, item.content) for item in context.items
     )
     return render_grounded_prompt(question, evidence)
 

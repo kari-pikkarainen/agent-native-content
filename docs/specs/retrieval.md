@@ -54,7 +54,11 @@ Both arms run the same deterministic stages:
 2. Dense brute-force cosine retrieval over the same candidate corpus.
 3. Reciprocal Rank Fusion with explicit `rrf_k`.
 4. A shared reranker over the fused top candidates.
-5. Provenance-aware token-budget packing.
+5. Provenance-aware token-budget packing. The budget counts the rendered
+   evidence block -- tags, evidence IDs, joiners and content, as the answer
+   prompt carries them -- unless a run chooses `budget_accounting="content"`.
+   The definition, and why it changed, is in `docs/specs/evaluation.md`,
+   "What the budget counts".
 
 The returned `RankedEvidence` records dense, sparse, fused, and reranked scores.
 Packed `ContextItem` values carry document IDs, pages, heading paths, IR node
@@ -679,5 +683,7 @@ ranked = index.retrieve("Which region grew?")
 packet = index.pack("Which region grew?", token_budget=2048)
 ```
 
-The packer rejects any output whose recorded token count exceeds the supplied
-budget. No LLM call is made by either baseline.
+The packer rejects any output that exceeds the supplied budget as the run
+accounts it: the rendered evidence block by default, packed content under
+`budget_accounting="content"`. Each packet records both counts. No LLM call is
+made by either baseline.

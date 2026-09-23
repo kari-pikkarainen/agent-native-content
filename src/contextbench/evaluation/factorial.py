@@ -51,6 +51,10 @@ from contextbench.retrieval import (
 )
 from contextbench.retrieval.embeddings import EmbeddingModel
 from contextbench.retrieval.models import ContextPacket
+from contextbench.retrieval.rendering import (
+    DEFAULT_BUDGET_ACCOUNTING,
+    BudgetAccounting,
+)
 from contextbench.retrieval.rerank import Reranker
 
 
@@ -373,6 +377,7 @@ def _evaluate_factorial_cells(
                         heading_context=heading_context,
                         token_budget=budget,
                         tokenizer=tokenizer,
+                        budget_accounting=config.budget_accounting,
                     )
                     elapsed_ms = retrieval_elapsed_ms + (
                         time.perf_counter_ns() - packing_started
@@ -386,6 +391,8 @@ def _evaluate_factorial_cells(
                             heading_context=heading_context,
                             token_budget=budget,
                             token_count=packet.token_count,
+                            rendered_evidence_tokens=packet.rendered_token_count,
+                            budget_accounting=packet.budget_accounting,
                             selected_evidence_ids=tuple(
                                 item.evidence_id for item in packet.items
                             ),
@@ -415,6 +422,7 @@ def _pack_factorial_context(
     heading_context: bool,
     token_budget: int,
     tokenizer: TokenCounter,
+    budget_accounting: BudgetAccounting = DEFAULT_BUDGET_ACCOUNTING,
 ) -> ContextPacket:
     """Apply identical provenance deduplication before either packing policy."""
     candidates: list[CompilerCandidate] = []
@@ -437,6 +445,7 @@ def _pack_factorial_context(
         candidates,
         token_budget=token_budget,
         tokenizer=tokenizer,
+        budget_accounting=budget_accounting,
         strategy=(
             "ranked" if policy == SelectionPolicy.RANKED else "coverage"
         ),

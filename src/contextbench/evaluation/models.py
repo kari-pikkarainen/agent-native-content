@@ -86,7 +86,17 @@ class RetrievalEvaluationRecord(BaseModel):
     document_ids: tuple[str, ...]
     system: BenchmarkSystem
     token_budget: int = Field(ge=1)
+    # Packed content tokens. The historical name is kept so published
+    # ``retrieval.jsonl`` files stay readable; see ``rendered_evidence_tokens``.
     token_count: int = Field(ge=0)
+    # Tokens of the rendered evidence block the answer prompt would carry:
+    # tags, IDs, joiners and content (``retrieval/rendering.py``). Recorded
+    # under both accountings, so a content-accounted run still states what its
+    # prompt cost. ``None`` on records written before the field existed.
+    rendered_evidence_tokens: int | None = Field(default=None, ge=0)
+    # Which of the two ``token_budget`` was enforced against. ``None`` on
+    # records that predate the field, all of which were content-accounted.
+    budget_accounting: Literal["rendered_evidence", "content"] | None = None
     selected_evidence_ids: tuple[str, ...]
     selected_pages: dict[str, tuple[int, ...]]
     gold_pages: dict[str, tuple[int, ...]]
@@ -104,6 +114,26 @@ class RetrievalEvaluationRecord(BaseModel):
     tokens_to_full_evidence: int | None = Field(default=None, ge=0)
     redundancy: float = Field(ge=0, le=1)
     retrieval_latency_ms: float = Field(ge=0)
+    # Whether the normalised gold answer occurs inside a single packed item's
+    # content. ``None`` means not applicable -- an unanswerable question, or a
+    # gold answer that is empty or boolean -- and is never a hit or a miss.
+    # See ``evidence.gold_answer_present`` for the definition and its blind
+    # spots, chief among them computed answers that no context can contain.
+    gold_answer_present: bool | None = None
+    verification_rule: str | None = None
+
+
+class RetrievalAnswerPresenceRow(BaseModel):
+    """Gold-answer presence for one system, budget and verification rule."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    system: BenchmarkSystem
+    token_budget: int = Field(ge=1)
+    verification_rule: str
+    applicable_question_count: int = Field(ge=1)
+    present_count: int = Field(ge=0)
+    present_rate: float = Field(ge=0, le=1)
 
 
 class RetrievalSummaryRow(BaseModel):
@@ -140,6 +170,12 @@ class RetrievalSummaryRow(BaseModel):
     answerable_full_content_verified_coverage_rate: float | None = None
     quoted_mean_evidence_quote_recall: float | None = None
     quoted_full_quote_coverage_rate: float | None = None
+    # Mean tokens of the rendered evidence block, and gold-answer presence
+    # over answerable questions with a gold answer. All defaulted, so
+    # summaries written before these fields existed still validate.
+    mean_rendered_evidence_tokens: float | None = None
+    answer_present_question_count: int = Field(default=0, ge=0)
+    answer_present_rate: float | None = None
 
 
 class RetrievalPairedInterval(BaseModel):
@@ -232,3 +268,7 @@ class RetrievalBenchmarkSummary(BaseModel):
     # policy so a summary written before this field validates and reads
     # truthfully: the field was introduced with v2, so its absence means v1.
     quote_match_policy: str = "literal-casefold-v1"
+    # Gold-answer presence broken down by the dataset's verification rule, so a
+    # rule the metric cannot serve well -- a computed number -- is visible
+    # rather than averaged away.
+    answer_present_by_rule: tuple[RetrievalAnswerPresenceRow, ...] = ()

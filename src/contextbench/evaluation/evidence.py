@@ -3,6 +3,7 @@
 import re
 import unicodedata
 from collections.abc import Mapping, Sequence
+from decimal import Decimal, InvalidOperation
 
 from contextbench.datasets.base import BenchmarkQuestion
 from contextbench.ir.models import IRDocument
@@ -80,7 +81,94 @@ def evaluate_context(
             gold,
         ),
         "redundancy": context_redundancy(packet.items),
+        "gold_answer_present": gold_answer_present(question, packet.items),
+        "verification_rule": question.verification_rule,
     }
+
+
+# Verification rules whose gold answer is a number, compared by value.
+_NUMERIC_RULES = frozenset({"numeric_tolerance", "percentage_exact"})
+# A number as written in running text: digits with optional comma thousands
+# separators and an optional decimal part. It must not be glued to a word
+# character, a decimal point or a comma on the left, and must not continue
+# into a word character or into ".<digit>" / ",<digit>" on the right, so "16"
+# does not yield 6, "1,6" (a European decimal) yields nothing, and "6.5" is
+# read as 6.5, not as 6. Space-separated thousands ("2 379") are deliberately
+# not accepted: in a table row two adjacent numbers look the same.
+_NUMBER = re.compile(
+    r"(?<![\w.,])(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?(?![\w]|[.,]\d)"
+)
+
+
+def gold_answer_present(
+    question: BenchmarkQuestion,
+    items: Sequence[ContextItem],
+) -> bool | None:
+    """Whether the normalised gold answer occurs in a packed item's content.
+
+    A deterministic, retrieval-only proxy for "the context contains the
+    answer". No model is involved and nothing is inferred.
+
+    * **Not applicable** (``None``) for an unanswerable question, and for a
+      gold answer that is empty or boolean. Not-applicable is never counted as
+      a hit or a miss.
+    * **Numeric rules** (``numeric_tolerance``, ``percentage_exact``): the gold
+      value must equal, as a decimal, some number written in an item. Comma
+      thousands separators, trailing zeros and a trailing percent sign are
+      tolerated: ``2379`` matches ``2,379`` and ``2379.0``; ``100`` matches
+      ``100%``. The rule's own tolerance is *not* applied -- presence asks
+      whether the value is written down, not whether an answer near it would
+      be scored correct.
+    * **Everything else**: the gold answer, normalised with the quote
+      normaliser, must occur in an item bounded by non-word characters, so
+      ``FIST`` does not match ``FISTULA``.
+
+    The match must fall inside a **single item's content**. The framing is
+    never searched, and items are not concatenated, because a join could
+    manufacture a match across two unrelated fragments -- the shredded packets
+    in ``docs/research-log/gate2-failure-analysis.md`` are exactly where that
+    would happen.
+
+    Blind spots, stated so the number is not over-read:
+
+    * **Computed answers are invisible.** An answer the question asks to be
+      *derived* -- a sum, a difference, a count -- need not be written
+      anywhere. ``adubench_single_000331``'s gold answer 2379 appears in no
+      context of any arm, so the metric scores it absent however good the
+      evidence.
+    * **Short numbers are present by chance.** A gold answer of ``6`` is very
+      likely written somewhere in any page-sized packet -- a page number, a
+      list index, a table cell. A hit on a small integer is weak evidence.
+    * **Presence is not sufficiency.** The value can be present in the wrong
+      role, for example as a different year or another row's count.
+    """
+    if not question.answerable:
+        return None
+    gold = question.gold_answer
+    if gold is None or isinstance(gold, bool):
+        return None
+    text = str(gold).strip()
+    if not text:
+        return None
+    contents = [_normalize_quote_text(item.content) for item in items]
+    if question.verification_rule in _NUMERIC_RULES:
+        value = _decimal(text.rstrip("%").strip())
+        if value is not None:
+            return any(
+                _decimal(match.group(0)) == value
+                for content in contents
+                for match in _NUMBER.finditer(content)
+            )
+    needle = _normalize_quote_text(text)
+    pattern = re.compile(rf"(?<!\w){re.escape(needle)}(?!\w)")
+    return any(pattern.search(content) for content in contents)
+
+
+def _decimal(value: str) -> Decimal | None:
+    try:
+        return Decimal(value.replace(",", ""))
+    except InvalidOperation:
+        return None
 
 
 def _quote_coverage(

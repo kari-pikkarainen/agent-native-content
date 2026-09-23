@@ -1,6 +1,7 @@
 """Models shared by retrieval arms and their context outputs."""
 
 from enum import StrEnum
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -194,9 +195,19 @@ class ContextPacket(BaseModel):
 
     query: str
     token_budget: int = Field(ge=0)
+    # Packed content tokens: the sum of the items' own counts. Unchanged in
+    # meaning; under ``rendered_evidence`` accounting it is no longer what the
+    # budget is checked against.
     token_count: int = Field(ge=0)
     items: tuple[ContextItem, ...]
     metadata: dict[str, str]
+    # Tokens of the rendered evidence block (``retrieval/rendering.py``): tags,
+    # IDs, joiners and content, exactly as the answer prompt shows them.
+    # Defaulted so packets written before it existed still validate.
+    rendered_token_count: int | None = Field(default=None, ge=0)
+    # Which of the two the budget was checked against. ``None`` on packets
+    # that predate the field, which were all content-accounted.
+    budget_accounting: Literal["rendered_evidence", "content"] | None = None
 
     @model_validator(mode="after")
     def budget_and_count_are_consistent(self) -> "ContextPacket":
@@ -205,4 +216,13 @@ class ContextPacket(BaseModel):
             raise ValueError("token_count must equal the sum of item token counts")
         if self.token_count > self.token_budget:
             raise ValueError("context packet exceeds token budget")
+        if self.budget_accounting == "rendered_evidence":
+            if self.rendered_token_count is None:
+                raise ValueError(
+                    "rendered_evidence accounting requires rendered_token_count"
+                )
+            if self.rendered_token_count > self.token_budget:
+                raise ValueError(
+                    "rendered evidence block exceeds token budget"
+                )
         return self

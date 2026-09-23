@@ -811,3 +811,42 @@ def test_ablation_settings_reach_the_published_manifest() -> None:
         for name, overrides in COMPILER_ABLATIONS.items()
     }
     assert len(set(hashes.values())) == len(hashes)
+
+
+def test_eval_retrieval_defaults_to_rendered_budget_accounting(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """The owner's decision is the default; content stays reachable."""
+    default = _captured_config(tmp_path, monkeypatch, [])
+    content = _captured_config(
+        tmp_path, monkeypatch, ["--budget-accounting", "content"]
+    )
+
+    assert default.budget_accounting == "rendered_evidence"
+    assert content.budget_accounting == "content"
+
+
+def test_eval_factorial_passes_budget_accounting_through(
+    tmp_path: Path, monkeypatch
+) -> None:
+    captured = {}
+
+    def fake_run_xl_factorial(**kwargs):
+        captured.update(kwargs)
+        return SimpleNamespace(
+            path=tmp_path / "artifacts" / "factorial-runs" / "run",
+            manifest=SimpleNamespace(run_id="run"),
+        )
+
+    monkeypatch.setattr(
+        "contextbench.evaluation.factorial_xl.run_xl_factorial",
+        fake_run_xl_factorial,
+    )
+
+    result = runner.invoke(
+        app,
+        ["eval-factorial", "--budget-accounting", "content", "--run-id", "run"],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert captured["config"].budget_accounting == "content"

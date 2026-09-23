@@ -1454,12 +1454,16 @@ def test_keyed_joins_do_not_gate_core_evidence_out_of_the_packet(
     that still fits, so demoting core retrieval whenever a join fired kept
     direct hits out of the packet entirely while any join still fit. The
     budget here is chosen so the joins alone would consume it.
+
+    Content accounting is pinned: the premise below -- the joins' content
+    tokens against a 50-token budget -- is sized in content tokens, and the
+    defect this guards against is independent of how the budget is counted.
     """
     source = joined_tables_and_prose_source()
     counter = FixtureTokenCounter()
     ir = project_document(source, ingest_metadata(tmp_path), tokenizer=counter)
     scope = DocumentScope.from_documents([ir], source_documents={ir.id: source})
-    config = compiler_config()
+    config = compiler_config(budget_accounting="content")
     budget = 50
 
     packet, trace = compile_context_with_trace(
@@ -1771,6 +1775,8 @@ def test_coverage_packing_prefers_uncovered_query_facets() -> None:
     )
     metadata = {"arm": "compiler"}
 
+    # A 6-token budget is sized in content tokens; pinned so the facet
+    # preference this tests is not confounded with framing cost.
     ranked = pack_candidates(
         "alpha measure and beta result",
         candidates,
@@ -1778,6 +1784,7 @@ def test_coverage_packing_prefers_uncovered_query_facets() -> None:
         tokenizer=counter,
         strategy="ranked",
         metadata=metadata,
+        budget_accounting="content",
     )
     coverage = pack_candidates(
         "alpha measure and beta result",
@@ -1786,6 +1793,7 @@ def test_coverage_packing_prefers_uncovered_query_facets() -> None:
         tokenizer=counter,
         strategy="coverage",
         metadata=metadata,
+        budget_accounting="content",
     )
 
     assert [item.page_start for item in ranked.items] == [1, 1]
@@ -1859,6 +1867,10 @@ def test_existing_packing_strategies_are_unchanged_by_adaptive(
     function this test certifies. Re-recording the digests against the new
     pool would have discarded their derivation from the verbatim pre-change
     copy, so the pool is held fixed instead.
+
+    Content accounting is pinned for the same reason: the digests were derived
+    when the budget counted content alone, and that accounting remains
+    reachable precisely so controls like this one stay reproducible.
     """
     scope, counter = _adaptive_scope(tmp_path)
     pool = _pool(
@@ -1868,6 +1880,7 @@ def test_existing_packing_strategies_are_unchanged_by_adaptive(
         budget,
         include_previous_sibling=False,
         include_next_sibling=False,
+        budget_accounting="content",
     )
 
     packet = pack_candidates(
@@ -1877,6 +1890,7 @@ def test_existing_packing_strategies_are_unchanged_by_adaptive(
         tokenizer=counter,
         strategy=strategy,
         metadata={"arm": "compiler", "active_operators": ""},
+        budget_accounting="content",
     )
 
     assert _packet_digest(packet) == expected
@@ -1908,11 +1922,14 @@ def test_existing_strategies_are_unchanged_where_both_tiers_are_present(
     scope = DocumentScope.from_documents([ir], source_documents={ir.id: source})
     budget = 16384
 
+    # Content accounting pinned, as in the control above: these digests were
+    # derived under it. At 16K this case happens to pass either way, which is
+    # not a reason to leave its derivation claim resting on a coincidence.
     _packet, trace = compile_context_with_trace(
         JOINED_TABLES_AND_PROSE_QUERY,
         scope,
         budget,
-        compiler_config(),
+        compiler_config(budget_accounting="content"),
         tokenizer=counter,
     )
     pool = trace.deduplicated_candidates
@@ -1930,6 +1947,7 @@ def test_existing_strategies_are_unchanged_where_both_tiers_are_present(
         tokenizer=counter,
         strategy=strategy,
         metadata={"arm": "compiler", "active_operators": ""},
+        budget_accounting="content",
     )
 
     assert _packet_digest(packet) == expected
@@ -2002,6 +2020,9 @@ def test_adaptive_backfills_evidence_coverage_alone_would_not_select() -> None:
                 tokenizer=counter,
                 strategy=strategy,
                 metadata=dict(metadata),
+                # The switch point is engineered in content tokens: exactly
+                # one of two 2-token candidates fits a 6-token budget.
+                budget_accounting="content",
             ).items
         ]
         for strategy in ("coverage", "ranked", "adaptive")

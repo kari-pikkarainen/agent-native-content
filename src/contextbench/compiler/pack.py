@@ -9,6 +9,12 @@ from contextbench.compiler.facets import query_facets
 from contextbench.compiler.models import CompilerCandidate
 from contextbench.ir.tokenizer import TokenCounter
 from contextbench.retrieval.models import ContextItem, ContextPacket
+from contextbench.retrieval.rendering import (
+    DEFAULT_BUDGET_ACCOUNTING,
+    BudgetAccounting,
+    EvidenceBudget,
+    verified_count,
+)
 
 _TERM = re.compile(r"[\w][\w.-]*", flags=re.UNICODE)
 _TABLE_REFERENCE = re.compile(
@@ -48,6 +54,7 @@ def pack_candidates(
     tokenizer: TokenCounter,
     strategy: Literal["ranked", "coverage", "adaptive"] = "ranked",
     metadata: dict[str, str],
+    budget_accounting: BudgetAccounting = DEFAULT_BUDGET_ACCOUNTING,
 ) -> ContextPacket:
     """Pack candidates deterministically and never exceed the token budget.
 
@@ -60,6 +67,14 @@ def pack_candidates(
     coverage-selected item was chosen against, silently discarding the work of
     the first phase. Deduplication runs upstream in ``compiler.py``, before
     packing, so emission order does not reach it.
+
+    ``budget_accounting`` decides what the budget is checked against. The
+    default, ``rendered_evidence``, charges each item for its rendered form --
+    ``<evidence id="...">`` tags, the ID, the joiner and the content -- which
+    is what the answer prompt actually carries; ``content`` charges content
+    alone and reproduces the accounting used before. The coverage selector is
+    charged the same way, so it does not choose a set the emission loop below
+    then has to cut.
     """
     if strategy in {"coverage", "adaptive"}:
         selected, leftover = _coverage_selection(
@@ -68,6 +83,7 @@ def pack_candidates(
             token_budget=token_budget,
             tokenizer=tokenizer,
             stop_when_breadth_is_exhausted=strategy == "adaptive",
+            budget_accounting=budget_accounting,
         )
         candidates = (
             selected
@@ -81,17 +97,18 @@ def pack_candidates(
         if value
     }
     total = 0
+    budget = EvidenceBudget(token_budget, tokenizer, budget_accounting)
     for candidate in candidates:
         chunk = candidate.chunk
         token_count = tokenizer.count(chunk.text)
-        if total + token_count > token_budget:
+        evidence_id = _compiler_evidence_id(chunk.id, chunk.text)
+        costs = budget.item_costs(evidence_id, chunk.text)
+        if not budget.fits(costs):
             continue
-        evidence_payload = f"compiler-evidence-v1\0{chunk.id}\0{chunk.text}".encode()
+        budget.add(costs)
         items.append(
             ContextItem(
-                evidence_id=(
-                    f"evidence_{hashlib.sha256(evidence_payload).hexdigest()}"
-                ),
+                evidence_id=evidence_id,
                 document_id=chunk.document_id,
                 page_start=chunk.page_start,
                 page_end=chunk.page_end,
@@ -106,6 +123,17 @@ def pack_candidates(
         if candidate.operator != "retrieval":
             used_operators.add(candidate.operator)
         total += token_count
+    rendered = verified_count(
+        [(item.evidence_id, item.content) for item in items],
+        tokenizer,
+        "rendered_evidence",
+    )
+    if budget_accounting == "rendered_evidence" and rendered > token_budget:
+        raise ValueError(
+            f"rendered evidence block is {rendered} tokens, over the "
+            f"{token_budget}-token budget; incremental accounting disagreed "
+            "with the finished block"
+        )
     return ContextPacket(
         query=query,
         token_budget=token_budget,
@@ -115,7 +143,15 @@ def pack_candidates(
             **metadata,
             "active_operators": ",".join(sorted(used_operators)),
         },
+        rendered_token_count=rendered,
+        budget_accounting=budget_accounting,
     )
+
+
+def _compiler_evidence_id(chunk_id: str, text: str) -> str:
+    """The compiler's evidence ID, derived exactly as it always has been."""
+    payload = f"compiler-evidence-v1\0{chunk_id}\0{text}".encode()
+    return f"evidence_{hashlib.sha256(payload).hexdigest()}"
 
 
 def _backfill_order(
@@ -151,7 +187,7 @@ def _backfill_order(
 
 
 def _breadth_is_exhausted(
-    eligible: Sequence[tuple[CompilerCandidate, int, set[str], set[str]]],
+    eligible: Sequence[tuple[CompilerCandidate, int, set[str], set[str], int]],
     *,
     coverable_facets: set[int],
     covered_facets: set[int],
@@ -191,6 +227,7 @@ def _coverage_selection(
     token_budget: int,
     tokenizer: TokenCounter,
     stop_when_breadth_is_exhausted: bool = False,
+    budget_accounting: BudgetAccounting = DEFAULT_BUDGET_ACCOUNTING,
 ) -> tuple[tuple[CompilerCandidate, ...], tuple[CompilerCandidate, ...]]:
     """Select evidence by marginal query, facet, reference, and source coverage.
 
@@ -198,6 +235,15 @@ def _coverage_selection(
     ``stop_when_breadth_is_exhausted`` left off the behaviour is exactly what
     ``coverage`` has always done: the loop runs until nothing fits, and the
     leftovers are the candidates it rejected.
+
+    Each prepared entry carries two costs from ``EvidenceBudget``: what the
+    item costs if it is the block's last item (the fit test) and what it costs
+    once another item follows it (what is charged). Under ``content``
+    accounting both are the content count, which is exactly the accounting
+    this function always used. Under ``rendered_evidence`` the charged cost is
+    also the denominator of the density term in ``_coverage_key``, so a
+    six-token fragment wrapped in some twenty tokens of framing is priced as
+    what it costs the prompt, not as what it contributes to it.
     """
     query_terms = _terms(query)
     facet_terms = tuple(
@@ -207,20 +253,27 @@ def _coverage_selection(
     query_references = {
         _normalize(reference) for reference in _TABLE_REFERENCE.findall(query)
     }
-    prepared = [
-        (
-            candidate,
-            tokenizer.count(candidate.chunk.text),
-            _terms(candidate.chunk.retrieval_text),
-            {
-                _normalize(reference)
-                for reference in _TABLE_REFERENCE.findall(
-                    candidate.chunk.retrieval_text
-                )
-            },
+    budget = EvidenceBudget(token_budget, tokenizer, budget_accounting)
+    prepared = []
+    for candidate in candidates:
+        last_cost, charged_cost = budget.item_costs(
+            _compiler_evidence_id(candidate.chunk.id, candidate.chunk.text),
+            candidate.chunk.text,
         )
-        for candidate in candidates
-    ]
+        prepared.append(
+            (
+                candidate,
+                charged_cost,
+                _terms(candidate.chunk.retrieval_text),
+                {
+                    _normalize(reference)
+                    for reference in _TABLE_REFERENCE.findall(
+                        candidate.chunk.retrieval_text
+                    )
+                },
+                last_cost,
+            )
+        )
     selected: list[CompilerCandidate] = []
     remaining = token_budget
     covered_terms: set[str] = set()
@@ -232,7 +285,7 @@ def _coverage_selection(
         index for index, required in enumerate(facet_terms) if required
     }
     while prepared:
-        fitting = [value for value in prepared if value[1] <= remaining]
+        fitting = [value for value in prepared if value[4] <= remaining]
         if not fitting:
             break
         minimum_tier = min(value[0].priority_tier for value in fitting)
@@ -259,7 +312,7 @@ def _coverage_selection(
             ),
         )
         prepared.remove(best)
-        candidate, token_count, terms, references = best
+        candidate, token_count, terms, references, _last_cost = best
         selected.append(candidate)
         remaining -= token_count
         matched_terms = terms.intersection(query_terms)
@@ -277,7 +330,7 @@ def _coverage_selection(
 
 
 def _coverage_key(
-    value: tuple[CompilerCandidate, int, set[str], set[str]],
+    value: tuple[CompilerCandidate, int, set[str], set[str], int],
     *,
     query_terms: set[str],
     facet_terms: tuple[set[str], ...],
@@ -288,7 +341,7 @@ def _coverage_key(
     covered_pages: set[tuple[str, int]],
     covered_headings: set[tuple[str, ...]],
 ) -> tuple[object, ...]:
-    candidate, token_count, terms, references = value
+    candidate, token_count, terms, references, _last_cost = value
     matched_terms = terms.intersection(query_terms)
     new_terms = matched_terms.difference(covered_terms)
     matched_facets = {

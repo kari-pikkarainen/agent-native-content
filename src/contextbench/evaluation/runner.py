@@ -467,6 +467,8 @@ def _evaluate_cells(
                         system=system,
                         token_budget=budget,
                         token_count=packet.token_count,
+                        rendered_evidence_tokens=packet.rendered_token_count,
+                        budget_accounting=packet.budget_accounting,
                         selected_evidence_ids=tuple(
                             item.evidence_id for item in packet.items
                         ),
@@ -550,6 +552,7 @@ def _context_for_system(
             ranked_evidence,
             token_budget=budget,
             tokenizer=tokenizer,
+            budget_accounting=config.compiler.budget_accounting,
             metadata={"arm": RetrievalArm.LONG_CONTEXT.value},
         )
     if index is None:
@@ -572,6 +575,7 @@ def _context_for_system(
         query,
         ranked_evidence,
         token_budget=budget,
+        budget_accounting=config.compiler.budget_accounting,
     )
 
 

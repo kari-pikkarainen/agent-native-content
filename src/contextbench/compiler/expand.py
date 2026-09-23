@@ -41,8 +41,22 @@ def expand_candidates(
     reranker: Reranker,
     query_cache: CompilerQueryCache | None = None,
     corpus_index: CompilerCorpusIndex | None = None,
+    item_overhead: int = 0,
 ) -> tuple[CompilerCandidate, ...]:
-    """Add heading context, siblings, list neighbors, and table fallbacks."""
+    """Add heading context, siblings, list neighbors, and table fallbacks.
+
+    ``item_overhead`` is the framing one packed item adds under the run's
+    budget accounting (``retrieval/rendering.evidence_item_overhead``), zero
+    under content accounting. It is subtracted only where content is *cut to
+    fit* the budget -- the oversized-table decision and fragment size -- so a
+    fragment sized to the whole budget in content tokens is not left unable to
+    fit once framed. It binds only when the budget minus the table's header
+    lines is under ``table_chunk_tokens`` (512), i.e. below roughly 550
+    tokens; at benchmark budgets it changes nothing. The page-neighbour gates
+    still read the nominal budget: they decide whether filler is offered, and
+    the packer decides what fits.
+    """
+    content_budget = max(token_budget - item_overhead, 0)
     documents_by_id = {document.id: document for document in documents}
     expanded: list[CompilerCandidate] = []
     table_chunks_by_document: dict[str, tuple[RetrievalChunk, ...]] = {}
@@ -77,8 +91,8 @@ def expand_candidates(
         if (
             config.preserve_tables
             and node.kind == IRNodeKind.TABLE
-            and direct.chunk.token_count > token_budget
-            and minimum_table_fragment_tokens <= token_budget
+            and direct.chunk.token_count > content_budget
+            and minimum_table_fragment_tokens <= content_budget
             and document.id in source_documents
         ):
             table_chunks = table_chunks_by_document.get(document.id)
@@ -87,7 +101,7 @@ def expand_candidates(
                     update={
                         "structural_chunk_tokens": min(
                             config.table_chunk_tokens,
-                            token_budget - minimum_table_tokens,
+                            content_budget - minimum_table_tokens,
                         ),
                         # Pinned off so giving the structural arm heading
                         # context does not move the compiler. These fragments

@@ -7,6 +7,10 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from contextbench.evaluation.models import DEFAULT_TOKEN_BUDGETS
 from contextbench.retrieval import RetrievalConfig
+from contextbench.retrieval.rendering import (
+    DEFAULT_BUDGET_ACCOUNTING,
+    BudgetAccounting,
+)
 
 
 class ContentUnit(StrEnum):
@@ -75,6 +79,9 @@ class FactorialConfig(BaseModel):
     seed: int = 20260919
     retrieval: RetrievalConfig = Field(default_factory=RetrievalConfig)
     faceting: FactorialFacetConfig = Field(default_factory=FactorialFacetConfig)
+    # The same accounting the benchmark runner applies to every arm; every
+    # factorial cell packs through ``pack_candidates``, so one value covers all.
+    budget_accounting: BudgetAccounting = DEFAULT_BUDGET_ACCOUNTING
 
     @model_validator(mode="after")
     def configuration_is_complete_and_fair(self) -> "FactorialConfig":
@@ -112,6 +119,9 @@ class FactorialEvaluationRecord(BaseModel):
     heading_context: bool
     token_budget: int = Field(ge=1)
     token_count: int = Field(ge=0)
+    # Same meaning as on ``RetrievalEvaluationRecord``; see there.
+    rendered_evidence_tokens: int | None = Field(default=None, ge=0)
+    budget_accounting: Literal["rendered_evidence", "content"] | None = None
     selected_evidence_ids: tuple[str, ...]
     selected_pages: dict[str, tuple[int, ...]]
     gold_pages: dict[str, tuple[int, ...]]
@@ -129,6 +139,10 @@ class FactorialEvaluationRecord(BaseModel):
     tokens_to_full_evidence: int | None = Field(default=None, ge=0)
     redundancy: float = Field(ge=0, le=1)
     retrieval_latency_ms: float = Field(ge=0)
+    # Same meaning as on ``RetrievalEvaluationRecord``. Recorded per cell; the
+    # factorial report does not aggregate it.
+    gold_answer_present: bool | None = None
+    verification_rule: str | None = None
 
 
 class FactorialSummaryRow(BaseModel):

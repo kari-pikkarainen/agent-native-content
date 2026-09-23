@@ -354,6 +354,17 @@ def evaluate_retrieval(
             ),
         ),
     ] = 3,
+    budget_accounting: Annotated[
+        str,
+        typer.Option(
+            help=(
+                "What the token budget counts, for every arm: "
+                "rendered_evidence (tags, evidence IDs, joiners and content, "
+                "as the answer prompt carries them) or content (the earlier "
+                "accounting, kept so a re-baseline can measure the change)."
+            ),
+        ),
+    ] = "rendered_evidence",
     run_id: Annotated[
         str | None,
         typer.Option(help="Optional immutable run identifier."),
@@ -414,6 +425,7 @@ def evaluate_retrieval(
             group_adjacent_list_items=compiler_group_adjacent_list_items,
             preserve_tables=compiler_preserve_tables,
             page_neighbor_radius=compiler_page_neighbor_radius,
+            budget_accounting=budget_accounting,
         ),
     )
     try:
@@ -538,6 +550,15 @@ def evaluate_factorial(
             ),
         ),
     ] = None,
+    budget_accounting: Annotated[
+        str,
+        typer.Option(
+            help=(
+                "What the token budget counts in every cell: "
+                "rendered_evidence or content. See eval-retrieval."
+            ),
+        ),
+    ] = "rendered_evidence",
     run_id: Annotated[
         str | None,
         typer.Option(help="Optional immutable factorial run identifier."),
@@ -590,6 +611,7 @@ def evaluate_factorial(
                     query_facet_rerank_candidate_limit
                 ),
             ),
+            budget_accounting=budget_accounting,
             **factors,
         )
     except ValidationError as exc:

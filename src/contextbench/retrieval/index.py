@@ -27,6 +27,12 @@ from contextbench.retrieval.models import (
     RetrievalConfig,
     RetrievalScores,
 )
+from contextbench.retrieval.rendering import (
+    DEFAULT_BUDGET_ACCOUNTING,
+    BudgetAccounting,
+    EvidenceBudget,
+    verified_count,
+)
 from contextbench.retrieval.rerank import (
     LexicalOverlapReranker,
     Reranker,
@@ -532,6 +538,7 @@ class HybridIndex:
         retrieval_token_budget: int | None = None,
         limit: int | None = None,
         document_ids: set[str] | None = None,
+        budget_accounting: BudgetAccounting = DEFAULT_BUDGET_ACCOUNTING,
     ) -> ContextPacket:
         """Pack ranked evidence without exceeding the requested budget."""
         ranked = self.retrieve(
@@ -544,7 +551,12 @@ class HybridIndex:
             ),
             document_ids=document_ids,
         )
-        return self.pack_ranked(query, ranked, token_budget=token_budget)
+        return self.pack_ranked(
+            query,
+            ranked,
+            token_budget=token_budget,
+            budget_accounting=budget_accounting,
+        )
 
     def pack_ranked(
         self,
@@ -552,6 +564,7 @@ class HybridIndex:
         ranked: Sequence[RankedEvidence],
         *,
         token_budget: int,
+        budget_accounting: BudgetAccounting = DEFAULT_BUDGET_ACCOUNTING,
     ) -> ContextPacket:
         """Pack an existing ranking without repeating retrieval or reranking."""
         return pack_evidence(
@@ -559,6 +572,7 @@ class HybridIndex:
             ranked,
             token_budget=token_budget,
             tokenizer=self.tokenizer,
+            budget_accounting=budget_accounting,
             metadata={
                 "arm": self.chunks[0].arm.value if self.chunks else "unknown",
                 "embedding_model": self.embedder.name,
@@ -720,21 +734,33 @@ def pack_evidence(
     token_budget: int,
     tokenizer: TokenCounter,
     metadata: dict[str, str],
+    budget_accounting: BudgetAccounting = DEFAULT_BUDGET_ACCOUNTING,
 ) -> ContextPacket:
-    """Deduplicate by source and pack in reranked order."""
+    """Deduplicate by source and pack in reranked order.
+
+    The budget is checked against the rendered evidence block by default --
+    tags, IDs, joiners and content -- and against content alone only when
+    ``budget_accounting="content"``, which reproduces the accounting used
+    before the rendered block was counted. A candidate that does not fit is
+    skipped and packing continues, so a later smaller item can still use the
+    space, exactly as before.
+    """
     items = []
     used_sources: set[tuple[str, ...]] = set()
     total = 0
+    budget = EvidenceBudget(token_budget, tokenizer, budget_accounting)
     for evidence in ranked:
         chunk = evidence.chunk
         source_key = (chunk.document_id, *chunk.source_item_ids)
         if source_key in used_sources:
             continue
         token_count = tokenizer.count(chunk.text)
-        if total + token_count > token_budget:
-            continue
-        used_sources.add(source_key)
         evidence_id = "evidence_" + hashlib.sha256(chunk.id.encode()).hexdigest()
+        costs = budget.item_costs(evidence_id, chunk.text)
+        if not budget.fits(costs):
+            continue
+        budget.add(costs)
+        used_sources.add(source_key)
         items.append(
             {
                 "evidence_id": evidence_id,
@@ -758,7 +784,39 @@ def pack_evidence(
         token_count=total,
         items=tuple(ContextItem.model_validate(item) for item in items),
         metadata=metadata,
+        rendered_token_count=_checked_rendered_count(
+            [(item["evidence_id"], item["content"]) for item in items],
+            tokenizer=tokenizer,
+            token_budget=token_budget,
+            budget_accounting=budget_accounting,
+        ),
+        budget_accounting=budget_accounting,
     )
+
+
+def _checked_rendered_count(
+    items: Sequence[tuple[str, str]],
+    *,
+    tokenizer: TokenCounter,
+    token_budget: int,
+    budget_accounting: BudgetAccounting,
+) -> int:
+    """Count the finished rendered block and refuse it if it overruns.
+
+    Recorded in both modes, so a content-accounted packet still reports what
+    its prompt would have cost. Under rendered accounting the incremental sum
+    in ``EvidenceBudget`` is exact for the project tokenizer; this verifies the
+    finished block anyway, so a tokenizer that breaks that assumption fails
+    loudly instead of emitting a packet over budget.
+    """
+    rendered = verified_count(items, tokenizer, "rendered_evidence")
+    if budget_accounting == "rendered_evidence" and rendered > token_budget:
+        raise ValueError(
+            f"rendered evidence block is {rendered} tokens, over the "
+            f"{token_budget}-token budget; incremental accounting disagreed "
+            "with the finished block"
+        )
+    return rendered
 
 
 def _document_indices(
