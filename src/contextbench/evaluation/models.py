@@ -228,3 +228,7 @@ class RetrievalBenchmarkSummary(BaseModel):
     # Defaulted so every published ``summary.json`` written before this check
     # existed still validates unchanged.
     non_inferiority: tuple[RetrievalNonInferiorityCheck, ...] = ()
+    # How the gold-quote comparison was performed. Defaulted to the original
+    # policy so a summary written before this field validates and reads
+    # truthfully: the field was introduced with v2, so its absence means v1.
+    quote_match_policy: str = "literal-casefold-v1"

@@ -4,6 +4,7 @@ import random
 import statistics
 from collections.abc import Iterable, Sequence
 
+from contextbench.evaluation.evidence import QUOTE_MATCH_POLICY
 from contextbench.evaluation.models import (
     NON_INFERIORITY_MARGIN,
     BenchmarkSystem,
@@ -105,6 +106,7 @@ def summarize(
         rows=tuple(rows),
         paired_intervals=intervals,
         non_inferiority=_non_inferiority_checks(intervals),
+        quote_match_policy=QUOTE_MATCH_POLICY,
     )
 
 
@@ -370,6 +372,12 @@ def markdown_report(summary: RetrievalBenchmarkSummary) -> str:
             "answerable. Quote metrics include only questions with a non-empty "
             "gold quote. Content-verified pages require the full normalized "
             "source-node text to be present in the emitted context.",
+            "",
+            f"Quote-match policy: **`{summary.quote_match_policy}`**. Quote "
+            "figures are comparable only against artifacts carrying the same "
+            "policy; an artifact without the field is `literal-casefold-v1`, "
+            "which matched a gold quote only where it appeared verbatim after "
+            "casefolding and whitespace collapse.",
             "",
             "| System | Budget | Answerable gold-page n | Page recall | "
             "Content-verified recall | Quoted n | Exact quote recall |",

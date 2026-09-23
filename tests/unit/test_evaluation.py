@@ -19,8 +19,13 @@ from contextbench.evaluation import (
     RetrievalBenchmarkSummary,
     run_retrieval_benchmark,
 )
+from contextbench.evaluation import evidence as evidence_module
 from contextbench.evaluation import runner as evaluation_runner
-from contextbench.evaluation.evidence import evaluate_context
+from contextbench.evaluation.evidence import (
+    QUOTE_MATCH_POLICY,
+    _quote_coverage,
+    evaluate_context,
+)
 from contextbench.evaluation.models import (
     NON_INFERIORITY_MARGIN,
     RetrievalPairedInterval,
@@ -925,3 +930,240 @@ def test_summarize_emits_the_check_on_every_run(tmp_path: Path) -> None:
     )
     assert restored.non_inferiority == summary.non_inferiority
     assert "## Non-inferiority check" in markdown_report(restored)
+
+
+def _quoted_question(quotes: tuple[str, ...]) -> BenchmarkQuestion:
+    return BenchmarkQuestion(
+        id="quote-question",
+        question="Which target increased?",
+        document_ids=("dataset-doc-1",),
+        gold_answer="revenue",
+        answer_format="short_text",
+        verification_rule="exact",
+        gold_evidence=(
+            GoldEvidence(
+                document_id="dataset-doc-1",
+                pages=(1,),
+                page_numbering="pdf_index",
+                items=tuple(EvidenceItem(quote=quote) for quote in quotes),
+            ),
+        ),
+        answerable=True,
+        task_type="single_doc",
+    )
+
+
+def _context(text: str) -> ContextPacket:
+    return ContextPacket(
+        query="target",
+        token_budget=100,
+        token_count=len(text.split()),
+        items=(
+            ContextItem(
+                evidence_id="quote-item",
+                document_id="doc",
+                page_start=1,
+                page_end=1,
+                content=text,
+                token_count=len(text.split()),
+                source_node_ids=("node-1",),
+                source_item_ids=("#/texts/0",),
+                scores=RetrievalScores(),
+            ),
+        ),
+        metadata={},
+    )
+
+
+def _recall(quotes: tuple[str, ...], text: str) -> float:
+    count, matched, recall, _full = _quote_coverage(
+        _quoted_question(quotes), _context(text).items
+    )
+    assert count == len(quotes)
+    return recall
+
+
+def test_typographic_variants_match_after_normalisation() -> None:
+    """A quote differing only in how characters were rendered must match.
+
+    Each of these is one character rendered two ways by a PDF extractor and a
+    human annotator. None changes a word.
+    """
+    source = (
+        "The 2019–2020 review — chaired by O’Brien — said "
+        "“no” to the proposal."
+    )
+
+    assert _recall(("The 2019-2020 review",), source) == 1.0
+    assert _recall(("chaired by O'Brien",), source) == 1.0
+    assert _recall(('said "no" to the proposal.',), source) == 1.0
+    # ...and the whole thing at once, spelled in plain ASCII.
+    plain = 'The 2019-2020 review - chaired by O\'Brien - said "no" to the proposal.'
+    assert _recall((plain,), source) == 1.0
+
+
+def test_typographic_variants_did_not_match_before() -> None:
+    """The same comparison under the shipped v1 policy, as a control."""
+    source = "The 2019–2020 review said “no”."
+
+    def v1(value: str) -> str:
+        return " ".join(value.casefold().split())
+
+    assert v1("The 2019-2020 review") not in v1(source)
+    assert v1('said "no".') not in v1(source)
+
+
+def test_different_words_still_do_not_match() -> None:
+    """Normalisation must not reach across a difference in what was written."""
+    source = "Revenue increased by twelve percent during the period."
+
+    assert _recall(("Revenue decreased by twelve percent",), source) == 0.0
+    assert _recall(("Revenue increased by twenty percent",), source) == 0.0
+    assert _recall(("Profit increased by twelve percent",), source) == 0.0
+    # Punctuation that is not a rendering variant is still significant.
+    assert _recall(("Codes and Standards: None",), "Codes and Standards None") == 0.0
+
+
+def test_elided_quotes_match_only_when_fragments_are_present_and_ordered() -> None:
+    """An elision is a claim about several passages, in order."""
+    source = (
+        "The committee met in March. Many intervening words follow here. "
+        "It reported in November."
+    )
+    reversed_source = (
+        "It reported in November. Many intervening words follow here. "
+        "The committee met in March."
+    )
+
+    assert _recall(("The committee met...It reported in November.",), source) == 1.0
+    # Either spelling of the marker.
+    assert _recall(("The committee met…It reported in November.",), source) == 1.0
+    # A fragment that is absent fails the whole quote.
+    assert _recall(("The committee met...It reported in December.",), source) == 0.0
+    # Present but out of order fails: assembling the pieces from unrelated
+    # places is the false positive this rule exists to refuse.
+    assert (
+        _recall(("The committee met...It reported in November.",), reversed_source)
+        == 0.0
+    )
+
+
+def test_elided_quotes_did_not_match_at_all_before() -> None:
+    """Under v1 an elided quote was unmatchable however good the retrieval."""
+    source = (
+        "The committee met in March. Many intervening words follow here. "
+        "It reported in November."
+    )
+
+    def v1(value: str) -> str:
+        return " ".join(value.casefold().split())
+
+    assert v1("The committee met...It reported in November.") not in v1(source)
+
+
+def test_quote_matching_does_not_match_across_documents() -> None:
+    """The precision check, asserted rather than measured once.
+
+    On the development set the new policy leaves cross-document matches
+    exactly where the old one did -- one, a bare model identifier that is
+    genuinely present in two documents. This is the property that measurement
+    established, pinned so a later widening of the rules cannot pass silently.
+    """
+    document_a = "The reactor achieved criticality on 4 June 1974 at Dounreay."
+    document_b = (
+        "A separate plant reached full power in 1981. "
+        "Criticality was never achieved at this site."
+    )
+
+    assert _recall(("achieved criticality on 4 June 1974",), document_a) == 1.0
+    assert _recall(("achieved criticality on 4 June 1974",), document_b) == 0.0
+    # An elided quote must not assemble itself out of a foreign document.
+    elided = ("The reactor achieved criticality...at Dounreay.",)
+    assert _recall(elided, document_a) == 1.0
+    assert _recall(elided, document_b) == 0.0
+
+
+def test_quote_policy_change_leaves_every_other_metric_untouched(
+    tmp_path: Path,
+) -> None:
+    """Only the three quote outputs may move.
+
+    Proved by scoring real packets twice -- once as shipped, once with the
+    quote comparison forced back to the v1 literal rule -- and comparing every
+    key of ``evaluate_context``. Page recall, content-verified recall,
+    redundancy and tokens-to-full-evidence share no code with the quote path,
+    and this is what says so.
+    """
+    corpus = _corpus(tmp_path)
+    question = corpus.questions[0]
+    document = corpus.documents["dataset-doc-1"]
+    node = next(node for node in document.nodes if node.text.strip())
+    packet = ContextPacket(
+        query=question.question,
+        token_budget=100,
+        token_count=8,
+        items=(
+            ContextItem(
+                evidence_id="item-1",
+                document_id=document.id,
+                page_start=node.page_start,
+                page_end=node.page_end,
+                content=node.text,
+                token_count=8,
+                source_node_ids=(node.id,),
+                source_item_ids=node.source_item_ids,
+                scores=RetrievalScores(),
+            ),
+        ),
+        metadata={},
+    )
+
+    after = evaluate_context(question, packet, corpus.documents)
+
+    def v1_quote_coverage(q, items):
+        def norm(value: str) -> str:
+            return " ".join(value.casefold().split())
+
+        quotes = tuple(
+            norm(item.quote)
+            for evidence in q.gold_evidence
+            for item in evidence.items
+            if item.quote and item.quote.strip()
+        )
+        if not quotes:
+            return 0, 0, 1.0, True
+        context = norm("\n".join(item.content for item in items))
+        matched = sum(quote in context for quote in quotes)
+        return len(quotes), matched, matched / len(quotes), matched == len(quotes)
+
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(evidence_module, "_quote_coverage", v1_quote_coverage)
+        before = evaluate_context(question, packet, corpus.documents)
+
+    quote_keys = {
+        "gold_quote_count",
+        "matched_quote_count",
+        "evidence_quote_recall",
+        "full_quote_coverage",
+    }
+    assert set(before) == set(after)
+    for key in set(after) - quote_keys:
+        assert before[key] == after[key], key
+
+
+def test_summary_records_the_quote_match_policy(tmp_path: Path) -> None:
+    """An old and a new artifact must be tellable apart without guesswork."""
+    result = _run(tmp_path, run_id="quote-policy")
+
+    summary = summarize("quote-policy", result.records, bootstrap_resamples=10)
+
+    assert summary.quote_match_policy == QUOTE_MATCH_POLICY
+    assert summary.quote_match_policy != "literal-casefold-v1"
+    assert QUOTE_MATCH_POLICY in markdown_report(summary)
+    # A summary written before the field existed still loads, and says v1.
+    raw = summary.model_dump(mode="json")
+    del raw["quote_match_policy"]
+    assert (
+        RetrievalBenchmarkSummary.model_validate(raw).quote_match_policy
+        == "literal-casefold-v1"
+    )

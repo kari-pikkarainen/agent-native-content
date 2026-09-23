@@ -1,6 +1,7 @@
 """Evidence-page and redundancy metrics."""
 
 import re
+import unicodedata
 from collections.abc import Mapping, Sequence
 
 from contextbench.datasets.base import BenchmarkQuestion
@@ -87,20 +88,135 @@ def _quote_coverage(
     items: Sequence[ContextItem],
 ) -> tuple[int, int, float, bool]:
     quotes = tuple(
-        _normalize_text(item.quote)
+        _normalize_quote_text(item.quote)
         for evidence in question.gold_evidence
         for item in evidence.items
         if item.quote and item.quote.strip()
     )
     if not quotes:
         return 0, 0, 1.0, True
-    context = _normalize_text("\n".join(item.content for item in items))
-    matched = sum(quote in context for quote in quotes)
+    context = _normalize_quote_text("\n".join(item.content for item in items))
+    matched = sum(_quote_matches(quote, context) for quote in quotes)
     return len(quotes), matched, matched / len(quotes), matched == len(quotes)
 
 
 def _normalize_text(value: str) -> str:
+    """Casefold and collapse whitespace.
+
+    Used by the content-verified page path, which compares an IR node's text
+    against the emitted item that carries it. Both sides come from the same
+    parse, so there is nothing to reconcile and this must stay as it is:
+    widening it would move content-verified page recall, which is a different
+    metric measuring a different thing.
+    """
     return " ".join(value.casefold().split())
+
+
+# Bumped when the comparison changes, and recorded in every summary, so an
+# artifact says how its quote figures were produced. An artifact without the
+# field predates it and is v1 by definition.
+QUOTE_MATCH_POLICY = "nfkc-unified-punctuation-ordered-elision-v2"
+
+# Dash, apostrophe, quotation and space variants collapse to one spelling
+# each. These are typographic renderings of the same character: a PDF
+# extractor and a human annotator routinely disagree about which one a
+# document contains, and that disagreement is not evidence about retrieval.
+#
+# What each could wrongly make match, stated rather than waved past:
+#   dashes      -- an en-dash range "1914-18" and a hyphenated compound
+#                  become indistinguishable. Both are the same characters to a
+#                  reader; no gold quote in the set turns on the difference.
+#   apostrophes -- a typographic apostrophe and a prime symbol merge, so a
+#                  measurement in feet ("6'") could match a possessive. Only
+#                  inside an otherwise-identical span, so the risk is remote.
+#   quotes      -- an opening and a closing double quote become the same, so
+#                  nested quotation could match with its nesting inverted.
+#   spaces      -- a non-breaking space merges with a normal one, which is the
+#                  point; it cannot make different words match.
+#   invisibles  -- soft hyphens and zero-width joiners are deleted, which can
+#                  join a line-broken word. That is the intent; it can also
+#                  join two words a document deliberately kept apart, which no
+#                  observed quote does.
+_DASHES = dict.fromkeys(map(ord, "‐‑‒–—―−"), "-")
+_APOSTROPHES = dict.fromkeys(map(ord, "‘’‚‛′ʼ"), "'")
+_QUOTATIONS = dict.fromkeys(map(ord, "“”„‟″"), '"')
+_SPACES = dict.fromkeys(
+    map(ord, "       "), " "
+)
+_INVISIBLES = dict.fromkeys(map(ord, "​‌‍﻿­"), None)
+_QUOTE_TRANSLATION = {
+    **_DASHES,
+    **_APOSTROPHES,
+    **_QUOTATIONS,
+    **_SPACES,
+    **_INVISIBLES,
+}
+# An elision marker, either spelling. Normalised to one so that fragment
+# splitting does not depend on which the annotator typed. It is deliberately
+# *not* deleted: a quote that elides is a quote about non-contiguous text, and
+# deleting the marker would silently assert contiguity the annotator denied.
+_ELLIPSIS_SPLIT = re.compile(r"\s*\.\s*\.\s*\.\s*")
+
+
+def _normalize_quote_text(value: str) -> str:
+    """Normalise both sides of a gold-quote comparison, identically.
+
+    Deliberately narrow. The comparison exists to decide whether a retrieved
+    context contains a passage, and every rule here reconciles a difference in
+    how the same characters were *rendered* -- by NFKC compatibility folding,
+    or by the variant tables above -- never a difference in what was written.
+
+    Stripping punctuation generally was measured and rejected. It raises
+    apparent matches from 19 to 27 of 46 on the development set, but the
+    recoveries are not typographic: three are quotes whose trailing ellipsis
+    the stripping deletes, one is an annotator writing a colon where the
+    document has a line break, one is a table read as prose with its column
+    separators removed, and one is a quote carrying punctuation from the
+    citation list around it. Those are annotation differences, and counting
+    them would make the metric agree with the annotator rather than measure
+    the retrieval.
+    """
+    folded = unicodedata.normalize("NFKC", value)
+    folded = folded.replace("…", "...")
+    folded = folded.translate(_QUOTE_TRANSLATION)
+    return " ".join(folded.casefold().split())
+
+
+def _quote_fragments(normalized_quote: str) -> tuple[str, ...]:
+    """Split a normalised quote on its elision markers."""
+    parts = (part.strip() for part in _ELLIPSIS_SPLIT.split(normalized_quote))
+    return tuple(fragment for fragment in parts if fragment)
+
+
+def _quote_matches(normalized_quote: str, normalized_context: str) -> bool:
+    """Decide whether a context contains a gold quote.
+
+    A quote without an elision must appear contiguously, exactly as before.
+
+    A quote *with* one is a claim about several passages, and no contiguous
+    search can ever satisfy it: as shipped, every elided quote scored zero in
+    every arm at every budget, so the metric was reporting the annotator's
+    punctuation rather than anything a retriever did. Such a quote is matched
+    when all of its fragments are present **and in order**, each after the
+    previous one.
+
+    Order is required rather than mere presence. "All fragments somewhere"
+    can be satisfied by a context that assembles the pieces from unrelated
+    parts of a document, which is precisely the false positive this metric
+    cannot afford. The cost is real and is accepted: a packet whose items
+    happen to emit the fragments out of document order will not match, so this
+    under-reports rather than over-reports.
+    """
+    fragments = _quote_fragments(normalized_quote)
+    if len(fragments) <= 1:
+        return normalized_quote in normalized_context
+    position = 0
+    for fragment in fragments:
+        found = normalized_context.find(fragment, position)
+        if found < 0:
+            return False
+        position = found + len(fragment)
+    return True
 
 
 def context_redundancy(items: Sequence[ContextItem], *, ngram_size: int = 4) -> float:
