@@ -546,10 +546,13 @@ gold pages or quotes, are defined in the
 
 ## Next decision gate
 
-**Gate 0 has passed and is recorded in
-[the research log](docs/research-log/gate0-rebaseline-67aef47.md).** The active
-gate is now Gate 1 of the
-[improvement plan](docs/plans/2026-09-21-improvement-plan.md).
+**Gates 0 and 1 have passed**, recorded in
+[the Gate 0 decision](docs/research-log/gate0-rebaseline-67aef47.md) and
+[the Gate 1 decision](docs/research-log/gate1-xlholdout6c-60e5836.md). The
+active gate is now **Gate 2** of the
+[improvement plan](docs/plans/2026-09-21-improvement-plan.md): whether better
+evidence selection produces better answers, decided by a preregistered
+answer-generation run. The Gate 0 account below is kept as it was recorded.
 
 Gate 0 asked whether the low-budget advantage on this page was real or an
 artifact of broken measurement. It is real. It survived nine defect fixes,
