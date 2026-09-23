@@ -2,6 +2,16 @@
 
 > Persistent, structured, provenance-preserving content for AI agents.
 
+## In plain English
+
+AI systems usually break a document into loose text snippets and search those
+snippets again for every question. This project explores a different approach:
+prepare the document once in a structured, trustworthy form that keeps its
+sections, tables, and links back to the original pages. Then, for each question,
+assemble a small package containing only the most useful evidence. We test
+whether this gives AI systems better evidence with less unnecessary text than
+conventional document search.
+
 This repository explores whether source material can be prepared once into a
 reusable intermediate representation, then assembled into task-specific,
 token-budgeted context with better grounding and information efficiency than
@@ -72,6 +82,14 @@ structural chunks at 2K it is negative with an interval that excludes zero.
 The compiler's demonstrated advantage on this benchmark is a page-selection
 advantage; an exact-evidence advantage has not been established.
 
+The latest policy experiments explain much of that split. Coverage-aware
+packing deliberately spreads the context across more potentially relevant
+pages. That raises page recall but often lowers exact quote recall because the
+selected node may touch the right page without containing the decisive span.
+The effect appears across fixed chunks, structural chunks, and IR nodes, and is
+strongest for the IR. A budget-adaptive alternative reduced the quote deficit
+but lost page recall, so it was rejected under its preregistered rule.
+
 The development figures come from the 2026-09-22 run after Phase 1's three
 correctness fixes; the holdout figures predate them and were not re-run,
 because re-running a holdout to keep a table tidy would spend it. The largest
@@ -90,10 +108,12 @@ Read this table with the page-recall caveat under
 leads on page recall far more consistently than on exact quote recall.
 
 See the canonical
-[development report](results/retrieval/xldev24-rebaseline/report.md),
+[development report](results/retrieval/xldev24-phase1-fixes/report.md),
 [holdout report](results/retrieval/xlholdout6b-rebaseline/report.md),
-[content-unit factorial](results/factorial/xldev24-content-policy-heading/report.md),
-and [results index](results/README.md) for the full evidence and caveats. An
+[corrected content-unit factorial](results/factorial/xldev24-content-policy-corrected/report.md),
+[packing-policy decision](docs/research-log/adaptive-packing-decision-3b77e75.md),
+[expansion ablations](docs/research-log/phase1-ablations-6cc7fd9.md), and
+[results index](results/README.md) for the full evidence and caveats. An
 earlier six-question holdout mostly rejected the preceding compiler
 configuration and remains published as superseded negative evidence.
 
@@ -127,8 +147,9 @@ the result without exceeding the token budget. Compiler v0 uses no LLM for
 retrieval planning.
 
 Coverage-aware packing is the selected default. The earlier greedy rank-order
-policy remains available with `--compiler-packing-strategy ranked` as an
-ablation control.
+policy and the rejected budget-adaptive policy remain available with
+`--compiler-packing-strategy ranked` and
+`--compiler-packing-strategy adaptive` as ablation controls.
 
 ## Compared systems
 
@@ -446,25 +467,26 @@ gold pages or quotes, are defined in the
   `report.md` keeps the legend wording of the run that produced it.
 - Evidence retrieval has been measured more thoroughly than end-to-end answer
   quality. No answer-generation or economic result exists yet.
-- Compiler retrieval is slower, though less so than before the re-baseline:
-  about 1.56 seconds per holdout query against 0.42 for fixed RAG and 0.44 for
-  structural RAG on the same development machine, a ratio of roughly 3.7×. The
-  earlier figure on this page, 4.7–5.4 seconds, predates the two positivity
-  guards; refusing non-matching chunks in both channels shrinks the fused
-  candidate set, so there is less to rerank. Phase 1 targets at most 2×.
+- Compiler retrieval remains slower. A within-process measurement with caches
+  cleared before each call put it at 2.29×, 2.32×, 2.40×, and 3.92× fixed RAG
+  from 2K through 16K, missing Phase 1's 2× target. Pair-level score reuse can
+  help a repeated direct-compilation workload, but it changes model batch
+  composition and can change near-tied rankings, so it is off by default. The
+  remaining 16K cost is dominated by page-neighbour reranking and is a
+  selection tradeoff rather than a free caching optimization.
 - The holdout still rejects high-budget dominance. After the re-baseline the
   compiler loses to fixed RAG at 16K by 0.065 page recall, with a paired
   interval of [−0.121, −0.017] that excludes zero, so this is now a measured
   loss rather than a directional one. Against structural chunks it still leads
   at 16K, so the problem is specifically fixed windows.
 - Page recall over-credits the compiler, and the size is now measured. On the
-  full development factorial IR nodes beat the better chunk unit in eight of
-  eight matched cells on page recall and three of eight on exact quote recall,
-  never by more than 0.021 on the latter. Phase 1 sharpened this: the paired
-  interval for the compiler's exact-quote advantage over fixed RAG includes
-  zero at every budget, and against structural chunks at 2K it is −0.060 with
-  an interval excluding zero, so at that budget the compiler is measurably
-  behind on exact evidence while leading on pages.
+  corrected full development factorial IR nodes beat the better chunk unit in
+  seven of eight matched cells on page recall and two of eight on exact quote
+  recall, never by more than 0.014 on the latter. Phase 1 sharpened this: the
+  paired interval for the compiler's exact-quote advantage over fixed RAG
+  includes zero at every budget, and against structural chunks at 2K it is
+  −0.060 with an interval excluding zero, so at that budget the compiler is
+  measurably behind on exact evidence while leading on pages.
 - Page recall can also over-credit a *baseline*, which Phase 1 demonstrated
   directly. Before the IR reading-order repair the fixed arm's windows spliced
   distant pages together and were credited with all of them: identical window
@@ -506,11 +528,12 @@ and both model weights pinned to a resolved commit.
 
 The gate also narrowed the claim in three ways worth stating alongside it:
 
-- **Page recall over-credits the compiler.** On the full development factorial
-  IR nodes beat the better chunk unit in eight of eight matched cells on page
-  recall and three of eight on exact quote recall. The gate is stated on page
-  recall and passed on it; Phase 2 promotes quote recall to co-primary for
-  exactly this reason, so the pass is a screening result, not a validation.
+- **Page recall over-credits the compiler.** On the corrected full development
+  factorial IR nodes beat the better chunk unit in seven of eight matched cells
+  on page recall and two of eight on exact quote recall. Coverage packing raises
+  page recall and lowers quote recall across all three content units. The gate
+  was stated on page recall and passed on it; this is a screening result, not a
+  validation.
 - **The holdout loss at 16K is now measured.** The compiler loses to fixed RAG
   there by 0.065 page recall with an interval excluding zero. The development
   set and the holdout disagree at that budget, which is why a holdout exists.
@@ -523,15 +546,21 @@ The gate also narrowed the claim in three ways worth stating alongside it:
   separate from noise. See
   [the ablation record](docs/research-log/compiler-heading-free-edd196f.md).
 
-Phase 1 follows, and its target is concrete rather than directional: the
-compiler must never be worse than fixed RAG at any budget, against a measured
-16K loss. Its three correctness fixes are
+Most of Phase 1 is complete. Its three correctness fixes are
 [delivered and measured](docs/research-log/phase1-correctness-fixes-9110e70.md).
-The active experiment is **budget-adaptive packing**: coverage-pack until the
-facets are covered, then backfill in reranked order, judged against a
-preregistered rule on all three metrics rather than on page recall alone.
-Latency is also in scope: compiler retrieval is roughly 3.7× fixed RAG after
-the re-baseline, against a Phase 1 target of at most 2×.
+Heading-free retrieval and budget-adaptive packing were both tested and
+rejected under rules written before their results were known. The latency work
+measured rather than met the 2× target: result-neutral caching already happens
+at the exact-batch level, while finer reuse changes rankings. The corrected
+factorial and D1–D4 expansion ladder are also complete.
+
+The active work is now **node-boundary failure analysis**. The experiments show
+that coverage packing often reaches the right page but chooses a sibling node
+that does not contain the exact quoted evidence. The next development change,
+if the failure analysis supports one, must improve exact evidence without
+giving up the demonstrated low-budget page-selection advantage. After the
+configuration is frozen on `xldev24`, `xlholdout6c` is run exactly once for
+Gate 1.
 
 `xlholdout6c` is frozen and
 [recorded](docs/research-log/xlholdout6c-freeze.md), with all six sources
