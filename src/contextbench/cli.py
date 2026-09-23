@@ -294,6 +294,60 @@ def evaluate_retrieval(
             ),
         ),
     ] = True,
+    # The six expansion switches the D1-D4 ablations in
+    # ``docs/specs/benchmark.md`` section 25 turn on and off. Every default
+    # below is the shipped ``CompilerConfig`` default, so an invocation that
+    # names none of them is unchanged. See
+    # ``contextbench.evaluation.ablations`` for the configurations themselves.
+    compiler_heading_context: Annotated[
+        bool,
+        typer.Option(
+            "--compiler-heading-context/--no-compiler-heading-context",
+            help="Render the heading trail above each piece of evidence.",
+        ),
+    ] = True,
+    compiler_previous_sibling: Annotated[
+        bool,
+        typer.Option(
+            "--compiler-previous-sibling/--no-compiler-previous-sibling",
+            help="Expand a paragraph hit to the paragraph before it.",
+        ),
+    ] = False,
+    compiler_next_sibling: Annotated[
+        bool,
+        typer.Option(
+            "--compiler-next-sibling/--no-compiler-next-sibling",
+            help="Expand a paragraph hit to the paragraph after it.",
+        ),
+    ] = False,
+    compiler_group_adjacent_list_items: Annotated[
+        bool,
+        typer.Option(
+            "--compiler-group-adjacent-list-items"
+            "/--no-compiler-group-adjacent-list-items",
+            help="Expand a list-item hit to its adjacent list items.",
+        ),
+    ] = True,
+    compiler_preserve_tables: Annotated[
+        bool,
+        typer.Option(
+            "--compiler-preserve-tables/--no-compiler-preserve-tables",
+            help=(
+                "Emit header-bearing fragments for a table too large for the "
+                "budget instead of dropping it."
+            ),
+        ),
+    ] = True,
+    compiler_page_neighbor_radius: Annotated[
+        int,
+        typer.Option(
+            min=0,
+            help=(
+                "Pages either side of a hit eligible as fixed-window "
+                "neighbour evidence. 0 disables page neighbours."
+            ),
+        ),
+    ] = 3,
     run_id: Annotated[
         str | None,
         typer.Option(help="Optional immutable run identifier."),
@@ -348,6 +402,12 @@ def evaluate_retrieval(
                 compiler_query_facet_rerank_candidate_limit
             ),
             packing_strategy=compiler_packing_strategy,
+            include_heading_context=compiler_heading_context,
+            include_previous_sibling=compiler_previous_sibling,
+            include_next_sibling=compiler_next_sibling,
+            group_adjacent_list_items=compiler_group_adjacent_list_items,
+            preserve_tables=compiler_preserve_tables,
+            page_neighbor_radius=compiler_page_neighbor_radius,
         ),
     )
     try:

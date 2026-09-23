@@ -1007,6 +1007,25 @@ Headings + siblings + table preservation.
 
 This prevents attributing improvements vaguely to “the IR.”
 
+### Field settings, and the shipped reference
+
+The four names above do not fix the `CompilerConfig` fields they correspond
+to. Those are recorded as data in
+`src/contextbench/evaluation/ablations.py` and checked by a test, so a
+published ablation can be read back without reconstructing it from shell
+history. That module also records two decisions this section leaves open:
+that “sibling expansion” in D3 includes adjacent list-item grouping, with the
+alternative reading and why it was rejected; and that keyed table joins and
+page-neighbour windows stay off throughout D1 to D4, since the ladder stops at
+table preservation.
+
+The module adds a fifth entry, `SHIPPED`, which is **not** an ablation from
+this section. It is the configuration the benchmark actually publishes, and it
+lies beyond D4: it adds keyed joins and page neighbours. It is listed because
+none of D1 to D4 is the configuration behind any headline number, so a reader
+comparing the ladder to a published result without it would be comparing
+against something unlisted.
+
 ---
 
 # 26. Success criteria

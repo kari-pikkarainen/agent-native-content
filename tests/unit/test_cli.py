@@ -4,11 +4,17 @@ import json
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
 from typer.testing import CliRunner
 
 from contextbench import __version__
 from contextbench.cli import app
-from contextbench.evaluation import BenchmarkSystem
+from contextbench.compiler import CompilerConfig
+from contextbench.evaluation import BenchmarkSystem, RetrievalBenchmarkConfig
+from contextbench.evaluation.ablations import (
+    COMPILER_ABLATIONS,
+    ablation_command_line,
+)
 
 runner = CliRunner()
 FIXTURES = Path(__file__).parents[1] / "fixtures"
@@ -614,3 +620,180 @@ def test_eval_commands_accept_offline_models_without_a_revision(
 
     assert hub_mismatch.exit_code == 1
     assert "--embedding-revision" in hub_mismatch.output
+
+
+ABLATION_FIELDS = (
+    "include_heading_context",
+    "include_previous_sibling",
+    "include_next_sibling",
+    "group_adjacent_list_items",
+    "preserve_tables",
+    "keyed_table_join_enabled",
+    "page_neighbor_radius",
+)
+
+
+def _captured_config(tmp_path: Path, monkeypatch, options: list[str]):
+    captured = {}
+
+    def fake_run_xl_retrieval(**kwargs):
+        captured.update(kwargs)
+        return SimpleNamespace(
+            path=tmp_path / "artifacts" / "runs" / "ablation",
+            manifest=SimpleNamespace(run_id="ablation"),
+        )
+
+    monkeypatch.setattr(
+        "contextbench.evaluation.xl_docbench.run_xl_retrieval",
+        fake_run_xl_retrieval,
+    )
+    result = runner.invoke(
+        app, ["eval-retrieval", *options, "--run-id", "ablation"]
+    )
+    assert result.exit_code == 0, result.output
+    return captured["config"].compiler
+
+
+def test_eval_retrieval_leaves_expansion_defaults_untouched(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """Naming none of the new options must change nothing.
+
+    The ablation flags exist to be able to turn expansion off. If adding them
+    moved any default, every published run before them would have been
+    produced by a different configuration than the one a rerun would use.
+    """
+    compiler = _captured_config(tmp_path, monkeypatch, [])
+    shipped = CompilerConfig()
+
+    assert {field: getattr(compiler, field) for field in ABLATION_FIELDS} == {
+        field: getattr(shipped, field) for field in ABLATION_FIELDS
+    }
+    # Every compiler field, not only the new ones. ``retrieval`` is excluded
+    # because the CLI assembles it from its own options, which is pre-existing
+    # and has nothing to do with the ablation switches.
+    assert {
+        field: getattr(compiler, field)
+        for field in CompilerConfig.model_fields
+        if field != "retrieval"
+    } == {
+        field: getattr(shipped, field)
+        for field in CompilerConfig.model_fields
+        if field != "retrieval"
+    }
+
+
+@pytest.mark.parametrize(
+    ("option", "field", "expected"),
+    [
+        ("--no-compiler-heading-context", "include_heading_context", False),
+        ("--compiler-previous-sibling", "include_previous_sibling", True),
+        ("--compiler-next-sibling", "include_next_sibling", True),
+        (
+            "--no-compiler-group-adjacent-list-items",
+            "group_adjacent_list_items",
+            False,
+        ),
+        ("--no-compiler-preserve-tables", "preserve_tables", False),
+    ],
+)
+def test_eval_retrieval_exposes_each_expansion_switch(
+    tmp_path: Path, monkeypatch, option: str, field: str, expected: bool
+) -> None:
+    compiler = _captured_config(tmp_path, monkeypatch, [option])
+
+    assert getattr(compiler, field) is expected
+
+
+def test_eval_retrieval_exposes_the_page_neighbor_radius(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """An integer, not a boolean: 0 disables, and other values are reachable."""
+    assert _captured_config(
+        tmp_path, monkeypatch, ["--compiler-page-neighbor-radius", "0"]
+    ).page_neighbor_radius == 0
+    assert _captured_config(
+        tmp_path, monkeypatch, ["--compiler-page-neighbor-radius", "5"]
+    ).page_neighbor_radius == 5
+
+
+@pytest.mark.parametrize("name", ["D1", "D2", "D3", "D4", "SHIPPED"])
+def test_documented_ablations_are_what_the_command_line_produces(
+    tmp_path: Path, monkeypatch, name: str
+) -> None:
+    """The recorded ladder and the CLI must not be able to drift apart.
+
+    ``COMPILER_ABLATIONS`` is the durable record of what D1-D4 mean; this runs
+    its own rendered command line through the CLI and checks the configuration
+    that comes out. If a flag is renamed, or a mapping edited without the
+    other, this fails rather than silently publishing a mislabelled ablation.
+    """
+    expected = CompilerConfig().model_copy(
+        update=dict(COMPILER_ABLATIONS[name])
+    )
+
+    compiler = _captured_config(
+        tmp_path, monkeypatch, list(ablation_command_line(name))
+    )
+
+    assert {field: getattr(compiler, field) for field in ABLATION_FIELDS} == {
+        field: getattr(expected, field) for field in ABLATION_FIELDS
+    }
+
+
+def test_the_ablation_ladder_is_monotone_and_ends_below_the_shipped_config() -> None:
+    """Each step adds one mechanism, and none of D1-D4 is what ships."""
+    configs = {
+        name: CompilerConfig().model_copy(update=dict(overrides))
+        for name, overrides in COMPILER_ABLATIONS.items()
+    }
+
+    assert configs["D1"].include_heading_context is False
+    assert configs["D2"].include_heading_context is True
+    # D2 adds headings and nothing else.
+    assert all(
+        getattr(configs["D2"], field) == getattr(configs["D1"], field)
+        for field in ABLATION_FIELDS
+        if field != "include_heading_context"
+    )
+    # D3 adds adjacency, including list-item grouping, as documented.
+    assert configs["D3"].include_previous_sibling is True
+    assert configs["D3"].include_next_sibling is True
+    assert configs["D3"].group_adjacent_list_items is True
+    assert configs["D3"].preserve_tables is False
+    # D4 adds table preservation and stops there.
+    assert configs["D4"].preserve_tables is True
+    assert configs["D4"].keyed_table_join_enabled is False
+    assert configs["D4"].page_neighbor_radius == 0
+    # The shipped configuration is strictly beyond D4, which is why it is
+    # listed: none of the four is the thing the benchmark publishes.
+    assert configs["SHIPPED"] == CompilerConfig()
+    assert configs["SHIPPED"].keyed_table_join_enabled is True
+    assert configs["SHIPPED"].page_neighbor_radius > 0
+    assert configs["SHIPPED"] != configs["D4"]
+
+
+def test_ablation_settings_reach_the_published_manifest() -> None:
+    """A published ablation has to be reproducible from its own manifest."""
+    compiler = CompilerConfig().model_copy(update=dict(COMPILER_ABLATIONS["D1"]))
+    config = RetrievalBenchmarkConfig(
+        retrieval=compiler.retrieval, compiler=compiler
+    )
+
+    recorded = config.model_dump(mode="json")["compiler"]
+
+    for field in ABLATION_FIELDS:
+        assert recorded[field] == getattr(compiler, field)
+    # And the ladder's rungs are distinguishable by the config hash the
+    # manifest records, so two ablations cannot be confused for one another.
+    hashes = {
+        name: json.dumps(
+            RetrievalBenchmarkConfig(
+                retrieval=CompilerConfig().retrieval,
+                compiler=CompilerConfig().model_copy(update=dict(overrides)),
+            ).model_dump(mode="json"),
+            sort_keys=True,
+        )
+        for name, overrides in COMPILER_ABLATIONS.items()
+    }
+    assert len(set(hashes.values())) == len(hashes)
