@@ -49,38 +49,61 @@ The complete evidence-only benchmark pipeline is implemented:
 - guarded answer-generation evaluation over already-saved contexts; and
 - portable agent-document bundles plus a controlled representation experiment.
 
-The selected compiler leads the best RAG baseline on **page** recall on the
-24-question development set at every tested budget. It does not lead on
-**exact quote** recall at every budget, and the difference between those two
-statements is the most important thing on this page.
+**Phase 1 is closed and its configuration is frozen. Gate 1 — one run of the
+untouched `xlholdout6c` holdout — is next, and has not been run.** The frozen
+configuration, its development evidence and every pin the holdout run will be
+held to are in the
+[Phase 1 close-out](docs/research-log/phase1-closeout-c7e56fa.md).
+
+The frozen compiler leads the best RAG baseline on **page** recall on the
+24-question development set at every tested budget. On **exact quote** recall
+it leads at three of four budgets and trails at 2K, and the difference between
+those two statements is the most important thing on this page.
 
 | Budget | Dev compiler | Dev best RAG | Holdout compiler | Holdout best RAG |
 | ---: | ---: | ---: | ---: | ---: |
-| 2K | **0.728** | 0.533 | **0.513** | 0.425 |
-| 4K | **0.794** | 0.634 | **0.626** | 0.565 |
-| 8K | **0.858** | 0.739 | 0.815 | **0.856** |
-| 16K | **0.906** | 0.843 | 0.935 | **1.000** |
+| 2K | **0.718** | 0.533 | **0.513** | 0.425 |
+| 4K | **0.806** | 0.634 | **0.626** | 0.565 |
+| 8K | **0.860** | 0.739 | 0.815 | **0.856** |
+| 16K | **0.888** | 0.843 | 0.935 | **1.000** |
 
 Values are mean gold-evidence page recall at the stated context budget. The
 development set has 24 questions over 11 documents; the directional holdout
 has six questions over six previously unused documents. No answer model was
-used for these results.
+used for these results. The holdout columns are `xlholdout6b`, which predates
+both the Phase 1 fixes and the freeze and was not re-run; `xlholdout6c`, the
+Gate 1 holdout, is still unopened.
 
-On exact quote recall over the same development runs the picture is different,
-and the compiler does not lead at the budget it is supposed to own:
+Exact quote recall over the same development run, on the 18 questions that
+carry gold quotes:
 
 | Budget | Dev compiler | Dev best RAG |
 | ---: | ---: | ---: |
-| 2K | 0.354 | **0.399** |
-| 4K | **0.424** | 0.399 |
-| 8K | **0.476** | 0.465 |
-| 16K | **0.528** | 0.476 |
+| 2K | 0.213 | **0.259** |
+| 4K | **0.333** | 0.259 |
+| 8K | **0.375** | 0.361 |
+| 16K | **0.444** | 0.403 |
 
-The paired interval for the compiler's exact-quote advantage over fixed RAG
-includes zero at **every** budget, before and after the Phase 1 fixes. Against
-structural chunks at 2K it is negative with an interval that excludes zero.
-The compiler's demonstrated advantage on this benchmark is a page-selection
+Against fixed RAG the compiler's exact-quote interval includes zero at 2K, 8K
+and 16K and excludes it only at 4K. Against structural chunks at 2K the point
+estimate is −0.046 with an interval of [−0.123, +0.018]: no longer measurably
+worse, as it was before the freeze, but not shown better either. The
+compiler's demonstrated advantage on this benchmark is a page-selection
 advantage; an exact-evidence advantage has not been established.
+
+Quote recall has a ceiling well below 1.0 that no arm can pass. Of 46
+development gold quotes, 26 do not occur in their own document's parse, most
+because the gold string is not a verbatim transcription — a heading and list
+joined with a colon, a table read across cells — and three because the gold
+quote itself contains OCR errors. Quote figures here are scored under match
+policy `nfkc-unified-punctuation-ordered-elision-v3` and are not comparable
+with figures scored under an earlier policy.
+
+The frozen configuration turns sibling expansion on, which is worth +0.019
+quote recall across budgets, and keeps page-neighbour expansion, which is
+worth little quote recall but is what holds the compiler inside the
+preregistered −3pp non-inferiority margin against fixed RAG at 16K. It holds
+there by 0.0002, which is a pass under the rule and inside bootstrap noise.
 
 The latest policy experiments explain much of that split. Coverage-aware
 packing deliberately spreads the context across more potentially relevant
@@ -90,10 +113,10 @@ The effect appears across fixed chunks, structural chunks, and IR nodes, and is
 strongest for the IR. A budget-adaptive alternative reduced the quote deficit
 but lost page recall, so it was rejected under its preregistered rule.
 
-The development figures come from the 2026-09-22 run after Phase 1's three
-correctness fixes; the holdout figures predate them and were not re-run,
-because re-running a holdout to keep a table tidy would spend it. The largest
-of those fixes repaired IR reading order, and it moved the fixed baseline
+The development figures come from the 2026-09-23 run at the frozen
+configuration, after Phase 1's three correctness fixes; the holdout figures
+predate both and were not re-run, because re-running a holdout to keep a table
+tidy would spend it. The largest of those fixes repaired IR reading order, and it moved the fixed baseline
 hardest: that arm had been building windows from a token stream in which 40.9
 per cent of items were appended out of document order. Its page recall
 *fell* when this was fixed, because a window splicing two distant pages was
@@ -108,7 +131,8 @@ Read this table with the page-recall caveat under
 leads on page recall far more consistently than on exact quote recall.
 
 See the canonical
-[development report](results/retrieval/xldev24-phase1-fixes/report.md),
+[frozen development report](results/retrieval/xldev24-phase1-frozen/report.md),
+[Phase 1 close-out](docs/research-log/phase1-closeout-c7e56fa.md),
 [holdout report](results/retrieval/xlholdout6b-rebaseline/report.md),
 [corrected content-unit factorial](results/factorial/xldev24-content-policy-corrected/report.md),
 [packing-policy decision](docs/research-log/adaptive-packing-decision-3b77e75.md),
@@ -482,11 +506,17 @@ gold pages or quotes, are defined in the
 - Page recall over-credits the compiler, and the size is now measured. On the
   corrected full development factorial IR nodes beat the better chunk unit in
   seven of eight matched cells on page recall and two of eight on exact quote
-  recall, never by more than 0.014 on the latter. Phase 1 sharpened this: the
-  paired interval for the compiler's exact-quote advantage over fixed RAG
-  includes zero at every budget, and against structural chunks at 2K it is
-  −0.060 with an interval excluding zero, so at that budget the compiler is
-  measurably behind on exact evidence while leading on pages.
+  recall, never by more than 0.014 on the latter. Phase 1 sharpened this:
+  before the freeze the compiler was measurably behind structural chunks on
+  exact evidence at 2K while leading on pages. The frozen configuration's
+  sibling expansion removes that — the 2K interval now includes zero — but it
+  does not reverse it, and against fixed RAG the exact-quote interval still
+  includes zero at 2K, 8K and 16K.
+- Quote recall cannot reach 1.0 for any arm. Of 46 development gold quotes, 26
+  do not occur in their own document's parse, mostly because the gold string
+  is not a verbatim transcription, and three contain OCR errors of their own.
+  Those are recorded, not repaired, because the gold data must not change. See
+  [the Phase 1 close-out](docs/research-log/phase1-closeout-c7e56fa.md).
 - Page recall can also over-credit a *baseline*, which Phase 1 demonstrated
   directly. Before the IR reading-order repair the fixed arm's windows spliced
   distant pages together and were credited with all of them: identical window
@@ -546,21 +576,28 @@ The gate also narrowed the claim in three ways worth stating alongside it:
   separate from noise. See
   [the ablation record](docs/research-log/compiler-heading-free-edd196f.md).
 
-Most of Phase 1 is complete. Its three correctness fixes are
+**Phase 1 is complete and its configuration is frozen.** Its three correctness
+fixes are
 [delivered and measured](docs/research-log/phase1-correctness-fixes-9110e70.md).
 Heading-free retrieval and budget-adaptive packing were both tested and
-rejected under rules written before their results were known. The latency work
-measured rather than met the 2× target: result-neutral caching already happens
-at the exact-batch level, while finer reuse changes rankings. The corrected
-factorial and D1–D4 expansion ladder are also complete.
+rejected under rules written before their results were known. The corrected
+factorial and D1–D4 expansion ladder are complete.
 
-The active work is now **node-boundary failure analysis**. The experiments show
-that coverage packing often reaches the right page but chooses a sibling node
-that does not contain the exact quoted evidence. The next development change,
-if the failure analysis supports one, must improve exact evidence without
-giving up the demonstrated low-budget page-selection advantage. After the
-configuration is frozen on `xldev24`, `xlholdout6c` is run exactly once for
-Gate 1.
+The node-boundary failure analysis found that most "right page, missing quote"
+cases are not selection failures at all: the gold quote is not a verbatim
+string in the parse. Of the remaining effect, sibling expansion is the
+operator that recovers exact evidence, and the frozen configuration turns it
+on. The latency target of at most twice fixed RAG was measured and **not met**;
+the owner ruled that a documented limitation rather than a Gate 1 blocker,
+because the Gate 1 rule was preregistered without a latency clause.
+
+**The active step is Gate 1: `xlholdout6c`, run exactly once, against the
+exact commit, configuration, quote policy and model revisions pinned in
+[the close-out](docs/research-log/phase1-closeout-c7e56fa.md).** It has not
+been run. Gate 1 passes when, on that holdout, the compiler's paired point
+estimate against fixed RAG on page recall is positive at 2K and 4K and its
+interval at 8K and 16K does not lie entirely below the −3pp margin. The result
+is published whatever it shows, and the configuration is not revised after it.
 
 `xlholdout6c` is frozen and
 [recorded](docs/research-log/xlholdout6c-freeze.md), with all six sources

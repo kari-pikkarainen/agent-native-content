@@ -1,8 +1,30 @@
 # Improvement Plan: From Low-Budget Advantage to a Defensible Result
 
-Status: revised after two review rounds on 2026-09-21, not yet started
+Status: revised after two review rounds on 2026-09-21. Phase 0 complete (Gate 0
+passed, `30f14a1`). Phase 1 tasks 1 to 8 complete and the configuration frozen
+at `c7e56fa`; Gate 1 (task 9) is next and `xlholdout6c` has not been run. Task
+10 follows only if Gate 1 passes. Updated 2026-09-23.
 Date: 2026-09-21
 Baseline commit: `0b57eab`
+
+Progress against this plan is recorded in `docs/research-log/`, not by editing
+the tasks below, which stay as written so the plan can be read against what
+was done. Where the work departed from a task, the record says so:
+
+- Task 5's non-inferiority check is emitted on every run for both baselines,
+  not fixed RAG alone, and states that no current population is confirmatory.
+- Task 7 could not be done as written. Caching cross-encoder scores per query
+  and node, and regression-testing rankings as unchanged, are mutually
+  exclusive because the reranker is not invariant to batch composition. The
+  2x latency target was not met and was ruled a documented limitation rather
+  than a Gate 1 blocker. See commit `a421321`.
+- Task 8's D1 to D4 ladder sets the page-neighbour radius to zero on every
+  rung, so two configurations outside the spec series were added to attribute
+  page neighbours and keyed joins.
+- Beyond the tasks, exact quote recall was re-scored twice (policies v2 and v3)
+  after an audit found the metric measuring annotation style, and the
+  configuration was frozen with sibling expansion on. See
+  `docs/research-log/phase1-closeout-c7e56fa.md`.
 
 ## Purpose
 

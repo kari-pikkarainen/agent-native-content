@@ -8,10 +8,12 @@ directories because they can contain large indexes and rendered source context.
 
 | Result | Status | Main conclusion |
 | --- | --- | --- |
+| [XLDev24 at the frozen Phase 1 configuration](retrieval/xldev24-phase1-frozen/report.md) | **Development, current — the Gate 1 reference** | Siblings on, page neighbours on, quote policy v3. Page recall leads both baselines at every budget, excluding zero at 2K and 4K against both. The non-inferiority margin holds at 8 of 8 cells, by 0.0002 against fixed RAG at 16K. The 2K exact-quote deficit against structural chunks no longer excludes zero. |
+| [Freeze decision: siblings × page neighbours](retrieval/xldev24-freeze-sibON-nbON/report.md) | Ablation, current | Four cells, keyed joins on, quote policy v2. Siblings carry the quote gain (+0.019 mean); page neighbours add +0.002 but are what keep the 16K margin. Other cells: [sib off/nb off](retrieval/xldev24-freeze-sibOFF-nbOFF/report.md), [sib off/nb on](retrieval/xldev24-freeze-sibOFF-nbON/report.md), [sib on/nb off](retrieval/xldev24-freeze-sibON-nbOFF/report.md). |
 | [XLDev24 re-baseline](retrieval/xldev24-rebaseline/report.md) | Development, **superseded for absolute figures** | Compiler leads both RAG baselines at every budget; the paired interval excludes zero at 2K and 4K, which is Gate 0's criterion. |
 | [XLHoldout6b re-baseline](retrieval/xlholdout6b-rebaseline/report.md) | Directional holdout, current | Compiler leads fixed RAG at 2K and 4K and **loses to it at 16K**, with that interval excluding zero. It leads structural at 2K and 16K. |
 | [XLDev24 content-unit × policy × heading factorial](factorial/xldev24-content-policy-heading/report.md) | Development, current | On page recall IR nodes beat the best chunk unit in 8 of 8 matched cells; on quote recall in only 3 of 8. Heading search context costs the IR unit 2 to 5 points and helps structural only at low budgets. |
-| [XLDev24 after Phase 1 correctness fixes](retrieval/xldev24-phase1-fixes/report.md) | Development, current | Three correctness fixes, measured per arm. Gate 0's page-recall criterion still holds at 2K and 4K. The compiler's exact-quote advantage over fixed RAG includes zero at every budget, and against structural chunks at 2K it is negative with an interval excluding zero. |
+| [XLDev24 after Phase 1 correctness fixes](retrieval/xldev24-phase1-fixes/report.md) | Development, **superseded by the frozen configuration** | Three correctness fixes, measured per arm. Gate 0's page-recall criterion still holds at 2K and 4K. The compiler's exact-quote advantage over fixed RAG includes zero at every budget, and against structural chunks at 2K it is negative with an interval excluding zero. |
 | [XLDev24 content-unit × policy factorial, corrected](factorial/xldev24-content-policy-corrected/report.md) | Development, current | IR nodes beat the better chunk unit on page recall in 7 of 8 matched cells and on quote recall in 2 of 8. Faceted coverage buys page recall and costs quote recall for **every** content unit, replicating the packing-policy finding through an independent design. The IR page advantage is larger under coverage than under ranked, so representation and policy are not separable. |
 | [XLDev24 expansion ablations D1–D4](retrieval/xldev24-ablation-D1/report.md) | Ablation, current | The spec's expansion ladder. D1 with no expansion has the best page recall at 4K and 8K, so structural expansion does not produce the page advantage. Table preservation moves 1 of 96 packets and no metric. Keyed joins are the largest quote-recall contributor and rest on one question. The shipped config is not the best rung. |
 | [XLDev24 packing-policy comparison](retrieval/xldev24-packing-adaptive/report.md) | Ablation, current | Three packing policies. Budget-adaptive packing **rejected** under the preregistered rule (A1 and A2 fail). Page recall falls and quote recall rises monotonically as coverage is withdrawn, and the 2K quote deficit against structural chunks disappears entirely without coverage — so coverage packing is the source of both the page advantage and the quote deficit. [ranked arm](retrieval/xldev24-packing-ranked/report.md). |
@@ -22,6 +24,20 @@ directories because they can contain large indexes and rendered source context.
 | [XLDev24 coverage packing](retrieval/xldev24-coverage/report.md) | **Superseded** | Compiler page recall and full coverage beat both RAG baselines at every tested budget. |
 | [XLHoldout6](retrieval/xlholdout6/report.md) | **Superseded**, historical holdout | The preceding compiler configuration mostly failed to reproduce its development advantage. |
 | [XLHoldout6b](retrieval/xlholdout6b/report.md) | **Superseded** | Compiler leads at 2K and 4K; fixed RAG leads at 8K and 16K. |
+
+### Quote-recall figures are scored under different policies
+
+Exact quote recall was re-scored twice during Phase 1, and only the comparison
+changed, never the gold data. Every summary records the policy it was scored
+under in `quote_match_policy`; an artifact without the field was scored under
+`literal-casefold-v1`.
+
+- `literal-casefold-v1`: every row published before `08acd28`.
+- `nfkc-unified-punctuation-ordered-elision-v2`: the four freeze-decision cells.
+- `nfkc-unified-punctuation-ordered-elision-v3`: the frozen configuration.
+
+Quote figures under different policies are not comparable. Page recall,
+content-verified recall and every other metric are unaffected by the policy.
 
 ### What the Phase 1 fixes superseded
 
