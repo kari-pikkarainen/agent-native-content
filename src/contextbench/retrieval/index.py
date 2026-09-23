@@ -5,6 +5,7 @@ import json
 import os
 import tempfile
 from collections.abc import Mapping, Sequence
+from itertools import groupby
 from pathlib import Path
 
 import numpy as np
@@ -45,9 +46,15 @@ class HybridIndex:
         embedder: EmbeddingModel | None = None,
         reranker: Reranker | None = None,
         tokenizer: TokenCounter | None = None,
+        reuse_pair_scores: bool = False,
     ) -> None:
         self.chunks = tuple(chunks)
         self.config = config
+        # Off by default, and it must stay that way until someone measures the
+        # ranking change. See ``_scored_pairs``: reusing a score across batches
+        # is not result-neutral, because this cross-encoder is not bitwise
+        # invariant to batch composition.
+        self.reuse_pair_scores = reuse_pair_scores
         self.embedder = embedder or embedding_model_from_config(config)
         self.reranker = reranker or reranker_from_config(config)
         self.tokenizer = tokenizer or TiktokenTokenCounter(config.tokenizer_name)
@@ -63,6 +70,7 @@ class HybridIndex:
         self._document_indices = _document_indices(self.chunks)
         self._retrieval_cache: dict[tuple[object, ...], tuple[RankedEvidence, ...]] = {}
         self._rerank_cache: dict[tuple[object, ...], tuple[RankedEvidence, ...]] = {}
+        self._pair_score_cache: dict[tuple[str, str], float] = {}
 
     @classmethod
     def build(
@@ -224,6 +232,8 @@ class HybridIndex:
         index._document_indices = _document_indices(loaded_chunks)
         index._retrieval_cache = {}
         index._rerank_cache = {}
+        index._pair_score_cache = {}
+        index.reuse_pair_scores = False
         return index
 
     def retrieve(
@@ -359,6 +369,86 @@ class HybridIndex:
             for rank, index in enumerate(candidate_indices, 1)
         )
 
+    def _scored_pairs(
+        self,
+        pairs: Sequence[tuple[str, RetrievalChunk]],
+    ) -> list[float]:
+        """Score (query, chunk) pairs, optionally reusing in-process results.
+
+        Task 7 of the improvement plan asks for a cross-encoder cache keyed on
+        (query, node). This implements it, and it is **off by default**,
+        because it cannot satisfy the same task's requirement that rankings
+        stay byte-identical.
+
+        The obstruction is measurable, not theoretical.
+        ``cross-encoder/ms-marco-MiniLM-L-6-v2`` at its pinned revision is not
+        bitwise invariant to batch composition: the same pair scored alone and
+        scored inside a 200-pair batch differed for 2 of 10 sampled pairs, by
+        about 1e-6, because a batch is padded to its own longest sequence. A
+        cache changes batch composition by construction -- it removes the hits
+        from the batch -- so the survivors are scored under different padding
+        and come back marginally different. On a six-query, five-budget grid
+        over two cached documents that moved 6 of 30 packets: a 1e-6 score
+        change is enough to flip a near-tie and reorder a packet.
+
+        No score cache can avoid this. Even an all-or-nothing cache returns
+        scores computed under the first batch's padding, not this one's. The
+        only result-neutral cache is one keyed on the exact batch, which is
+        what ``_rerank_cache`` already is.
+
+        So this is a latency/ranking trade, not a free win, and it is exposed
+        as one. ``chunk.id`` is a sound key -- it covers arm, document, ordinal
+        and text, and an index's chunks are fixed at construction -- but that
+        was never the difficulty.
+        """
+        if not self.reuse_pair_scores:
+            score_pairs = getattr(self.reranker, "score_pairs", None)
+            if score_pairs is None:
+                computed: list[float] = []
+                for query, group in groupby(pairs, key=lambda pair: pair[0]):
+                    computed.extend(
+                        self.reranker.score(query, [chunk for _q, chunk in group])
+                    )
+            else:
+                computed = list(score_pairs(pairs))
+            if len(computed) != len(pairs):
+                raise ValueError(
+                    "reranker score count does not match query-candidate pairs"
+                )
+            return computed
+        scores: list[float | None] = []
+        missing: list[tuple[str, RetrievalChunk]] = []
+        missing_positions: list[int] = []
+        for position, (query, chunk) in enumerate(pairs):
+            cached = self._pair_score_cache.get((query, chunk.id))
+            scores.append(cached)
+            if cached is None:
+                missing.append((query, chunk))
+                missing_positions.append(position)
+        if missing:
+            score_pairs = getattr(self.reranker, "score_pairs", None)
+            if score_pairs is None:
+                # ``score`` takes one query for the whole batch, so group by
+                # query rather than assuming the batch shares one.
+                computed = []
+                for query, group in groupby(missing, key=lambda pair: pair[0]):
+                    chunks = [chunk for _query, chunk in group]
+                    computed.extend(self.reranker.score(query, chunks))
+            else:
+                computed = list(score_pairs(missing))
+            if len(computed) != len(missing):
+                raise ValueError(
+                    "reranker score count does not match query-candidate pairs"
+                )
+            for position, (query, chunk), score in zip(
+                missing_positions, missing, computed, strict=True
+            ):
+                scores[position] = score
+                self._pair_score_cache[(query, chunk.id)] = score
+        if any(score is None for score in scores):
+            raise ValueError("reranker left a query-candidate pair unscored")
+        return [score for score in scores if score is not None]
+
     def rerank(
         self,
         query: str,
@@ -369,9 +459,8 @@ class HybridIndex:
         cached = self._rerank_cache.get(cache_key)
         if cached is not None:
             return cached
-        scores = self.reranker.score(
-            query,
-            [candidate.chunk for candidate in candidates],
+        scores = self._scored_pairs(
+            [(query, candidate.chunk) for candidate in candidates]
         )
         ranked = sorted(
             zip(candidates, scores, strict=True),
@@ -405,17 +494,11 @@ class HybridIndex:
             for query, candidates in requests
             for candidate in candidates
         ]
-        score_pairs = getattr(self.reranker, "score_pairs", None)
-        if score_pairs is None:
+        if getattr(self.reranker, "score_pairs", None) is None:
             return tuple(
                 self.rerank(query, candidates) for query, candidates in requests
             )
-        pair_scores = score_pairs(pairs)
-        if len(pair_scores) != len(pairs):
-            raise ValueError(
-                "reranker score count does not match query-candidate pairs"
-            )
-        scores = iter(pair_scores)
+        scores = iter(self._scored_pairs(pairs))
         results = []
         for _query, candidates in requests:
             ranking = sorted(

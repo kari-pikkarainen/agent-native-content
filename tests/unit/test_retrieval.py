@@ -23,9 +23,11 @@ from contextbench.retrieval import (
     HashEmbeddingModel,
     HybridIndex,
     LexicalOverlapReranker,
+    RankedEvidence,
     RetrievalArm,
     RetrievalChunk,
     RetrievalConfig,
+    RetrievalScores,
     SentenceTransformerCrossEncoderReranker,
     SentenceTransformerEmbeddingModel,
     long_context_chunks,
@@ -1801,3 +1803,103 @@ def test_rekeyed_index_artifacts_still_round_trip(
     assert stored["embedding_revision"] is None
     assert stored["reranker_revision"] is None
     assert built.retrieve("revenue results") == reloaded.retrieve("revenue results")
+
+
+def test_pair_score_reuse_is_off_by_default_and_rescoring_is_unconditional() -> None:
+    """The default must call the model for every pair, every time.
+
+    Reusing a score across batches is not result-neutral with the pinned
+    cross-encoder, which is not bitwise invariant to batch composition, so the
+    default has to be the unconditional path.
+    """
+
+    class CountingReranker:
+        name = "counting-v1"
+        calls = 0
+        pairs_scored = 0
+
+        @property
+        def version(self) -> str:
+            return "1"
+
+        @property
+        def revision(self) -> str | None:
+            return None
+
+        def score(self, query: str, chunks) -> list[float]:
+            return self.score_pairs([(query, chunk) for chunk in chunks])
+
+        def score_pairs(self, pairs) -> list[float]:
+            type(self).calls += 1
+            type(self).pairs_scored += len(pairs)
+            return [1.0 / (index + 1) for index in range(len(pairs))]
+
+    chunks = tuple(
+        RetrievalChunk(
+            id=f"chunk-{index}",
+            arm=RetrievalArm.FIXED,
+            document_id="doc",
+            text=f"body {index} shared evidence",
+            token_count=4,
+            source_node_ids=(f"node-{index}",),
+            source_item_ids=(f"#/texts/{index}",),
+        )
+        for index in range(6)
+    )
+    config = RetrievalConfig(candidate_limit=6, rerank_limit=6)
+    reranker = CountingReranker()
+    index = HybridIndex(
+        chunks,
+        config=config,
+        tokenizer=FixtureTokenCounter(),
+        reranker=reranker,
+    )
+    assert index.reuse_pair_scores is False
+
+    candidates = index.retrieve_candidates("shared evidence")
+    index.rerank("shared evidence", candidates)
+    first = CountingReranker.pairs_scored
+    index._rerank_cache.clear()
+    index.rerank("shared evidence", candidates)
+
+    # Same query, same chunks, cleared batch cache: scored again from scratch.
+    assert CountingReranker.pairs_scored == first * 2
+
+    # With reuse on, the first pass fills the cache and the second is free.
+    index.reuse_pair_scores = True
+    index._rerank_cache.clear()
+    index.rerank("shared evidence", candidates)
+    filled = CountingReranker.pairs_scored
+    index._rerank_cache.clear()
+    index.rerank("shared evidence", candidates)
+    assert CountingReranker.pairs_scored == filled
+
+
+def test_facet_rerank_pool_token_cap_defaults_to_no_trimming() -> None:
+    """The token-mass cap is an ablation control, not the shipped behaviour."""
+    from contextbench.compiler.facets import _capped_by_token_mass
+
+    def evidence(rank: int, tokens: int) -> RankedEvidence:
+        return RankedEvidence(
+            rank=rank,
+            chunk=RetrievalChunk(
+                id=f"chunk-{rank}",
+                arm=RetrievalArm.COMPILER,
+                document_id="doc",
+                text="body text",
+                token_count=tokens,
+                source_node_ids=(f"node-{rank}",),
+                source_item_ids=(f"#/texts/{rank}",),
+            ),
+            scores=RetrievalScores(),
+        )
+
+    ranking = (evidence(1, 40), evidence(2, 40), evidence(3, 40))
+
+    assert _capped_by_token_mass(ranking, None) == ranking
+    assert len(_capped_by_token_mass(ranking, 100)) == 2
+    assert len(_capped_by_token_mass(ranking, 80)) == 2
+    # Never empty: dropping every candidate would be a correctness change.
+    assert len(_capped_by_token_mass(ranking, 1)) == 1
+    # Rank order is preserved; it trims the tail, it does not reorder.
+    assert [item.rank for item in _capped_by_token_mass(ranking, 100)] == [1, 2]

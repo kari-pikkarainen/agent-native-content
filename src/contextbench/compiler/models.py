@@ -92,6 +92,7 @@ class CompilerConfig(BaseModel):
     query_facet_rerank_strategy: Literal["batched", "single_pass"] = "batched"
     node_rerank_candidate_limit: int = Field(default=250, ge=1)
     query_facet_rerank_candidate_limit: int = Field(default=250, ge=1)
+    query_facet_rerank_token_target: int | None = Field(default=None, ge=1)
     page_neighbor_radius: int = Field(default=3, ge=0)
     page_neighbor_min_budget: int = Field(default=16384, ge=1)
     page_neighbor_origin_limit: int = Field(default=20, ge=1)

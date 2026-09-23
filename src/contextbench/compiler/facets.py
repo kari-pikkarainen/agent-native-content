@@ -18,6 +18,7 @@ class FacetRetrievalConfig(Protocol):
     query_facet_full_weight: float
     query_facet_rerank_strategy: Literal["batched", "single_pass"]
     query_facet_rerank_candidate_limit: int
+    query_facet_rerank_token_target: int | None
 
 _CLAUSE_BOUNDARY = re.compile(
     r"\s*(?:[,;]|\b(?:and|versus|vs\.?|while|whereas)\b)\s*",
@@ -54,6 +55,41 @@ def query_facets(
     return tuple(facets)
 
 
+def _capped_by_token_mass(
+    ranking: Sequence[RankedEvidence],
+    token_target: int | None,
+) -> tuple[RankedEvidence, ...]:
+    """Trim a ranking to a cumulative token mass, keeping rank order.
+
+    ``None`` -- the default -- leaves the ranking exactly as retrieved, so the
+    shipped behaviour is unchanged and this is reachable as an ablation
+    control rather than being the new normal.
+
+    This is the plan's "reduce the compiler rerank pool by token mass so it
+    matches the baselines in scored tokens". Measured on two cached documents
+    with the pinned cross-encoder, the premise does not hold: one query's facet
+    stage scores 750 pairs over 57,307 tokens while the fixed arm scores 130
+    pairs over 80,668, so the compiler is already at 0.71x the baseline's token
+    mass and 5.8x its pair count. Equalising token mass therefore cannot save
+    time at the shipped setting -- it would license *more* tokens, not fewer.
+    The field exists because the plan asks for it and because a smaller target
+    is a legitimate ablation, not because it is expected to pay.
+
+    At least one candidate is always kept: an empty ranking would silently
+    drop a query's evidence, which is a correctness change, not a cost one.
+    """
+    if token_target is None:
+        return tuple(ranking)
+    kept: list[RankedEvidence] = []
+    total = 0
+    for evidence in ranking:
+        if kept and total + evidence.chunk.token_count > token_target:
+            break
+        kept.append(evidence)
+        total += evidence.chunk.token_count
+    return tuple(kept)
+
+
 def retrieve_faceted(
     index: HybridIndex,
     query: str,
@@ -76,13 +112,18 @@ def retrieve_faceted(
     if not facets:
         return index.rerank(query, ranked)
 
-    candidate_rankings = [tuple(ranked)]
+    candidate_rankings = [
+        _capped_by_token_mass(ranked, config.query_facet_rerank_token_target)
+    ]
     candidate_rankings.extend(
-        index.retrieve_candidates(
-            facet,
-            token_budget=token_budget,
-            document_ids=document_ids,
-            maximum_rerank_limit=config.query_facet_rerank_candidate_limit,
+        _capped_by_token_mass(
+            index.retrieve_candidates(
+                facet,
+                token_budget=token_budget,
+                document_ids=document_ids,
+                maximum_rerank_limit=config.query_facet_rerank_candidate_limit,
+            ),
+            config.query_facet_rerank_token_target,
         )
         for facet in facets
     )
