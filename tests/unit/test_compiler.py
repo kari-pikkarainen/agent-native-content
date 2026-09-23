@@ -1647,17 +1647,38 @@ def test_page_neighbor_windows_carry_no_furniture(tmp_path: Path) -> None:
 def test_simple_query_does_not_activate_specialized_operators(
     compiler_fixture,
 ) -> None:
+    """A one-word query engages only the default expansion, never a specialist.
+
+    Before the Phase 1 freeze this asserted an empty operator set under the
+    defaults. The freeze switched paragraph sibling expansion on by default,
+    so under the frozen defaults ``sibling`` now fires on this query -- that is
+    the configuration change, not a regression. The original premise is kept
+    by switching siblings off explicitly, and the frozen behaviour is asserted
+    beside it so neither can drift unnoticed.
+    """
     _source, _ir, scope, counter = compiler_fixture
 
-    packet = compile_context(
+    frozen = compile_context(
         "revenue",
         scope,
         40,
         compiler_config(page_neighbor_radius=0),
         tokenizer=counter,
     )
+    without_siblings = compile_context(
+        "revenue",
+        scope,
+        40,
+        compiler_config(
+            page_neighbor_radius=0,
+            include_previous_sibling=False,
+            include_next_sibling=False,
+        ),
+        tokenizer=counter,
+    )
 
-    assert packet.metadata["active_operators"] == ""
+    assert frozen.metadata["active_operators"] == "sibling"
+    assert without_siblings.metadata["active_operators"] == ""
 
 
 @pytest.mark.parametrize("budget", range(0, 21))
@@ -1831,9 +1852,23 @@ def test_existing_packing_strategies_are_unchanged_by_adaptive(
     as its selection, and this pins that the refactor changed nothing a
     control arm can see. If one of these moves, the ablation has stopped being
     a control and any comparison drawn against it is void.
+
+    The pool is built with sibling expansion off, pinned explicitly. That was
+    the default when these digests were derived; the Phase 1 freeze turned it
+    on, which changes the *candidate pool* on this fixture but not the packing
+    function this test certifies. Re-recording the digests against the new
+    pool would have discarded their derivation from the verbatim pre-change
+    copy, so the pool is held fixed instead.
     """
     scope, counter = _adaptive_scope(tmp_path)
-    pool = _pool(ADAPTIVE_QUERY, scope, counter, budget)
+    pool = _pool(
+        ADAPTIVE_QUERY,
+        scope,
+        counter,
+        budget,
+        include_previous_sibling=False,
+        include_next_sibling=False,
+    )
 
     packet = pack_candidates(
         ADAPTIVE_QUERY,

@@ -51,8 +51,16 @@ from contextbench.retrieval.models import (
 # the key moved anyway; that is luck, not a guarantee. It is not silent, which
 # is the part that matters: ``HybridIndex.load`` compares full ``RetrievalChunk``
 # models, so a key collision with different content raises rather than serving
-# the wrong vectors. Rekeying on chunk content belongs in its own commit, since
-# it invalidates every index artifact at once.
+# the wrong vectors. (Rekeying on chunk content has since landed in its own
+# commit, 9db9c5d.)
+#
+# The Phase 1 freeze -- sibling expansion switched on by default -- did not
+# bump this, deliberately. A default change moves packets, but ``compiler_config``
+# is hashed from the full ``CompilerConfig`` and emitted into every packet's
+# metadata, so packets from either side of the freeze already differ in their
+# own metadata. That is "anything a config already records", which the first
+# paragraph says to leave alone. Bumping would spend the one signal reserved
+# for changes a config cannot reveal on a change it does.
 COMPILER_VERSION = "0.10.0"
 
 # ``priority_tier`` states a candidate's class and nothing else. It must never
@@ -78,8 +86,12 @@ class CompilerConfig(BaseModel):
     retrieval: RetrievalConfig = Field(default_factory=RetrievalConfig)
     include_heading_context: bool = True
     heading_context_depth: int | None = Field(default=None, ge=1)
-    include_previous_sibling: bool = False
-    include_next_sibling: bool = False
+    # Frozen on for Phase 1. Measured under quote policy v2 in
+    # ``xldev24-v2-sibON-nbON-08acd28``: sibling expansion carries the quote
+    # recall gain (0.185/0.278/0.347 -> 0.199/0.319/0.361 at 2K/4K/8K) while
+    # page neighbours, left on, keep the -3pp non-inferiority margin at 8/8.
+    include_previous_sibling: bool = True
+    include_next_sibling: bool = True
     sibling_neighbor_limit: int = Field(default=1, ge=0)
     sibling_score_penalty: float = Field(default=0.85, gt=0, le=1)
     group_adjacent_list_items: bool = True

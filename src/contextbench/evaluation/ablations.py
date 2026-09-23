@@ -23,14 +23,15 @@ leaving adjacent list items grouped would contradict that in plain terms --
 and once off at D1 it has to come back somewhere, which can only be the
 sibling step.
 
-The alternative reading is defensible and is recorded because the two switches
-have different shipped status: ``include_previous_sibling`` and
-``include_next_sibling`` ship **off** while ``group_adjacent_list_items``
-ships **on**, so "turn on sibling expansion" means a change from the shipped
-configuration for the first two and no change for the third. A reader who took
-"sibling expansion" to mean the paragraph switches alone would produce a
-D1-to-D3 ladder in which list items are always grouped. If that variant is
-ever run it should be labelled distinctly rather than called D3.
+The alternative reading is defensible and is recorded because the switches
+had different shipped status when the ladder was defined:
+``include_previous_sibling`` and ``include_next_sibling`` shipped **off**
+while ``group_adjacent_list_items`` shipped **on**. Since the Phase 1 freeze
+all three ship on, which removes that asymmetry but not the ambiguity in the
+spec's wording. A reader who took "sibling expansion" to mean the paragraph
+switches alone would produce a D1-to-D3 ladder in which list items are always
+grouped. If that variant is ever run it should be labelled distinctly rather
+than called D3.
 
 **Keyed joins, page neighbours and query faceting.** Section 25's ladder stops
 at table preservation, so the two later operators -- keyed table joins and
@@ -42,7 +43,15 @@ switching it off in D1 would confound the thing the ladder exists to isolate.
 ``SHIPPED`` is not a spec ablation. It is the configuration the benchmark
 actually runs, included because none of D1 to D4 is, and a reader comparing
 the ladder against a published headline number would otherwise be comparing
-against something unlisted.
+against something unlisted. It is ``CompilerConfig()`` with nothing overridden,
+so its meaning moves with the defaults.
+
+Since the Phase 1 freeze it is exactly D4 plus the two later operators: every
+D4 switch at the same value, keyed table joins on, and a page-neighbour radius
+of 3. Before the freeze it was *not* a superset of D4 -- it had the paragraph
+sibling switches off where D4 had them on -- so a ladder run before and after
+the freeze has a different endpoint, and the two SHIPPED results are not the
+same configuration.
 """
 
 from collections.abc import Mapping

@@ -310,16 +310,22 @@ def evaluate_retrieval(
         bool,
         typer.Option(
             "--compiler-previous-sibling/--no-compiler-previous-sibling",
-            help="Expand a paragraph hit to the paragraph before it.",
+            help=(
+                "Expand a paragraph hit to the paragraph before it. On by "
+                "default since the Phase 1 freeze."
+            ),
         ),
-    ] = False,
+    ] = True,
     compiler_next_sibling: Annotated[
         bool,
         typer.Option(
             "--compiler-next-sibling/--no-compiler-next-sibling",
-            help="Expand a paragraph hit to the paragraph after it.",
+            help=(
+                "Expand a paragraph hit to the paragraph after it. On by "
+                "default since the Phase 1 freeze."
+            ),
         ),
-    ] = False,
+    ] = True,
     compiler_group_adjacent_list_items: Annotated[
         bool,
         typer.Option(

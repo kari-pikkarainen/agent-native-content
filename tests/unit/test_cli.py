@@ -771,6 +771,20 @@ def test_the_ablation_ladder_is_monotone_and_ends_below_the_shipped_config() -> 
     assert configs["SHIPPED"].keyed_table_join_enabled is True
     assert configs["SHIPPED"].page_neighbor_radius > 0
     assert configs["SHIPPED"] != configs["D4"]
+    # Since the Phase 1 freeze the ladder has a clean endpoint: SHIPPED is D4
+    # with exactly the two later operators added, and every D4 switch at the
+    # same value. Before the freeze this was false -- SHIPPED had the paragraph
+    # sibling switches off where D4 had them on.
+    beyond_d4 = {"keyed_table_join_enabled", "page_neighbor_radius"}
+    assert {
+        field: getattr(configs["SHIPPED"], field)
+        for field in ABLATION_FIELDS
+        if field not in beyond_d4
+    } == {
+        field: getattr(configs["D4"], field)
+        for field in ABLATION_FIELDS
+        if field not in beyond_d4
+    }
 
 
 def test_ablation_settings_reach_the_published_manifest() -> None:
