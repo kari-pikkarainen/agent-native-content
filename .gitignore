@@ -21,3 +21,7 @@ artifacts/**
 !artifacts/indexes/.gitkeep
 !artifacts/runs/
 !artifacts/runs/.gitkeep
+
+# Secrets: API keys belong in the shell environment, never in the repository.
+.env
+.env.*

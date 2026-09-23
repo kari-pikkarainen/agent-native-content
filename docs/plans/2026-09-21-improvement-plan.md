@@ -23,6 +23,13 @@ was done. Where the work departed from a task, the record says so:
 - Task 8's D1 to D4 ladder sets the page-neighbour radius to zero on every
   rung, so two configurations outside the spec series were added to attribute
   page neighbours and keyed joins.
+- Task 10 and Gate 2 are run as a two-stage gate, not one run: the
+  six-question `xlholdout6c` generation run only authorises a preregistered
+  `xldev24` run, and Phase 3 opens only if that run corroborates it. The
+  `xlholdout6b` generation run that Phase 2 task 1 expects is not made,
+  because that holdout was inspected before its preregistration and could not
+  confirm anything. See
+  `docs/research-log/prereg-xlholdout6c-generation.md`.
 - Beyond the tasks, exact quote recall was re-scored twice (policies v2 and v3)
   after an audit found the metric measuring annotation style, and the
   configuration was frozen with sibling expansion on. See
