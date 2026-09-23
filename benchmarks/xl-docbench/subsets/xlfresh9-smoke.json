@@ -1,0 +1,44 @@
+{
+  "name": "xlfresh9-smoke",
+  "dataset": "microsoft/XL-DocBench",
+  "release_version": "xldocbench_strict_1345_v1",
+  "release_revision": "72954bd70ffffe230f08b57c57fa9274ec14d7ea",
+  "selection_seed": 20260923,
+  "selection_method": "SMOKE TEST, NOT EVIDENCE. Metadata-only selection from committed XL100, made before any parse, retrieval result or answer of these questions was seen. Keep questions whose question id and every source document are untouched by all other committed subsets. Keep those whose documents total 150 pages or fewer, plus those whose documents were already parsed, in document-id order, before the rule was set (doc_000004, doc_000009, doc_000019, doc_000020). That selected 16 questions. Every source whose download failed is excluded and not substituted: doc_000028 (failed to download doc_000028 from https://www.imf.org/exter); doc_000096 (downloaded size changed for doc_000096: got 8891447, expecte); doc_000124 (downloaded content for doc_000124 is not a PDF); doc_000125 (failed to download doc_000125 from https://www.imf.org/-/med); doc_000288 (failed to download doc_000288 from https://www.imf.org/-/med); doc_000312 (failed to download doc_000312 from https://www.imf.org/-/med). Four of the six failures are one publisher refusing automated access, so the finance_business domain is under-represented. The page cap was set by the owner's one-hour parsing limit. 9 questions remain, 4 answerable; retrieval metrics are vacuous on the 5 unanswerable ones, so no comparison between arms may be drawn from this subset.",
+  "question_ids": [
+    "adubench_single_000034",
+    "adubench_single_000038",
+    "adubench_single_000695",
+    "adubench_single_000843",
+    "adubench_single_000848",
+    "adubench_single_000896",
+    "adubench_single_000918",
+    "adubench_single_000976",
+    "adubench_single_001267"
+  ],
+  "strata": {
+    "purpose": "smoke_test_not_evidence",
+    "answerable": 4,
+    "unanswerable": 5,
+    "source_documents": 9,
+    "source_document_ids": [
+      "doc_000004",
+      "doc_000019",
+      "doc_000020",
+      "doc_000077",
+      "doc_000081",
+      "doc_000108",
+      "doc_000121",
+      "doc_000150",
+      "doc_000299"
+    ],
+    "domains": {
+      "finance_business": 1,
+      "legal_regulation": 2,
+      "medical_clinical": 4,
+      "scientific_academic": 1,
+      "technical_engineering": 1
+    },
+    "source_pages": 2662
+  }
+}
