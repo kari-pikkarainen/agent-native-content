@@ -55,9 +55,19 @@ the other way**: the compiler trails fixed RAG at every budget, with the
 interval excluding zero at 4K and 16K. Both are in
 [the Gate 1 decision](docs/research-log/gate1-xlholdout6c-60e5836.md). The
 frozen configuration and its development evidence are in the
-[Phase 1 close-out](docs/research-log/phase1-closeout-c7e56fa.md). The next step
-is the confirmatory answer-generation run, which decides whether better page
-selection produces better answers at all.
+[Phase 1 close-out](docs/research-log/phase1-closeout-c7e56fa.md).
+
+**The first answer-generation test then failed.** On the same six holdout
+questions, with `gpt-6-astra` answering from each arm's saved contexts, the
+compiler's answers were no better than fixed RAG's at either budget: accuracy
+0.167 against 0.333 at 2K and 4K, citation entailment 0.333 against 0.500 at 2K
+and level at 4K. Under the
+[preregistered rule](docs/research-log/prereg-xlholdout6c-generation.md) that
+closes Gate 2 at its first stage: Phase 3 does not open and algorithm work
+pauses for a per-question failure analysis. Each difference is one question, and
+in both cells where the arms disagree, quote recall predicted the answer and
+page recall predicted the opposite. See
+[the Gate 2 decision](docs/research-log/gate2-stage1-xlholdout6c-generation.md).
 
 The frozen compiler leads the best RAG baseline on **page** recall on the
 24-question development set at every tested budget. On **exact quote** recall
@@ -549,10 +559,12 @@ gold pages or quotes, are defined in the
 **Gates 0 and 1 have passed**, recorded in
 [the Gate 0 decision](docs/research-log/gate0-rebaseline-67aef47.md) and
 [the Gate 1 decision](docs/research-log/gate1-xlholdout6c-60e5836.md). The
-active gate is now **Gate 2** of the
-[improvement plan](docs/plans/2026-09-21-improvement-plan.md): whether better
-evidence selection produces better answers, decided by a preregistered
-answer-generation run. The Gate 0 account below is kept as it was recorded.
+gate after them, **Gate 2** of the
+[improvement plan](docs/plans/2026-09-21-improvement-plan.md), asked whether
+better evidence selection produces better answers, and its first stage
+**failed**: see
+[the Gate 2 decision](docs/research-log/gate2-stage1-xlholdout6c-generation.md).
+The Gate 0 account below is kept as it was recorded.
 
 Gate 0 asked whether the low-budget advantage on this page was real or an
 artifact of broken measurement. It is real. It survived nine defect fixes,
@@ -617,11 +629,24 @@ and two mechanisms behind the second: the compiler reaches the right pages
 while missing the quoted spans on them, and in some packets it stops filling
 its budget where fixed RAG does not.
 
-**The active step is task 10, the confirmatory answer-generation run at 2K and
-4K.** It needs its own preregistration first, and that preregistration should
-state in advance the hypothesis the holdout raises: that contexts carrying
-fewer exact quoted passages may produce worse-supported answers despite
-reaching more gold pages.
+**Gate 2 failed at its first stage.** The
+[preregistered](docs/research-log/prereg-xlholdout6c-generation.md)
+answer-generation run over the holdout's saved contexts found the compiler's
+answers no better than fixed RAG's at 2K or 4K, and the hypothesis stated
+before the run — that contexts with fewer exact quoted passages would not
+produce better-supported citations — held. As preregistered, the larger
+`xldev24` generation run is not made, Phase 3 does not open, and algorithm work
+pauses.
+
+**The active step is the per-question failure analysis.** The
+[Gate 2 decision](docs/research-log/gate2-stage1-xlholdout6c-generation.md)
+names where it starts: why extra gold pages did not produce a correct answer on
+the question that decided the result, why the compiler under-fills its budget
+there, and whether its fragmented contexts — 79 short tagged items at 2K
+against fixed RAG's 4 windows — are themselves harder to answer from. That run
+also found that per-item prompt framing made the compiler's 2K prompt larger
+than fixed RAG's 4K prompt; whether the token budget should cover the rendered
+prompt rather than packed content is an open decision for the owner.
 
 `xlholdout6c` was frozen and
 [recorded](docs/research-log/xlholdout6c-freeze.md) with all six sources

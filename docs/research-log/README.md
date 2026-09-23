@@ -33,6 +33,9 @@ commit it was measured at.
    the frozen configuration and every Gate 1 pin.
 8. [Gate 1](gate1-xlholdout6c-60e5836.md) — the one holdout run: a pass on page
    recall, with exact quote recall pointing the other way.
+9. [Generation preregistration](prereg-xlholdout6c-generation.md) and
+   [Gate 2, stage 1](gate2-stage1-xlholdout6c-generation.md) — the answers
+   were no better than fixed RAG's, and the two-stage gate stopped at stage 1.
 
 Everything else in this directory is earlier development history. Several of
 those records describe configurations, metrics or holdouts that the chain

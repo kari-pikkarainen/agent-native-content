@@ -1,0 +1,52 @@
+{
+  "citation_entailment_prompt_sha256": "5e46900195755656701ff6ff783131b307598a2a68d3747d946d46c0ea39645b",
+  "config": {
+    "budgets": [
+      2048,
+      4096
+    ],
+    "citation_entailment_judge": true,
+    "max_output_tokens": 512,
+    "model": "gpt-6-astra",
+    "pricing": {
+      "cached_input_usd_per_million": 1.0,
+      "input_usd_per_million": 10.0,
+      "output_usd_per_million": 50.0
+    },
+    "prompt_version": "answer-json-v1",
+    "reasoning_effort": "low",
+    "seed": null,
+    "systems": [
+      "fixed",
+      "structural",
+      "compiler"
+    ],
+    "temperature": null
+  },
+  "config_sha256": "d18e488151dde14629f3ca9568e064839843635c7ca8fdaf454e72372fd7ffec",
+  "created_at": "2026-09-23T16:17:02.883085+00:00",
+  "embedding_model": "BAAI/bge-small-en-v1.5",
+  "embedding_revision": "5c38ec7c405ec4b44b94cc5a9bb96e735b38267a",
+  "expected_retrieval_artifact_sha256": "02aef5206febbc4c3811e8caf9aad9a0a9da92729e7105aa3fd2c3e810b1aab0",
+  "git_commit": "6768f8dd9f6badd1bc94304bd076c2e1686d9622",
+  "git_dirty": false,
+  "prompt_sha256": "050d25fb1c866b01e732d09c67215c4f4c8cc4fa10a22b74174abec7c7d39bf4",
+  "provider": "openai",
+  "provider_version": "2.54.0",
+  "question_ids": [
+    "adubench_single_000181",
+    "adubench_single_001173",
+    "adubench_single_000826",
+    "adubench_single_000331",
+    "adubench_single_000255",
+    "adubench_single_001346"
+  ],
+  "reranker_model": "cross-encoder/ms-marco-MiniLM-L-6-v2",
+  "reranker_revision": "233902d25c440f23af6f7d6e94d2946bac0bee0a",
+  "retrieval_artifact_sha256": "02aef5206febbc4c3811e8caf9aad9a0a9da92729e7105aa3fd2c3e810b1aab0",
+  "retrieval_artifact_verified": true,
+  "retrieval_run_id": "xlholdout6c-gate1-60e5836",
+  "run_id": "xlholdout6c-generation-astra",
+  "seed": null,
+  "temperature": null
+}
