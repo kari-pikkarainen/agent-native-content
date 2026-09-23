@@ -454,7 +454,8 @@ The primary retrieval metric is **gold-evidence page recall at a fixed packed
 token budget**. Runs also record:
 
 - full evidence-page coverage;
-- exact normalized evidence-quote recall and full quote coverage;
+- exact evidence-quote recall and full quote coverage, under a recorded quote
+  match policy (see [the evaluation spec](docs/specs/evaluation.md));
 - tokens required to reach full evidence;
 - packed context tokens and approximate redundancy; and
 - query-time retrieval/compilation latency.
@@ -619,10 +620,11 @@ state in advance the hypothesis the holdout raises: that contexts carrying
 fewer exact quoted passages may produce worse-supported answers despite
 reaching more gold pages.
 
-`xlholdout6c` is frozen and
-[recorded](docs/research-log/xlholdout6c-freeze.md), with all six sources
-preflight-verified. It is run once, at Gate 1, with the configuration chosen
-on `xldev24`, and is never tuned on.
+`xlholdout6c` was frozen and
+[recorded](docs/research-log/xlholdout6c-freeze.md) with all six sources
+preflight-verified, and has now been run once, at Gate 1, with the
+configuration chosen on `xldev24`. It is spent: it is not run again and is
+never tuned on.
 
 One Gate 0 item is deferred rather than done: the exploratory answer-generation
 run over the re-baselined `xlholdout6b` contexts needs an API key and a fresh,

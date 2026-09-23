@@ -71,8 +71,12 @@ Evidence text
 The compiler does not include entire parent sections.
 
 For a selected paragraph, the immediate previous and next paragraph siblings
-can be enabled independently. Siblings must share the same parent and heading
-path. Their fused and reranked scores receive the configured penalty.
+can be enabled independently. Both are **on by default** since the Phase 1
+freeze at `19bf05e`, where they were measured as the expansion operator that
+recovers exact quoted evidence. Siblings must share the same parent and heading
+path. Their fused and reranked scores receive the configured penalty; the
+sibling's own text is not scored, so its `reranked` value is the anchor's,
+shrunk by that penalty.
 
 For a selected list item, adjacent items under the same list parent are included
 up to `list_neighbor_limit`. Distance compounds the configured list penalty.

@@ -10,3 +10,30 @@ supporting current public claims lives in [`results/`](../../results/README.md).
 
 Do not treat a failure-selected diagnostic, smoke test, or development result
 as an independent validation result.
+
+## Start here
+
+The current results rest on this chain of records, in order. Each names the
+commit it was measured at.
+
+1. [Gate 0 re-baseline](gate0-rebaseline-67aef47.md) — the measurement repaired
+   and the low-budget advantage confirmed on development data.
+2. [`xlholdout6c` freeze](xlholdout6c-freeze.md) — the Gate 1 holdout selected
+   and frozen before any Phase 1 change.
+3. [Heading-free compiler search](compiler-heading-free-edd196f.md) — rejected
+   under a joint-metric rule.
+4. [Phase 1 correctness fixes](phase1-correctness-fixes-9110e70.md) — three
+   defects, including IR reading order, measured per arm.
+5. [Adaptive packing: preregistration](prereg-adaptive-packing.md) and
+   [decision](adaptive-packing-decision-3b77e75.md) — rejected, and the
+   page-versus-quote trade traced to coverage packing.
+6. [Factorial and expansion ladder](phase1-ablations-6cc7fd9.md) — what the
+   page advantage does and does not come from.
+7. [Phase 1 close-out](phase1-closeout-c7e56fa.md) — the quote-metric audit,
+   the frozen configuration and every Gate 1 pin.
+8. [Gate 1](gate1-xlholdout6c-60e5836.md) — the one holdout run: a pass on page
+   recall, with exact quote recall pointing the other way.
+
+Everything else in this directory is earlier development history. Several of
+those records describe configurations, metrics or holdouts that the chain
+above supersedes; read them as history, not as current claims.

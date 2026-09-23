@@ -91,8 +91,8 @@ Every question × system × budget cell records:
 - evidence-page recall and full-evidence coverage;
 - content-verified page recall, which credits a referenced node's pages only
   when that node's full normalized source text is present in the context;
-- exact normalized evidence-quote recall and full-quote coverage when quotes
-  are supplied by the dataset;
+- exact evidence-quote recall and full-quote coverage when quotes are supplied
+  by the dataset, scored under the quote match policy described below;
 - tokens to full evidence, when full coverage is reached;
 - approximate context redundancy.
 
@@ -102,11 +102,42 @@ question with no annotated gold pages has vacuous recall `1.0`, full coverage
 `true`, and tokens-to-full `0`; this convention applies identically to all
 systems and must be disclosed when interpreting absolute averages.
 
-Evidence-quote recall is the fraction of non-empty annotated quotes that occur
-verbatim after case-folding and whitespace normalization in the packed context.
-A question without annotated quotes has vacuous quote recall `1.0` and full
-quote coverage `true`. Quote recall is intentionally strict and complements,
-rather than replaces, page recall.
+Evidence-quote recall is the fraction of non-empty annotated quotes that the
+packed context contains. A question without annotated quotes has vacuous quote
+recall `1.0` and full quote coverage `true`; averages reported as decision
+metrics are therefore taken over the quote-eligible questions only. Quote
+recall is intentionally strict and complements, rather than replaces, page
+recall.
+
+Whether a context contains a quote is decided by a **quote match policy**, and
+every run summary records the policy it was scored under in
+`quote_match_policy`. The current policy is
+`nfkc-unified-punctuation-ordered-elision-v3`:
+
+- Quote and context are normalized identically: Unicode NFKC; dash,
+  apostrophe, quotation-mark and space variants unified; zero-width characters
+  and soft hyphens removed; then case-folded, with whitespace collapsed.
+- A quote with no elision marker must occur contiguously.
+- A quote containing an elision marker (`...` or `…`) is matched when every
+  fragment between markers occurs, in document order, each after the previous
+  one. This includes a quote with a single leading or trailing marker, whose
+  one fragment must occur. A quote made only of markers never matches.
+- Punctuation is not stripped. A quote that differs from the source by an
+  annotator's colon, a table read across its cells or a dropped space does not
+  match, because counting it would make the metric agree with the annotation
+  rather than measure retrieval.
+
+Figures scored under different policies are not comparable. An artifact
+without the field was scored under `literal-casefold-v1`, the original rule:
+a verbatim substring test after case-folding and whitespace collapse, under
+which no elided quote could ever match.
+
+The normalization is applied to the quote comparison only. Content-verified
+page recall keeps its own, narrower normalization, because both of its sides
+come from the same parse. Gold quotes are never edited: where a gold quote is
+not a verbatim transcription of its source, or carries its own OCR error, it
+stays unmatchable for every system alike. On the development set that is most
+of the gold quotes that miss; see `docs/research-log/phase1-closeout-c7e56fa.md`.
 
 Content-verified page recall is a conservative provenance/content check. A
 selected chunk does not inherit every page from a multi-page source node unless
