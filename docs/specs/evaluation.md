@@ -80,33 +80,76 @@ is the variable, system-dependent part of the answer prompt: each item
 rendered as
 
 ```text
-<evidence id="{evidence_id}">
+<evidence id="{label}">
 {content}
 </evidence>
 ```
 
-with items joined by a blank line — tags, evidence IDs, joiners and content.
-The question and the fixed system instructions are identical across arms and
-are not counted. One renderer, `src/contextbench/retrieval/rendering.py`,
-produces both the prompt a model is shown and the cost the packers are charged,
-so the two cannot drift.
+with items joined by a blank line — tags, labels, joiners and content. The
+question and the fixed system instructions are identical across arms and are
+not counted. One renderer, `src/contextbench/retrieval/rendering.py`, produces
+both the prompt a model is shown and the cost the packers are charged, so the
+two cannot drift.
 
 Budgets previously counted packed content only. On a poorly parsed document
 that let the compiler pack 500 items at a median of 6 tokens: 3,772 packed
 tokens at a nominal 4K budget became a 28,954-token prompt
-(`docs/research-log/gate2-failure-analysis.md`). Measured with `o200k_base`
-over real packets, framing is a median **50 tokens per item** (range 40–60):
-10 for the tags and about 39 for the 73-character evidence ID. The joiner is
-free under this tokenizer, because a closing `>` and the blank line that
-follows it tokenise together.
+(`docs/research-log/gate2-failure-analysis.md`).
+
+#### Render versions
+
+What `{label}` is depends on the render version, which is the only difference
+between them:
+
+| Version | Label | Framing per item, `o200k_base` |
+| --- | --- | --- |
+| `evidence-render-v1` | the full 73-character evidence ID | median **50** tokens (38–60) |
+| `evidence-render-v2` | a positional alias, `E1`, `E2`, … in packet order | median **13** tokens (12–14) |
+
+Measured over 3,000 real node and fixed-window items from six cached documents.
+Under v1 about 39 of the 50 are the evidence ID, because hex digits tokenise
+badly; the tags are about 10. The joiner is free under `o200k_base` in both
+versions, because a closing `>` and the blank line after it tokenise together.
+
+**v2 is the default for new runs. v1 is kept unchanged** so that every earlier
+run, and in particular the published Gate 2 generation run, stays reproducible
+byte for byte. The version is `CompilerConfig.evidence_render_version`, read by
+every arm, recorded in the retrieval manifest, on every packet, and on every
+`retrieval.jsonl` record. A packet or record without the field predates it and
+was rendered under v1.
+
+**The alias is presentation only.** Every packet, record and citation keeps the
+full, provenance-bearing evidence ID. Under v2 the generation runner renders
+aliases in the answer prompt and asks the model to cite them, then maps each
+cited alias back to the full ID of the item at that position before anything is
+scored or recorded. An alias the packet never assigned is recorded as the model
+wrote it and scores as an invalid citation, exactly as an unknown ID does under
+v1. The citation-entailment prompt shows each cited item under the alias the
+answer prompt gave it, not renumbered among the cited subset. Generation reads
+the render version from the retrieval run's manifest rather than from its own
+configuration, so a model is always shown what the budget priced; the
+generation manifest records the version and the hash of the instructions
+actually sent.
+
+**An alias's cost depends on its slot.** `E9` and `E10` need not tokenise the
+same, so each candidate is priced at the slot it would actually take — the
+number of items already accepted, since a rejected candidate takes none. Under
+`o200k_base` a one- to three-digit number is a single token, so `E1` to `E999`
+cost the same and `E1000` one token more; a character-count tokenizer
+distinguishes every digit boundary, and the tests use one for that reason. The
+compiler's coverage selector prices each candidate once at slot 0 and adjusts
+by slot; the emission loop prices each item at its real slot.
 
 Every packer — fixed, structural and long-context (`pack_evidence`) and the
 compiler (`pack_candidates`, including its coverage selector) — charges each
 candidate its rendered cost, skips any that does not fit, and continues, so a
 later smaller item can still use the space. The incremental sum is exact for
-`o200k_base` and for whitespace tokenizers; each packer also re-renders the
-finished block and refuses to emit a packet over budget, so a tokenizer that
-broke that assumption would fail loudly rather than overrun silently.
+`o200k_base` and for whitespace tokenizers under both render versions: over 400
+random real packets per version, and three 1,200-item packets that run past
+`E1000`, the incremental sum never differed from the finished block. Each
+packer also re-renders the finished block and refuses to emit a packet over
+budget, so a tokenizer that broke that assumption would fail loudly rather
+than overrun silently.
 
 The accounting is `CompilerConfig.budget_accounting`, one field read by every
 arm, recorded in the run manifest. `rendered_evidence` is the default;

@@ -9,7 +9,9 @@ from contextbench.evaluation.models import DEFAULT_TOKEN_BUDGETS
 from contextbench.retrieval import RetrievalConfig
 from contextbench.retrieval.rendering import (
     DEFAULT_BUDGET_ACCOUNTING,
+    DEFAULT_EVIDENCE_RENDER_VERSION,
     BudgetAccounting,
+    EvidenceRenderVersion,
 )
 
 
@@ -82,6 +84,15 @@ class FactorialConfig(BaseModel):
     # The same accounting the benchmark runner applies to every arm; every
     # factorial cell packs through ``pack_candidates``, so one value covers all.
     budget_accounting: BudgetAccounting = DEFAULT_BUDGET_ACCOUNTING
+    # How evidence is rendered, and therefore what the rendered budget prices:
+    # ``evidence-render-v2`` (positional aliases, the default for new runs) or
+    # ``evidence-render-v1`` (full evidence IDs, as every earlier run used). Read
+    # by every arm, like ``budget_accounting``, and recorded in the manifest;
+    # generation reads it back from the retrieval manifest, so what a model is
+    # shown is what the budget priced.
+    evidence_render_version: EvidenceRenderVersion = (
+        DEFAULT_EVIDENCE_RENDER_VERSION
+    )
 
     @model_validator(mode="after")
     def configuration_is_complete_and_fair(self) -> "FactorialConfig":
@@ -122,6 +133,11 @@ class FactorialEvaluationRecord(BaseModel):
     # Same meaning as on ``RetrievalEvaluationRecord``; see there.
     rendered_evidence_tokens: int | None = Field(default=None, ge=0)
     budget_accounting: Literal["rendered_evidence", "content"] | None = None
+    # How the evidence block was rendered, which the rendered count priced.
+    # ``None`` on records that predate the field: those were v1.
+    evidence_render_version: (
+        Literal["evidence-render-v1", "evidence-render-v2"] | None
+    ) = None
     selected_evidence_ids: tuple[str, ...]
     selected_pages: dict[str, tuple[int, ...]]
     gold_pages: dict[str, tuple[int, ...]]

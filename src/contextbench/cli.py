@@ -365,6 +365,16 @@ def evaluate_retrieval(
             ),
         ),
     ] = "rendered_evidence",
+    evidence_render_version: Annotated[
+        str,
+        typer.Option(
+            help=(
+                "How evidence is rendered and priced: evidence-render-v2 "
+                "(positional aliases E1, E2, ...; the default) or "
+                "evidence-render-v1 (full evidence IDs, as earlier runs used)."
+            ),
+        ),
+    ] = "evidence-render-v2",
     run_id: Annotated[
         str | None,
         typer.Option(help="Optional immutable run identifier."),
@@ -426,6 +436,7 @@ def evaluate_retrieval(
             preserve_tables=compiler_preserve_tables,
             page_neighbor_radius=compiler_page_neighbor_radius,
             budget_accounting=budget_accounting,
+            evidence_render_version=evidence_render_version,
         ),
     )
     try:
@@ -559,6 +570,15 @@ def evaluate_factorial(
             ),
         ),
     ] = "rendered_evidence",
+    evidence_render_version: Annotated[
+        str,
+        typer.Option(
+            help=(
+                "How evidence is rendered and priced in every cell: "
+                "evidence-render-v2 or evidence-render-v1. See eval-retrieval."
+            ),
+        ),
+    ] = "evidence-render-v2",
     run_id: Annotated[
         str | None,
         typer.Option(help="Optional immutable factorial run identifier."),
@@ -612,6 +632,7 @@ def evaluate_factorial(
                 ),
             ),
             budget_accounting=budget_accounting,
+            evidence_render_version=evidence_render_version,
             **factors,
         )
     except ValidationError as exc:

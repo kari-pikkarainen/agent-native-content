@@ -11,8 +11,10 @@ from contextbench.ir.tokenizer import TokenCounter
 from contextbench.retrieval.models import ContextItem, ContextPacket
 from contextbench.retrieval.rendering import (
     DEFAULT_BUDGET_ACCOUNTING,
+    DEFAULT_EVIDENCE_RENDER_VERSION,
     BudgetAccounting,
     EvidenceBudget,
+    EvidenceRenderVersion,
     verified_count,
 )
 
@@ -55,6 +57,7 @@ def pack_candidates(
     strategy: Literal["ranked", "coverage", "adaptive"] = "ranked",
     metadata: dict[str, str],
     budget_accounting: BudgetAccounting = DEFAULT_BUDGET_ACCOUNTING,
+    evidence_render_version: EvidenceRenderVersion = DEFAULT_EVIDENCE_RENDER_VERSION,
 ) -> ContextPacket:
     """Pack candidates deterministically and never exceed the token budget.
 
@@ -84,6 +87,7 @@ def pack_candidates(
             tokenizer=tokenizer,
             stop_when_breadth_is_exhausted=strategy == "adaptive",
             budget_accounting=budget_accounting,
+            evidence_render_version=evidence_render_version,
         )
         candidates = (
             selected
@@ -97,7 +101,9 @@ def pack_candidates(
         if value
     }
     total = 0
-    budget = EvidenceBudget(token_budget, tokenizer, budget_accounting)
+    budget = EvidenceBudget(
+        token_budget, tokenizer, budget_accounting, evidence_render_version
+    )
     for candidate in candidates:
         chunk = candidate.chunk
         token_count = tokenizer.count(chunk.text)
@@ -127,6 +133,7 @@ def pack_candidates(
         [(item.evidence_id, item.content) for item in items],
         tokenizer,
         "rendered_evidence",
+        evidence_render_version,
     )
     if budget_accounting == "rendered_evidence" and rendered > token_budget:
         raise ValueError(
@@ -145,6 +152,7 @@ def pack_candidates(
         },
         rendered_token_count=rendered,
         budget_accounting=budget_accounting,
+        evidence_render_version=evidence_render_version,
     )
 
 
@@ -228,6 +236,7 @@ def _coverage_selection(
     tokenizer: TokenCounter,
     stop_when_breadth_is_exhausted: bool = False,
     budget_accounting: BudgetAccounting = DEFAULT_BUDGET_ACCOUNTING,
+    evidence_render_version: EvidenceRenderVersion = DEFAULT_EVIDENCE_RENDER_VERSION,
 ) -> tuple[tuple[CompilerCandidate, ...], tuple[CompilerCandidate, ...]]:
     """Select evidence by marginal query, facet, reference, and source coverage.
 
@@ -244,6 +253,11 @@ def _coverage_selection(
     also the denominator of the density term in ``_coverage_key``, so a
     six-token fragment wrapped in some twenty tokens of framing is priced as
     what it costs the prompt, not as what it contributes to it.
+
+    Under ``evidence-render-v2`` a label is the item's slot, so costs are
+    priced once at slot 0 and adjusted by ``EvidenceBudget.slot_adjustment``
+    for the slot the next selection would take -- the number already
+    selected, because selections are emitted in selection order.
     """
     query_terms = _terms(query)
     facet_terms = tuple(
@@ -253,12 +267,15 @@ def _coverage_selection(
     query_references = {
         _normalize(reference) for reference in _TABLE_REFERENCE.findall(query)
     }
-    budget = EvidenceBudget(token_budget, tokenizer, budget_accounting)
+    budget = EvidenceBudget(
+        token_budget, tokenizer, budget_accounting, evidence_render_version
+    )
     prepared = []
     for candidate in candidates:
-        last_cost, charged_cost = budget.item_costs(
+        last_cost, charged_cost = budget.item_costs_at(
             _compiler_evidence_id(candidate.chunk.id, candidate.chunk.text),
             candidate.chunk.text,
+            0,
         )
         prepared.append(
             (
@@ -285,7 +302,10 @@ def _coverage_selection(
         index for index, required in enumerate(facet_terms) if required
     }
     while prepared:
-        fitting = [value for value in prepared if value[4] <= remaining]
+        last_adjustment, charged_adjustment = budget.slot_adjustment(len(selected))
+        fitting = [
+            value for value in prepared if value[4] + last_adjustment <= remaining
+        ]
         if not fitting:
             break
         minimum_tier = min(value[0].priority_tier for value in fitting)
@@ -314,7 +334,7 @@ def _coverage_selection(
         prepared.remove(best)
         candidate, token_count, terms, references, _last_cost = best
         selected.append(candidate)
-        remaining -= token_count
+        remaining -= token_count + charged_adjustment
         matched_terms = terms.intersection(query_terms)
         covered_terms.update(matched_terms)
         covered_facets.update(

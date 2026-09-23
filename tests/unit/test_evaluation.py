@@ -1360,6 +1360,14 @@ def test_run_records_both_token_counts_and_the_accounting(
 
     assert manifest["config"]["compiler"]["budget_accounting"] == accounting
     assert {row["budget_accounting"] for row in rows} == {accounting}
+    # New runs render positional aliases, and every record says so.
+    assert (
+        manifest["config"]["compiler"]["evidence_render_version"]
+        == "evidence-render-v2"
+    )
+    assert {row["evidence_render_version"] for row in rows} == {
+        "evidence-render-v2"
+    }
     for row in rows:
         assert row["rendered_evidence_tokens"] >= row["token_count"]
         enforced = (

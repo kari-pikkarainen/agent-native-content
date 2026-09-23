@@ -32,7 +32,14 @@ from contextbench.generation.scoring import (
     token_f1_score,
 )
 from contextbench.retrieval import ContextItem, ContextPacket
-from contextbench.retrieval.rendering import render_evidence_block
+from contextbench.retrieval.rendering import (
+    EVIDENCE_RENDER_V1,
+    EVIDENCE_RENDER_V2,
+    EvidenceRenderVersion,
+    evidence_labels,
+    render_evidence_block,
+    render_evidence_item,
+)
 
 
 class GenerationError(RuntimeError):
@@ -46,6 +53,25 @@ ANSWER_PROMPT_INSTRUCTIONS = (
     "Return only valid JSON with this shape: "
     '{"answer":"short answer","citations":["evidence_id"]}.'
 )
+# The same contract under ``evidence-render-v2``, where evidence is shown under
+# positional aliases. Only the citation wording changes. ``ANSWER_PROMPT_
+# INSTRUCTIONS`` above is the v1 text and stays byte-identical, because the
+# published Gate 2 prompts and their recorded ``prompt_sha256`` depend on it.
+ANSWER_PROMPT_INSTRUCTIONS_ALIASED = (
+    "Answer the question using only the provided evidence.\n"
+    "If the evidence is insufficient, use INSUFFICIENT_EVIDENCE as the answer.\n"
+    "Cite the evidence labels (E1, E2, ...) supporting the answer.\n"
+    "Return only valid JSON with this shape: "
+    '{"answer":"short answer","citations":["E1"]}.'
+)
+
+
+def answer_prompt_instructions(version: EvidenceRenderVersion) -> str:
+    """The answer instructions matching how the evidence was rendered."""
+    if version == EVIDENCE_RENDER_V1:
+        return ANSWER_PROMPT_INSTRUCTIONS
+    return ANSWER_PROMPT_INSTRUCTIONS_ALIASED
+
 
 CITATION_ENTAILMENT_PROMPT_INSTRUCTIONS = (
     "Determine whether the cited evidence, taken together, supports the answer "
@@ -115,6 +141,19 @@ def run_generation_benchmark(
         )
     manifest = json.loads(manifest_bytes.decode("utf-8"))
     retrieval_run_id = str(manifest["run_id"])
+    # Rendered exactly as the retrieval run priced it, so the prompt a model
+    # reads is what the budget counted. A retrieval run that predates the
+    # field rendered full evidence IDs: v1. That is also what keeps a rerun of
+    # the published Gate 2 generation byte-identical.
+    evidence_render_version = (
+        manifest.get("config", {})
+        .get("compiler", {})
+        .get("evidence_render_version", EVIDENCE_RENDER_V1)
+    )
+    if evidence_render_version not in (EVIDENCE_RENDER_V1, EVIDENCE_RENDER_V2):
+        raise GenerationError(
+            f"unknown evidence render version: {evidence_render_version!r}"
+        )
     question_by_id = {question.id: question for question in questions}
     if len(question_by_id) != len(questions):
         raise GenerationError("questions contain duplicate IDs")
@@ -170,7 +209,14 @@ def run_generation_benchmark(
     for row in selected_rows:
         question = question_by_id[row["question_id"]]
         packet = ContextPacket.model_validate(row["context"])
-        prompt = render_answer_prompt(question.question, packet)
+        prompt = render_answer_prompt(
+            question.question, packet, evidence_render_version
+        )
+        packet_evidence_ids = tuple(item.evidence_id for item in packet.items)
+        # Label shown -> full ID. Under v1 every label *is* the full ID, so the
+        # lookup below is the identity and v1 citations are untouched.
+        id_by_label = evidence_labels(packet_evidence_ids, evidence_render_version)
+        label_by_id = {evidence_id: label for label, evidence_id in id_by_label.items()}
         request = AnswerRequest(
             question_id=question.id,
             system=row["system"],
@@ -196,7 +242,14 @@ def run_generation_benchmark(
                 f"{row['token_budget']}: {exc}"
             ) from exc
         answer_latency_ms = (time.perf_counter_ns() - started) / 1_000_000
-        parsed_answer, citations, parsed_valid = parse_answer_response(response.text)
+        parsed_answer, cited_labels, parsed_valid = parse_answer_response(
+            response.text
+        )
+        # Every recorded citation is a full, provenance-bearing evidence ID, so
+        # the citation metrics below read exactly as they always have. An
+        # alias the packet never assigned is kept as the model wrote it and
+        # therefore scores invalid, just as an unknown ID always has.
+        citations = tuple(id_by_label.get(label, label) for label in cited_labels)
         # A response the provider did not complete is a failure, not a wrong
         # answer. The run continues so the calls already paid for are not
         # lost; the cell is recorded, costed, and scored zero.
@@ -240,6 +293,11 @@ def run_generation_benchmark(
                         question.question,
                         parsed_answer,
                         cited_items,
+                        labels=(
+                            None
+                            if evidence_render_version == EVIDENCE_RENDER_V1
+                            else label_by_id
+                        ),
                     ),
                     evidence_ids=tuple(item.evidence_id for item in cited_items),
                 )
@@ -387,9 +445,12 @@ def run_generation_benchmark(
         "reranker_revision": manifest.get("reranker_revision"),
         "provider": provider.name,
         "provider_version": provider.version,
+        # The instructions actually sent, which depend on the render version;
+        # under v1 this is the same hash every earlier run recorded.
         "prompt_sha256": hashlib.sha256(
-            ANSWER_PROMPT_INSTRUCTIONS.encode("utf-8")
+            answer_prompt_instructions(evidence_render_version).encode("utf-8")
         ).hexdigest(),
+        "evidence_render_version": evidence_render_version,
         "citation_entailment_prompt_sha256": hashlib.sha256(
             CITATION_ENTAILMENT_PROMPT_INSTRUCTIONS.encode("utf-8")
         ).hexdigest(),
@@ -414,26 +475,41 @@ def run_generation_benchmark(
     return GenerationRun(path=final_path, summary=summary, records=tuple(records))
 
 
-def render_answer_prompt(question: str, context: ContextPacket) -> str:
+def render_answer_prompt(
+    question: str,
+    context: ContextPacket,
+    version: EvidenceRenderVersion = EVIDENCE_RENDER_V1,
+) -> str:
     """Render the exact answer prompt shared by every benchmark arm.
 
     The evidence block comes from ``retrieval/rendering.py``, the same code the
     packers charge against the budget, so what a model is shown and what the
-    budget counted cannot drift apart. The output is byte-identical to the
-    inline rendering used before, which the published Gate 2 run depends on.
+    budget counted cannot drift apart.
+
+    ``version`` defaults to ``evidence-render-v1``, whose output is
+    byte-identical to the inline rendering the published Gate 2 run used. The
+    generation runner does not rely on the default: it passes the version the
+    retrieval run recorded, so a run priced under aliases is shown aliases.
     """
     evidence = render_evidence_block(
-        (item.evidence_id, item.content) for item in context.items
+        ((item.evidence_id, item.content) for item in context.items),
+        version=version,
     )
-    return render_grounded_prompt(question, evidence)
+    return render_grounded_prompt(
+        question,
+        evidence,
+        instructions=answer_prompt_instructions(version),
+    )
 
 
-def render_grounded_prompt(question: str, evidence: str) -> str:
+def render_grounded_prompt(
+    question: str,
+    evidence: str,
+    *,
+    instructions: str = ANSWER_PROMPT_INSTRUCTIONS,
+) -> str:
     """Render the shared answer prompt around any controlled evidence encoding."""
-    return (
-        f"{ANSWER_PROMPT_INSTRUCTIONS}\n\n"
-        f"Question:\n{question}\n\nEvidence:\n{evidence}"
-    )
+    return f"{instructions}\n\nQuestion:\n{question}\n\nEvidence:\n{evidence}"
 
 
 def parse_answer_response(text: str) -> tuple[str, tuple[str, ...], bool]:
@@ -464,10 +540,20 @@ def render_citation_entailment_prompt(
     question: str,
     answer: str,
     cited_items: Sequence[ContextItem],
+    labels: Mapping[str, str] | None = None,
 ) -> str:
-    """Render the same-model semantic support check over cited evidence only."""
+    """Render the same-model semantic support check over cited evidence only.
+
+    ``labels`` maps each full evidence ID to the label the answer prompt showed
+    it under. Under ``evidence-render-v2`` that is the item's alias *in the
+    packet*, so ``E7`` stays ``E7`` here rather than being renumbered among the
+    cited subset. ``None`` renders full IDs, byte-identical to before.
+    """
     evidence = "\n\n".join(
-        f'<evidence id="{item.evidence_id}">\n{item.content}\n</evidence>'
+        render_evidence_item(
+            item.evidence_id if labels is None else labels[item.evidence_id],
+            item.content,
+        )
         for item in cited_items
     )
     return (

@@ -29,8 +29,10 @@ from contextbench.retrieval.models import (
 )
 from contextbench.retrieval.rendering import (
     DEFAULT_BUDGET_ACCOUNTING,
+    DEFAULT_EVIDENCE_RENDER_VERSION,
     BudgetAccounting,
     EvidenceBudget,
+    EvidenceRenderVersion,
     verified_count,
 )
 from contextbench.retrieval.rerank import (
@@ -539,6 +541,9 @@ class HybridIndex:
         limit: int | None = None,
         document_ids: set[str] | None = None,
         budget_accounting: BudgetAccounting = DEFAULT_BUDGET_ACCOUNTING,
+        evidence_render_version: EvidenceRenderVersion = (
+            DEFAULT_EVIDENCE_RENDER_VERSION
+        ),
     ) -> ContextPacket:
         """Pack ranked evidence without exceeding the requested budget."""
         ranked = self.retrieve(
@@ -556,6 +561,7 @@ class HybridIndex:
             ranked,
             token_budget=token_budget,
             budget_accounting=budget_accounting,
+            evidence_render_version=evidence_render_version,
         )
 
     def pack_ranked(
@@ -565,6 +571,9 @@ class HybridIndex:
         *,
         token_budget: int,
         budget_accounting: BudgetAccounting = DEFAULT_BUDGET_ACCOUNTING,
+        evidence_render_version: EvidenceRenderVersion = (
+            DEFAULT_EVIDENCE_RENDER_VERSION
+        ),
     ) -> ContextPacket:
         """Pack an existing ranking without repeating retrieval or reranking."""
         return pack_evidence(
@@ -573,6 +582,7 @@ class HybridIndex:
             token_budget=token_budget,
             tokenizer=self.tokenizer,
             budget_accounting=budget_accounting,
+            evidence_render_version=evidence_render_version,
             metadata={
                 "arm": self.chunks[0].arm.value if self.chunks else "unknown",
                 "embedding_model": self.embedder.name,
@@ -735,6 +745,7 @@ def pack_evidence(
     tokenizer: TokenCounter,
     metadata: dict[str, str],
     budget_accounting: BudgetAccounting = DEFAULT_BUDGET_ACCOUNTING,
+    evidence_render_version: EvidenceRenderVersion = DEFAULT_EVIDENCE_RENDER_VERSION,
 ) -> ContextPacket:
     """Deduplicate by source and pack in reranked order.
 
@@ -748,7 +759,9 @@ def pack_evidence(
     items = []
     used_sources: set[tuple[str, ...]] = set()
     total = 0
-    budget = EvidenceBudget(token_budget, tokenizer, budget_accounting)
+    budget = EvidenceBudget(
+        token_budget, tokenizer, budget_accounting, evidence_render_version
+    )
     for evidence in ranked:
         chunk = evidence.chunk
         source_key = (chunk.document_id, *chunk.source_item_ids)
@@ -789,8 +802,10 @@ def pack_evidence(
             tokenizer=tokenizer,
             token_budget=token_budget,
             budget_accounting=budget_accounting,
+            evidence_render_version=evidence_render_version,
         ),
         budget_accounting=budget_accounting,
+        evidence_render_version=evidence_render_version,
     )
 
 
@@ -800,6 +815,7 @@ def _checked_rendered_count(
     tokenizer: TokenCounter,
     token_budget: int,
     budget_accounting: BudgetAccounting,
+    evidence_render_version: EvidenceRenderVersion,
 ) -> int:
     """Count the finished rendered block and refuse it if it overruns.
 
@@ -809,7 +825,9 @@ def _checked_rendered_count(
     finished block anyway, so a tokenizer that breaks that assumption fails
     loudly instead of emitting a packet over budget.
     """
-    rendered = verified_count(items, tokenizer, "rendered_evidence")
+    rendered = verified_count(
+        items, tokenizer, "rendered_evidence", evidence_render_version
+    )
     if budget_accounting == "rendered_evidence" and rendered > token_budget:
         raise ValueError(
             f"rendered evidence block is {rendered} tokens, over the "

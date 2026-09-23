@@ -40,6 +40,9 @@ from contextbench.retrieval.models import (
 )
 from contextbench.retrieval.rendering import (
     EVIDENCE_JOINER,
+    EVIDENCE_RENDER_V1,
+    EVIDENCE_RENDER_V2,
+    evidence_label,
     render_evidence_block,
     render_evidence_item,
 )
@@ -135,9 +138,11 @@ def _ranked(texts: list[str]) -> tuple[RankedEvidence, ...]:
 
 
 def _block_tokens(packet: ContextPacket, tokenizer) -> int:
+    """Re-render a packet from scratch, in the version it says it was priced."""
     return tokenizer.count(
         render_evidence_block(
-            (item.evidence_id, item.content) for item in packet.items
+            ((item.evidence_id, item.content) for item in packet.items),
+            version=packet.evidence_render_version or EVIDENCE_RENDER_V1,
         )
     )
 
@@ -260,7 +265,12 @@ def _previous_pack_evidence(query, ranked, *, token_budget, tokenizer, metadata)
 
 def _without_new_fields(packet: ContextPacket) -> dict:
     return packet.model_dump(
-        mode="json", exclude={"rendered_token_count", "budget_accounting"}
+        mode="json",
+        exclude={
+            "rendered_token_count",
+            "budget_accounting",
+            "evidence_render_version",
+        },
     )
 
 
@@ -392,27 +402,127 @@ def test_the_compiler_coverage_selector_is_charged_the_rendered_cost() -> None:
     assert len(selected) == 1
 
 
-def test_one_item_costs_its_rendering_and_the_joiner_between_items() -> None:
+@pytest.mark.parametrize("version", [EVIDENCE_RENDER_V1, EVIDENCE_RENDER_V2])
+def test_one_item_costs_its_rendering_and_the_joiner_between_items(
+    version,
+) -> None:
     """The accounting is defined by the renderer, not by a constant."""
     counter = CharacterCounter()
-    first = render_evidence_item("evidence_a", "one")
-    second = render_evidence_item("evidence_b", "two")
     ranked = _ranked(["one", "two"])
 
     packet = pack_evidence(
-        "q", ranked, token_budget=10_000, tokenizer=counter, metadata={}
+        "q", ranked, token_budget=10_000, tokenizer=counter, metadata={},
+        evidence_render_version=version,
     )
 
-    assert packet.rendered_token_count == len(
-        render_evidence_block(
-            (item.evidence_id, item.content) for item in packet.items
-        )
-    )
+    assert packet.evidence_render_version == version
+    assert packet.rendered_token_count == _block_tokens(packet, counter)
     # Two items cost both renderings plus exactly one joiner.
-    ids = [item.evidence_id for item in packet.items]
+    labels = [
+        evidence_label(item.evidence_id, index, version)
+        for index, item in enumerate(packet.items)
+    ]
     assert packet.rendered_token_count == (
-        len(render_evidence_item(ids[0], "one"))
+        len(render_evidence_item(labels[0], "one"))
         + len(EVIDENCE_JOINER)
-        + len(render_evidence_item(ids[1], "two"))
+        + len(render_evidence_item(labels[1], "two"))
     )
-    assert len(first) == len(second)
+
+
+def test_v2_renders_positional_aliases_in_packet_order() -> None:
+    block = render_evidence_block(
+        [("evidence_aaa", "first"), ("evidence_bbb", "second")],
+        version=EVIDENCE_RENDER_V2,
+    )
+
+    assert block == (
+        '<evidence id="E1">\nfirst\n</evidence>\n\n'
+        '<evidence id="E2">\nsecond\n</evidence>'
+    )
+    assert "evidence_aaa" not in block
+
+
+def test_v2_budget_charges_the_aliased_cost_not_the_full_id() -> None:
+    """The saving is real to the packer: more items fit the same budget."""
+    counter = CharacterCounter()
+    ranked = _ranked([f"fragment {index}" for index in range(12)])
+    budget = 400
+
+    v1 = pack_evidence(
+        "q", ranked, token_budget=budget, tokenizer=counter, metadata={},
+        evidence_render_version=EVIDENCE_RENDER_V1,
+    )
+    v2 = pack_evidence(
+        "q", ranked, token_budget=budget, tokenizer=counter, metadata={},
+        evidence_render_version=EVIDENCE_RENDER_V2,
+    )
+
+    assert v2.evidence_render_version == EVIDENCE_RENDER_V2
+    assert v2.rendered_token_count == _block_tokens(v2, counter) <= budget
+    assert v1.rendered_token_count == _block_tokens(v1, counter) <= budget
+    assert len(v2.items) > len(v1.items)
+
+
+@pytest.mark.parametrize("strategy", ["pack_evidence", "coverage", "ranked"])
+def test_the_tenth_slot_is_priced_at_what_e10_actually_costs(strategy) -> None:
+    """``E10`` is one character longer than ``E9``, and the budget must know.
+
+    Ten items fit a budget equal to their finished block exactly; one token
+    less, only nine do. A packer that priced every slot like ``E1`` would
+    think the tenth still fits at one token less and would be refused by the
+    finished-block check instead of simply leaving it out.
+    """
+    counter = CharacterCounter()
+    texts = [f"t{index}" for index in range(10)]
+
+    def pack(budget: int) -> ContextPacket:
+        if strategy == "pack_evidence":
+            return pack_evidence(
+                "q", _ranked(texts), token_budget=budget, tokenizer=counter,
+                metadata={}, evidence_render_version=EVIDENCE_RENDER_V2,
+            )
+        candidates = [
+            CompilerCandidate(
+                chunk=_chunk(index, text).model_copy(
+                    update={"arm": RetrievalArm.COMPILER}
+                ),
+                scores=RetrievalScores(reranked=1.0 / (index + 1)),
+                origin_rank=index + 1,
+                expansion_order=index,
+            )
+            for index, text in enumerate(texts)
+        ]
+        return pack_candidates(
+            "q", candidates, token_budget=budget, tokenizer=counter,
+            strategy=strategy, metadata={},
+            evidence_render_version=EVIDENCE_RENDER_V2,
+        )
+
+    full = pack(10_000)
+    exact = _block_tokens(full, counter)
+    assert len(full.items) == 10
+
+    assert len(pack(exact).items) == 10
+    assert pack(exact).rendered_token_count == exact
+    assert len(pack(exact - 1).items) == 9
+
+    if strategy == "coverage":
+        # The packet alone cannot show the selector's pricing: a selector that
+        # priced every slot as ``E1`` would choose ten and the correctly
+        # priced emission loop would cut back to nine. Check the selection.
+        candidates = [
+            CompilerCandidate(
+                chunk=_chunk(index, text).model_copy(
+                    update={"arm": RetrievalArm.COMPILER}
+                ),
+                scores=RetrievalScores(reranked=1.0 / (index + 1)),
+                origin_rank=index + 1,
+                expansion_order=index,
+            )
+            for index, text in enumerate(texts)
+        ]
+        selected, _leftover = _coverage_selection(
+            "q", candidates, token_budget=exact - 1, tokenizer=counter,
+            evidence_render_version=EVIDENCE_RENDER_V2,
+        )
+        assert len(selected) == 9

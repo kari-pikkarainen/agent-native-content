@@ -1,5 +1,6 @@
 """Generation prompt, provider, scoring, and artifact acceptance tests."""
 
+import hashlib
 import json
 from datetime import UTC, datetime
 from pathlib import Path
@@ -24,9 +25,13 @@ from contextbench.generation import (
 )
 from contextbench.generation.models import AnswerRequest
 from contextbench.generation.runner import (
+    ANSWER_PROMPT_INSTRUCTIONS,
+    ANSWER_PROMPT_INSTRUCTIONS_ALIASED,
+    CITATION_ENTAILMENT_PROMPT_INSTRUCTIONS,
     _artifact_hash,
     _markdown_report,
     _summarize,
+    render_citation_entailment_prompt,
 )
 from contextbench.generation.scoring import (
     NUMERIC_RELATIVE_TOLERANCE,
@@ -36,6 +41,7 @@ from contextbench.generation.scoring import (
     answer_type,
     token_f1_score,
 )
+from contextbench.retrieval import ContextItem, ContextPacket, RetrievalScores
 
 
 class FixtureProvider:
@@ -1264,3 +1270,176 @@ def test_eval_generation_passes_the_expected_hash_through(
     assert captured.get("expected_retrieval_artifact_sha256") == "a" * 64, (
         result.output
     )
+
+
+def _render_config(version: str):
+    config = _config()
+    return config.model_copy(
+        update={
+            "compiler": config.compiler.model_copy(
+                update={"evidence_render_version": version}
+            )
+        }
+    )
+
+
+class CitingProvider(FixtureProvider):
+    """Answers correctly and cites whatever labels it is told to."""
+
+    def __init__(self, labels: tuple[str, ...]) -> None:
+        super().__init__()
+        self.labels = labels
+
+    def generate(self, request: AnswerRequest, *, config: GenerationConfig):
+        answer = super().generate(request, config=config)
+        if request.system.endswith(":citation_entailment_judge"):
+            return answer
+        return answer.model_copy(
+            update={
+                "text": json.dumps(
+                    {"answer": "revenue", "citations": list(self.labels)}
+                )
+            }
+        )
+
+
+def _generate(tmp_path: Path, retrieval, provider, run_id: str):
+    return run_generation_benchmark(
+        retrieval.path,
+        _corpus(tmp_path).questions,
+        config=_generation_config().model_copy(
+            update={"systems": (BenchmarkSystem.COMPILER,)}
+        ),
+        provider=provider,
+        artifacts_root=tmp_path / "generation-artifacts",
+        run_id=run_id,
+        git_commit="b" * 40,
+        git_dirty=False,
+        clock=lambda: datetime(2026, 9, 20, tzinfo=UTC),
+    )
+
+
+def _previous_answer_prompt(question: str, packet) -> str:
+    """The v1 answer prompt exactly as it was built before render versions."""
+    evidence = "\n\n".join(
+        f'<evidence id="{item.evidence_id}">\n{item.content}\n</evidence>'
+        for item in packet.items
+    )
+    return (
+        f"{ANSWER_PROMPT_INSTRUCTIONS}\n\n"
+        f"Question:\n{question}\n\nEvidence:\n{evidence}"
+    )
+
+
+@pytest.mark.parametrize("manifest_field", ["explicit", "absent"])
+def test_v1_generation_prompts_are_byte_identical_to_before(
+    tmp_path: Path, manifest_field: str
+) -> None:
+    """A v1 retrieval run -- or one predating the field -- renders as always.
+
+    ``absent`` is the published Gate 2 case: its retrieval manifest has no
+    render version, and its prompts must come out exactly as they did.
+    """
+    retrieval = _run(
+        tmp_path, run_id=f"retrieval-v1-{manifest_field}",
+        config=_render_config("evidence-render-v1"),
+    )
+    if manifest_field == "absent":
+        manifest_path = retrieval.path / "manifest.json"
+        manifest = json.loads(manifest_path.read_text())
+        del manifest["config"]["compiler"]["evidence_render_version"]
+        manifest_path.write_text(json.dumps(manifest))
+    provider = FixtureProvider()
+
+    result = _generate(tmp_path, retrieval, provider, f"v1-{manifest_field}")
+
+    contexts = {
+        (row["question_id"], row["system"], row["token_budget"]): row["context"]
+        for row in map(
+            json.loads, (retrieval.path / "contexts.jsonl").read_text().splitlines()
+        )
+    }
+    question = _corpus(tmp_path).questions[0]
+    # Premise: at least one prompt carries evidence, so this is not a
+    # comparison of empty blocks.
+    assert any(request.evidence_ids for request in provider.requests)
+    for request in provider.requests:
+        packet = ContextPacket.model_validate(
+            contexts[(request.question_id, request.system, request.token_budget)]
+        )
+        assert request.prompt == _previous_answer_prompt(question.question, packet)
+    recorded = json.loads((result.path / "manifest.json").read_text())
+    assert recorded["evidence_render_version"] == "evidence-render-v1"
+    assert recorded["prompt_sha256"] == hashlib.sha256(
+        ANSWER_PROMPT_INSTRUCTIONS.encode("utf-8")
+    ).hexdigest()
+
+
+def test_v2_generation_shows_aliases_and_records_full_ids(tmp_path: Path) -> None:
+    retrieval = _run(tmp_path, run_id="retrieval-v2-alias")
+    provider = CitingProvider(("E1",))
+
+    result = _generate(tmp_path, retrieval, provider, "v2-alias")
+
+    (record,) = result.records
+    (request,) = provider.requests
+    assert '<evidence id="E1">' in request.prompt
+    assert request.evidence_ids[0] not in request.prompt
+    assert ANSWER_PROMPT_INSTRUCTIONS_ALIASED in request.prompt
+    # The alias is mapped back: the record holds the full, provenance ID.
+    assert record.citations == (request.evidence_ids[0],)
+    assert record.citation_validity == 1
+    recorded = json.loads((result.path / "manifest.json").read_text())
+    retrieval_manifest = json.loads((retrieval.path / "manifest.json").read_text())
+    assert recorded["evidence_render_version"] == "evidence-render-v2"
+    assert (
+        retrieval_manifest["config"]["compiler"]["evidence_render_version"]
+        == "evidence-render-v2"
+    )
+    assert recorded["prompt_sha256"] == hashlib.sha256(
+        ANSWER_PROMPT_INSTRUCTIONS_ALIASED.encode("utf-8")
+    ).hexdigest()
+
+
+def test_an_unknown_alias_scores_as_an_invalid_citation(tmp_path: Path) -> None:
+    """Exactly as an unknown full ID always has."""
+    retrieval = _run(tmp_path, run_id="retrieval-v2-unknown")
+    provider = CitingProvider(("E1", "E99"))
+
+    result = _generate(tmp_path, retrieval, provider, "v2-unknown")
+
+    (record,) = result.records
+    (request,) = provider.requests
+    assert record.citations == (request.evidence_ids[0], "E99")
+    assert record.citation_validity == 0.5
+
+
+def test_citation_entailment_prompt_keeps_packet_aliases_and_v1_bytes() -> None:
+    items = tuple(
+        ContextItem(
+            evidence_id=f"evidence_{index:064x}",
+            document_id="doc",
+            content=f"passage {index}",
+            token_count=2,
+            source_node_ids=("node",),
+            source_item_ids=("#/texts/0",),
+            scores=RetrievalScores(),
+        )
+        for index in range(3)
+    )
+    cited = (items[1],)
+    previous = (
+        f"{CITATION_ENTAILMENT_PROMPT_INSTRUCTIONS}\n\n"
+        "Question:\nq\n\nAnswer:\na\n\n"
+        f'Cited evidence:\n<evidence id="{items[1].evidence_id}">\n'
+        "passage 1\n</evidence>"
+    )
+
+    assert render_citation_entailment_prompt("q", "a", cited) == previous
+    aliased = render_citation_entailment_prompt(
+        "q", "a", cited, labels={item.evidence_id: f"E{i + 1}" for i, item in
+                                 enumerate(items)}
+    )
+    # The cited item keeps the alias the answer prompt showed it under.
+    assert '<evidence id="E2">' in aliased
+    assert items[1].evidence_id not in aliased

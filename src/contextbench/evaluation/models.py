@@ -97,6 +97,11 @@ class RetrievalEvaluationRecord(BaseModel):
     # Which of the two ``token_budget`` was enforced against. ``None`` on
     # records that predate the field, all of which were content-accounted.
     budget_accounting: Literal["rendered_evidence", "content"] | None = None
+    # How the evidence block was rendered, which the rendered count priced.
+    # ``None`` on records that predate the field: those were v1.
+    evidence_render_version: (
+        Literal["evidence-render-v1", "evidence-render-v2"] | None
+    ) = None
     selected_evidence_ids: tuple[str, ...]
     selected_pages: dict[str, tuple[int, ...]]
     gold_pages: dict[str, tuple[int, ...]]

@@ -17,7 +17,9 @@ from contextbench.retrieval.models import (
 )
 from contextbench.retrieval.rendering import (
     DEFAULT_BUDGET_ACCOUNTING,
+    DEFAULT_EVIDENCE_RENDER_VERSION,
     BudgetAccounting,
+    EvidenceRenderVersion,
 )
 
 # Not a release number and not tied to the package version. It tracks one
@@ -73,6 +75,11 @@ from contextbench.retrieval.rendering import (
 # configuration, so no post-change packet can share a hash with a pre-change
 # one. The fixed, structural and long-context arms carry no compiler hash, which
 # is why every packet now states its own ``budget_accounting``.
+#
+# Evidence aliases (``evidence_render_version``) did not bump it, on exactly
+# the same grounds: a config field, hashed into every compiler packet, whose
+# addition changes the hash of every configuration; and every packet states
+# its own render version for the arms that carry no compiler hash.
 COMPILER_VERSION = "0.10.0"
 
 # ``priority_tier`` states a candidate's class and nothing else. It must never
@@ -140,6 +147,15 @@ class CompilerConfig(BaseModel):
     # and this changes packing only; the benchmark runner reads it for the
     # fixed, structural and long-context arms too, so all arms share one value.
     budget_accounting: BudgetAccounting = DEFAULT_BUDGET_ACCOUNTING
+    # How evidence is rendered, and therefore what the rendered budget prices:
+    # ``evidence-render-v2`` (positional aliases, the default for new runs) or
+    # ``evidence-render-v1`` (full evidence IDs, as every earlier run used). Read
+    # by every arm, like ``budget_accounting``, and recorded in the manifest;
+    # generation reads it back from the retrieval manifest, so what a model is
+    # shown is what the budget priced.
+    evidence_render_version: EvidenceRenderVersion = (
+        DEFAULT_EVIDENCE_RENDER_VERSION
+    )
 
     @model_validator(mode="after")
     def candidate_limit_can_satisfy_minimum(self) -> "CompilerConfig":

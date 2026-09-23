@@ -208,6 +208,12 @@ class ContextPacket(BaseModel):
     # Which of the two the budget was checked against. ``None`` on packets
     # that predate the field, which were all content-accounted.
     budget_accounting: Literal["rendered_evidence", "content"] | None = None
+    # How the evidence block was rendered, which is what ``rendered_token_count``
+    # priced (``retrieval/rendering.py``). ``None`` on packets that predate the
+    # field; those were rendered with full evidence IDs, i.e. v1.
+    evidence_render_version: (
+        Literal["evidence-render-v1", "evidence-render-v2"] | None
+    ) = None
 
     @model_validator(mode="after")
     def budget_and_count_are_consistent(self) -> "ContextPacket":

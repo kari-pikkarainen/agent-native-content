@@ -53,7 +53,9 @@ from contextbench.retrieval.embeddings import EmbeddingModel
 from contextbench.retrieval.models import ContextPacket
 from contextbench.retrieval.rendering import (
     DEFAULT_BUDGET_ACCOUNTING,
+    DEFAULT_EVIDENCE_RENDER_VERSION,
     BudgetAccounting,
+    EvidenceRenderVersion,
 )
 from contextbench.retrieval.rerank import Reranker
 
@@ -378,6 +380,7 @@ def _evaluate_factorial_cells(
                         token_budget=budget,
                         tokenizer=tokenizer,
                         budget_accounting=config.budget_accounting,
+                        evidence_render_version=config.evidence_render_version,
                     )
                     elapsed_ms = retrieval_elapsed_ms + (
                         time.perf_counter_ns() - packing_started
@@ -393,6 +396,7 @@ def _evaluate_factorial_cells(
                             token_count=packet.token_count,
                             rendered_evidence_tokens=packet.rendered_token_count,
                             budget_accounting=packet.budget_accounting,
+                            evidence_render_version=packet.evidence_render_version,
                             selected_evidence_ids=tuple(
                                 item.evidence_id for item in packet.items
                             ),
@@ -423,6 +427,7 @@ def _pack_factorial_context(
     token_budget: int,
     tokenizer: TokenCounter,
     budget_accounting: BudgetAccounting = DEFAULT_BUDGET_ACCOUNTING,
+    evidence_render_version: EvidenceRenderVersion = DEFAULT_EVIDENCE_RENDER_VERSION,
 ) -> ContextPacket:
     """Apply identical provenance deduplication before either packing policy."""
     candidates: list[CompilerCandidate] = []
@@ -446,6 +451,7 @@ def _pack_factorial_context(
         token_budget=token_budget,
         tokenizer=tokenizer,
         budget_accounting=budget_accounting,
+        evidence_render_version=evidence_render_version,
         strategy=(
             "ranked" if policy == SelectionPolicy.RANKED else "coverage"
         ),
