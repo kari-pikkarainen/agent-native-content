@@ -66,10 +66,20 @@ compiler's answers were no better than fixed RAG's at either budget: accuracy
 and level at 4K. Under the
 [preregistered rule](docs/research-log/prereg-xlholdout6c-generation.md) that
 closes Gate 2 at its first stage: Phase 3 does not open and algorithm work
-pauses for a per-question failure analysis. Each difference is one question, and
-in both cells where the arms disagree, quote recall predicted the answer and
-page recall predicted the opposite. See
-[the Gate 2 decision](docs/research-log/gate2-stage1-xlholdout6c-generation.md).
+pauses for a per-question failure analysis. Each difference is one question.
+
+**The failure analysis then showed the run carries no signal about evidence
+quality in either direction.** The accuracy difference is a question
+answerable from its own text, where the arms differed only in whether the
+model was willing to answer; the citation difference is an abstention credited
+as supported. The analysis also found four defects in the generation
+instrument that must be fixed before another run, and one real mechanism: on
+poorly parsed documents the compiler packs hundreds of fragments of a few
+tokens each, which empties its candidate pool, multiplies the prompt, and
+leaves the model declining to answer. It affects 5 of 24 development questions
+and 1 of 6 holdout questions. See
+[the Gate 2 decision](docs/research-log/gate2-stage1-xlholdout6c-generation.md)
+and [the failure analysis](docs/research-log/gate2-failure-analysis.md).
 
 The run also exposed a token-accounting problem. Although the compiler obeyed
 the configured packed-content budget, its many small evidence items each added
@@ -656,15 +666,27 @@ produce better-supported citations — held. As preregistered, the larger
 `xldev24` generation run is not made, Phase 3 does not open, and algorithm work
 pauses.
 
-**The active step is the per-question failure analysis.** The
-[Gate 2 decision](docs/research-log/gate2-stage1-xlholdout6c-generation.md)
-names where it starts: why extra gold pages did not produce a correct answer on
-the question that decided the result, why the compiler under-fills its budget
-there, and whether its fragmented contexts — 79 short tagged items at 2K
-against fixed RAG's 4 windows — are themselves harder to answer from. That run
-also found that per-item prompt framing made the compiler's 2K prompt larger
-than fixed RAG's 4K prompt; whether the token budget should cover the rendered
-prompt rather than packed content is an open decision for the owner.
+**The failure analysis is done**, and it changes what Gate 2 can be taken to
+show. [It found](docs/research-log/gate2-failure-analysis.md) that the run
+measured the answer model's willingness to answer rather than the quality of
+the evidence: the deciding question was answerable from its own text, and the
+deciding citation was an abstention scored as supported. It is therefore not
+evidence for stopping, and not evidence for continuing.
+
+It found two things that are. The generation instrument has four defects —
+exact matching rejects correct paraphrases, citation entailment credits
+abstentions, nothing screens out questions answerable without evidence, and
+abstentions dominate — which must be fixed before another generation run can
+decide anything. And the compiler has a concrete failure: on poorly parsed
+documents it packs hundreds of fragments of a few tokens each, which empties
+its candidate pool, leaves budget unspent, and multiplies the prompt, up to
+28,954 tokens for a nominal 4K budget.
+
+**The active step is to fix the instrument and state the fragmentation
+mechanism as a hypothesis, to be tested only on questions neither holdout nor
+`xldev24` has touched.** Whether the token budget should cover the rendered
+prompt rather than packed content remains an open decision for the owner, and
+bears directly on the fragmentation remedy.
 
 `xlholdout6c` was frozen and
 [recorded](docs/research-log/xlholdout6c-freeze.md) with all six sources

@@ -36,6 +36,9 @@ commit it was measured at.
 9. [Generation preregistration](prereg-xlholdout6c-generation.md) and
    [Gate 2, stage 1](gate2-stage1-xlholdout6c-generation.md) — the answers
    were no better than fixed RAG's, and the two-stage gate stopped at stage 1.
+10. [Gate 2 failure analysis](gate2-failure-analysis.md) — the run measured
+    abstention rather than evidence; four instrument defects, and the
+    fragmentation mechanism that survives.
 
 Everything else in this directory is earlier development history. Several of
 those records describe configurations, metrics or holdouts that the chain

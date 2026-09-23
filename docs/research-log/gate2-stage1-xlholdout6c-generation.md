@@ -120,3 +120,24 @@ question, and whether fragmentation itself degrades answers.
   correctly by every arm, so the run discriminates on two.
 - One model, one prompt, one reasoning effort.
 - Abstention correctness was not testable: all six questions are answerable.
+
+## Later note: 2026-09-23, the failure analysis
+
+The [failure analysis](gate2-failure-analysis.md) found that neither deciding
+difference measures evidence quality, and one claim above is withdrawn.
+
+- `adubench_single_000331` can be answered from its own text: every operand of
+  2379 = 1798 − 1000 + 1581 is in the question. Fixed RAG answered correctly
+  without `1798` in its 2K context, and its citations were judged not to
+  support the answer. The arms differ in whether the model was willing to
+  answer, not in their evidence.
+- The citation difference at `adubench_single_000255`, 2K, is an abstention the
+  judge credited as entailed.
+
+**Withdrawn:** "in both cells where the arms disagree, quote recall predicted
+the answer outcome and page recall predicted the opposite." That alignment was
+coincidence.
+
+The verdict is unchanged. The rule required a benefit, and there is none. But
+this run does not show the compiler's evidence is worse for answering either:
+it carries no discriminating signal in either direction.
