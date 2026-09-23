@@ -120,3 +120,33 @@ Recorded now, so it is not reconstructed later:
   policy will be tuned on. Nothing here corrects for that.
 - The −3 pp margin in A2 was fixed before any of Phase 1's findings and has
   not been rejustified against them.
+
+## Addendum: reading instructions
+
+Added at `158948c`, after the strategy was implemented and **before any run of
+it exists**. No result has been seen. These instructions tighten how a pass is
+read; they do not relax any threshold, and they were raised by the implementer
+reviewing the rule against the code rather than against an outcome.
+
+**A4's second disjunct can be satisfied without an improvement.** It passes if
+the 2K compiler-minus-structural quote interval "ceases to exclude zero". A
+bootstrap interval can stop excluding zero for two different reasons: the
+point estimate moved toward zero, or the variance grew. A policy that makes
+the compiler's quote recall more erratic across questions widens the interval
+without improving anything, and would clear A4 on that alone.
+
+So: if A4 passes **only** via the second disjunct, report which of the two
+produced it. A pass carried by a widened interval whose point estimate did not
+improve is recorded as a **failure of A4**, not a pass. This is the reading
+that was always intended; it is written down because the wording did not
+compel it.
+
+**A1 and A3 cannot distinguish a pass from a tie.** Both are floors at 0.0000,
+so a delta of +0.0001 satisfies them. At 18 questions nothing below 0.0185 is
+resolvable at all. Any A1 or A3 pass whose margin is under 0.0185 is to be
+reported as a tie — the criterion is met, and the evidence for improvement is
+absent. This does not block adoption on its own; it constrains what may be
+claimed for it afterwards.
+
+**Not changed:** the thresholds, the metrics, the baselines, the rejection
+condition, or the status of `xldev24` as development-only evidence.
