@@ -46,16 +46,33 @@ def pack_candidates(
     *,
     token_budget: int,
     tokenizer: TokenCounter,
-    strategy: Literal["ranked", "coverage"] = "ranked",
+    strategy: Literal["ranked", "coverage", "adaptive"] = "ranked",
     metadata: dict[str, str],
 ) -> ContextPacket:
-    """Pack candidates deterministically and never exceed the token budget."""
-    if strategy == "coverage":
-        candidates = _coverage_selection(
+    """Pack candidates deterministically and never exceed the token budget.
+
+    ``adaptive`` coverage-packs until coverage stops buying breadth, then
+    backfills the rest of the budget from the same pool in reranked order.
+    Emission stays in selection order -- the coverage picks first, then the
+    backfill -- and that is load-bearing rather than cosmetic: the loop below
+    skips a candidate that does not fit and keeps going, so re-sorting the two
+    phases together would let a backfill item consume budget that a
+    coverage-selected item was chosen against, silently discarding the work of
+    the first phase. Deduplication runs upstream in ``compiler.py``, before
+    packing, so emission order does not reach it.
+    """
+    if strategy in {"coverage", "adaptive"}:
+        selected, leftover = _coverage_selection(
             query,
             candidates,
             token_budget=token_budget,
             tokenizer=tokenizer,
+            stop_when_breadth_is_exhausted=strategy == "adaptive",
+        )
+        candidates = (
+            selected
+            if strategy == "coverage"
+            else (*selected, *_backfill_order(leftover))
         )
     items: list[ContextItem] = []
     used_operators = {
@@ -101,14 +118,87 @@ def pack_candidates(
     )
 
 
+def _backfill_order(
+    candidates: Sequence[CompilerCandidate],
+) -> tuple[CompilerCandidate, ...]:
+    """Order the adaptive backfill: priority tier first, then reranked score.
+
+    ``priority_tier`` leads deliberately. Tier 1 is bounded fixed-window filler
+    that exists only to spend budget primary evidence left over, and coverage
+    packing enforces that with a hard tier gate. If the backfill ordered on
+    score alone, a page-neighbor window with a high cross-encoder score could
+    be packed ahead of core evidence coverage had not reached yet, which is the
+    displacement Phase 1 task 1 removed. The rest of the key is the reranked
+    score -- the one field comparable across candidate classes -- then
+    structural tie-breaks, so the order is total and reproducible.
+
+    This is the same key ``expand_candidates`` already sorts by, so on the
+    production path it is a no-op that re-states the guarantee instead of
+    inheriting it.
+    """
+    return tuple(
+        sorted(
+            candidates,
+            key=lambda candidate: (
+                candidate.priority_tier,
+                -candidate.scores.reranked,
+                candidate.origin_rank,
+                candidate.expansion_order,
+                candidate.chunk.id,
+            ),
+        )
+    )
+
+
+def _breadth_is_exhausted(
+    eligible: Sequence[tuple[CompilerCandidate, int, set[str], set[str]]],
+    *,
+    coverable_facets: set[int],
+    covered_facets: set[int],
+    covered_pages: set[tuple[str, int]],
+) -> bool:
+    """Decide whether coverage packing has stopped buying breadth.
+
+    Two clauses, as the plan states them: every facet covered, or no candidate
+    adds a new page.
+
+    When the query yields no facets -- the common case for a short query --
+    the first clause is treated as *inapplicable*, not as vacuously satisfied.
+    Reading an empty facet set as "all facets covered" would fire the switch
+    before coverage had selected anything, making ``adaptive`` identical to
+    ``ranked`` for every simple query. That is the opposite of the intent: the
+    switch exists to stop coverage once it has stopped buying breadth, so with
+    no facets the page clause is the operative one and coverage still runs.
+
+    ``eligible`` is the minimum-tier slice coverage would actually choose from,
+    not every fitting candidate. Asking whether a tier the gate forbids could
+    add a page would stall the switch on evidence coverage cannot select.
+
+    A candidate with no page provenance never adds a page, so a pool made
+    entirely of such candidates switches at once and is packed by score.
+    """
+    if coverable_facets and coverable_facets <= covered_facets:
+        return True
+    return not any(
+        _page_keys(value[0]) - covered_pages for value in eligible
+    )
+
+
 def _coverage_selection(
     query: str,
     candidates: Sequence[CompilerCandidate],
     *,
     token_budget: int,
     tokenizer: TokenCounter,
-) -> tuple[CompilerCandidate, ...]:
-    """Select evidence by marginal query, facet, reference, and source coverage."""
+    stop_when_breadth_is_exhausted: bool = False,
+) -> tuple[tuple[CompilerCandidate, ...], tuple[CompilerCandidate, ...]]:
+    """Select evidence by marginal query, facet, reference, and source coverage.
+
+    Returns the selection and whatever it did not take, in input order. With
+    ``stop_when_breadth_is_exhausted`` left off the behaviour is exactly what
+    ``coverage`` has always done: the loop runs until nothing fits, and the
+    leftovers are the candidates it rejected.
+    """
     query_terms = _terms(query)
     facet_terms = tuple(
         _terms(facet)
@@ -138,12 +228,22 @@ def _coverage_selection(
     covered_references: set[str] = set()
     covered_pages: set[tuple[str, int]] = set()
     covered_headings: set[tuple[str, ...]] = set()
+    coverable_facets = {
+        index for index, required in enumerate(facet_terms) if required
+    }
     while prepared:
         fitting = [value for value in prepared if value[1] <= remaining]
         if not fitting:
             break
         minimum_tier = min(value[0].priority_tier for value in fitting)
         tier = [value for value in fitting if value[0].priority_tier == minimum_tier]
+        if stop_when_breadth_is_exhausted and _breadth_is_exhausted(
+            tier,
+            coverable_facets=coverable_facets,
+            covered_facets=covered_facets,
+            covered_pages=covered_pages,
+        ):
+            break
         best = min(
             tier,
             key=lambda value: _coverage_key(
@@ -173,7 +273,7 @@ def _coverage_selection(
         covered_pages.update(_page_keys(candidate))
         if candidate.chunk.heading_path:
             covered_headings.add(candidate.chunk.heading_path)
-    return tuple(selected)
+    return tuple(selected), tuple(value[0] for value in prepared)
 
 
 def _coverage_key(

@@ -1,5 +1,6 @@
 """Acceptance tests for deterministic context compiler v0."""
 
+import hashlib
 from pathlib import Path
 
 import pytest
@@ -37,7 +38,7 @@ from contextbench.compiler.models import (
     PRIMARY_EVIDENCE_TIER,
     CompilerCandidate,
 )
-from contextbench.compiler.pack import pack_candidates
+from contextbench.compiler.pack import _backfill_order, pack_candidates
 from contextbench.ir import project_document
 from contextbench.ir.models import IRNodeKind
 from contextbench.retrieval import (
@@ -1769,3 +1770,345 @@ def test_coverage_packing_prefers_uncovered_query_facets() -> None:
     assert [item.page_start for item in ranked.items] == [1, 1]
     assert [item.page_start for item in coverage.items] == [1, 2]
     assert coverage.token_count == coverage.token_budget
+
+
+ADAPTIVE_QUERY = "target revenue increased across alpha and beta markets"
+
+
+def _adaptive_scope(tmp_path: Path):
+    source = compiler_source()
+    counter = FixtureTokenCounter()
+    ir = project_document(source, ingest_metadata(tmp_path), tokenizer=counter)
+    return DocumentScope.from_documents([ir], source_documents={ir.id: source}), counter
+
+
+def _packet_digest(packet) -> str:
+    digest = hashlib.sha256()
+    for item in packet.items:
+        digest.update(item.evidence_id.encode())
+        digest.update(b"\0")
+    digest.update(str(packet.token_count).encode())
+    return digest.hexdigest()
+
+
+def _pool(query: str, scope, counter, budget: int, **config_updates):
+    _packet, trace = compile_context_with_trace(
+        query,
+        scope,
+        budget,
+        compiler_config(**config_updates),
+        tokenizer=counter,
+    )
+    return trace.deduplicated_candidates
+
+
+@pytest.mark.parametrize(
+    ("budget", "strategy", "expected"),
+    [
+        (20, "coverage",
+         "9c32d6ae95c8203d43f4ed54d79541c5694502afe7a5772eeccdc8e584daed02"),
+        (20, "ranked",
+         "7d4b18cd6a728824d15d1c3f553e8033a7f33ac6bf7bfbebd4f2908d40596d8d"),
+        (40, "coverage",
+         "5c2468131aee91db28fe42822c70d115fbaa27d1949707e70e66cb5a5a6e0410"),
+        (40, "ranked",
+         "74963aecde08b02346fe5a7308ce8b929f411158b62b6cee3fd94ab33f14d013"),
+        (60, "coverage",
+         "953c61c5bc0dd4e67809766e675d689c2e04030e439d5dbe5c2823660aafd76d"),
+        (60, "ranked",
+         "54a8fba28e6ac1fb856abdc33320c78e6fbb1e0a0407d9c10ea124ec2d079dbd"),
+    ],
+)
+def test_existing_packing_strategies_are_unchanged_by_adaptive(
+    tmp_path: Path, budget: int, strategy: str, expected: str
+) -> None:
+    """Control. ``coverage`` and ``ranked`` are ablations and must not move.
+
+    These six digests were produced by a verbatim copy of the pre-``adaptive``
+    ``pack_candidates`` and ``_coverage_selection`` at ``9db9c5d``, run on this
+    fixture, and they match what the shipped code returns. Adding a third
+    strategy refactored ``_coverage_selection`` to return its leftovers as well
+    as its selection, and this pins that the refactor changed nothing a
+    control arm can see. If one of these moves, the ablation has stopped being
+    a control and any comparison drawn against it is void.
+    """
+    scope, counter = _adaptive_scope(tmp_path)
+    pool = _pool(ADAPTIVE_QUERY, scope, counter, budget)
+
+    packet = pack_candidates(
+        ADAPTIVE_QUERY,
+        pool,
+        token_budget=budget,
+        tokenizer=counter,
+        strategy=strategy,
+        metadata={"arm": "compiler", "active_operators": ""},
+    )
+
+    assert _packet_digest(packet) == expected
+
+
+@pytest.mark.parametrize(
+    ("strategy", "expected"),
+    [
+        ("coverage",
+         "fdef9448236b5d2a0ade7a8f59214eaa04c7ada7c84fda6edea520f01d069e52"),
+        ("ranked",
+         "36c9e0c9695d1b169a1e8cbbb3271ffdf7b32921862d8cbaee3962def20da516"),
+    ],
+)
+def test_existing_strategies_are_unchanged_where_both_tiers_are_present(
+    tmp_path: Path, strategy: str, expected: str
+) -> None:
+    """The control above cannot see the coverage tier gate; this one can.
+
+    Page neighbours need a 16K budget, so the small fixture the other control
+    uses contains tier 0 only and its digests survive removing the tier gate
+    from ``_coverage_selection`` entirely. Verified by hand-mutation, which is
+    why this case exists. Both digests were likewise produced by a verbatim
+    copy of the pre-``adaptive`` implementation at ``9db9c5d``.
+    """
+    source = joined_tables_and_prose_source()
+    counter = FixtureTokenCounter()
+    ir = project_document(source, ingest_metadata(tmp_path), tokenizer=counter)
+    scope = DocumentScope.from_documents([ir], source_documents={ir.id: source})
+    budget = 16384
+
+    _packet, trace = compile_context_with_trace(
+        JOINED_TABLES_AND_PROSE_QUERY,
+        scope,
+        budget,
+        compiler_config(),
+        tokenizer=counter,
+    )
+    pool = trace.deduplicated_candidates
+
+    # Premise: this pool really does span both tiers.
+    assert {candidate.priority_tier for candidate in pool} == {
+        PRIMARY_EVIDENCE_TIER,
+        FALLBACK_CONTEXT_TIER,
+    }
+
+    packet = pack_candidates(
+        JOINED_TABLES_AND_PROSE_QUERY,
+        pool,
+        token_budget=budget,
+        tokenizer=counter,
+        strategy=strategy,
+        metadata={"arm": "compiler", "active_operators": ""},
+    )
+
+    assert _packet_digest(packet) == expected
+
+
+_SWITCH_QUERY = "alpha measure and beta result"
+
+
+def _switch_candidates() -> tuple[CompilerCandidate, ...]:
+    """Four candidates that make the switch point observable.
+
+    ``alpha measure`` and ``beta result`` cover one facet each, so the facet
+    clause fires once both are taken. ``gamma note`` and ``delta note`` cover
+    no facet and no query term; they differ only in that coverage prefers
+    ``gamma`` on marginal utility -- it has the better origin rank -- while a
+    reranked backfill prefers ``delta``, which scores far higher. Exactly one
+    of the two fits the budget, so the two strategies cannot both be right and
+    the packet says which one ran.
+    """
+    counter = FixtureTokenCounter()
+
+    def candidate(
+        identifier: str, text: str, page: int, rank: int, reranked: float
+    ) -> CompilerCandidate:
+        return CompilerCandidate(
+            chunk=RetrievalChunk(
+                id=f"chunk-{identifier}",
+                arm=RetrievalArm.COMPILER,
+                document_id="document-1",
+                text=text,
+                token_count=counter.count(text),
+                page_start=page,
+                page_end=page,
+                source_node_ids=(f"node-{identifier}",),
+                source_item_ids=(f"item-{identifier}",),
+            ),
+            scores=RetrievalScores(reranked=reranked),
+            origin_rank=rank,
+            expansion_order=rank,
+        )
+
+    return (
+        candidate("alpha", "alpha measure", 1, 1, 0.5),
+        candidate("beta", "beta result", 2, 2, 0.4),
+        candidate("gamma", "gamma note", 3, 3, 0.1),
+        candidate("delta", "delta note", 4, 4, 0.9),
+    )
+
+
+def test_adaptive_backfills_evidence_coverage_alone_would_not_select() -> None:
+    """The backfill must fire at the switch and change what is in the packet."""
+    counter = FixtureTokenCounter()
+    candidates = _switch_candidates()
+    budget = 6
+    metadata = {"arm": "compiler", "active_operators": ""}
+
+    # Premise: two facets, and both are covered by the first two candidates.
+    assert query_facets(_SWITCH_QUERY, limit=4, min_terms=2) == (
+        "alpha measure",
+        "beta result",
+    )
+
+    packed = {
+        strategy: [
+            item.content
+            for item in pack_candidates(
+                _SWITCH_QUERY,
+                candidates,
+                token_budget=budget,
+                tokenizer=counter,
+                strategy=strategy,
+                metadata=dict(metadata),
+            ).items
+        ]
+        for strategy in ("coverage", "ranked", "adaptive")
+    }
+
+    # Coverage keeps buying marginal breadth and takes ``gamma note``.
+    assert packed["coverage"] == ["alpha measure", "beta result", "gamma note"]
+    # The switch fires once both facets are covered, so the tail is reranked
+    # order instead, which brings in evidence coverage never selected.
+    assert packed["adaptive"] == ["alpha measure", "beta result", "delta note"]
+    assert "delta note" not in packed["coverage"]
+    # Adaptive is its own strategy, not a rename of either control.
+    assert packed["adaptive"] != packed["coverage"]
+    assert packed["adaptive"] != packed["ranked"]
+    # The coverage phase's own picks survive the backfill, in its order.
+    assert packed["adaptive"][:2] == packed["coverage"][:2]
+
+
+def test_adaptive_without_facets_keeps_coverage_rather_than_becoming_ranked(
+    tmp_path: Path,
+) -> None:
+    """An empty facet set is inapplicable, not vacuously satisfied.
+
+    Reading "every facet is covered" as true when there are no facets would
+    fire the switch before coverage selected anything, collapsing ``adaptive``
+    into ``ranked`` for every simple query. The page clause governs instead,
+    which is why this fixture's coverage and ranked packets differ and
+    adaptive tracks coverage.
+    """
+    scope, counter = _adaptive_scope(tmp_path)
+    budget = 40
+    query = "revenue results market"
+    metadata = {"arm": "compiler", "active_operators": ""}
+    pool = _pool(query, scope, counter, budget)
+
+    # Premise: this query really does produce no facets.
+    assert query_facets(query, limit=4, min_terms=2) == ()
+
+    coverage = pack_candidates(
+        query, pool, token_budget=budget, tokenizer=counter,
+        strategy="coverage", metadata=dict(metadata),
+    )
+    adaptive = pack_candidates(
+        query, pool, token_budget=budget, tokenizer=counter,
+        strategy="adaptive", metadata=dict(metadata),
+    )
+    ranked = pack_candidates(
+        query, pool, token_budget=budget, tokenizer=counter,
+        strategy="ranked", metadata=dict(metadata),
+    )
+
+    covered = [item.content for item in coverage.items]
+    assert [item.content for item in adaptive.items] == covered
+    assert covered != [item.content for item in ranked.items]
+
+
+def test_adaptive_backfill_keeps_page_neighbors_behind_primary_evidence(
+    tmp_path: Path,
+) -> None:
+    """Tier 1 is leftover-budget filler and the backfill must not promote it."""
+    source = joined_tables_and_prose_source()
+    counter = FixtureTokenCounter()
+    ir = project_document(source, ingest_metadata(tmp_path), tokenizer=counter)
+    scope = DocumentScope.from_documents([ir], source_documents={ir.id: source})
+    budget = 16384
+
+    packet, trace = compile_context_with_trace(
+        JOINED_TABLES_AND_PROSE_QUERY,
+        scope,
+        budget,
+        compiler_config(packing_strategy="adaptive"),
+        tokenizer=counter,
+    )
+
+    tier_by_content = {
+        candidate.chunk.text: candidate.priority_tier
+        for candidate in trace.deduplicated_candidates
+    }
+    tiers = [tier_by_content[item.content] for item in packet.items]
+
+    # Premise: both tiers really are present in this packet.
+    assert PRIMARY_EVIDENCE_TIER in tiers
+    assert FALLBACK_CONTEXT_TIER in tiers
+    assert tiers == sorted(tiers)
+    assert packet.token_count <= budget
+
+
+def test_adaptive_backfill_order_is_gated_by_priority_tier() -> None:
+    """A high-scoring window must not overtake lower-scoring core evidence."""
+    counter = FixtureTokenCounter()
+
+    def candidate(identifier: str, score: float, tier: int) -> CompilerCandidate:
+        text = f"evidence {identifier}"
+        return CompilerCandidate(
+            chunk=RetrievalChunk(
+                id=f"chunk-{identifier}",
+                arm=RetrievalArm.COMPILER,
+                document_id="document-1",
+                text=text,
+                token_count=counter.count(text),
+                source_node_ids=(f"node-{identifier}",),
+                source_item_ids=(f"item-{identifier}",),
+            ),
+            scores=RetrievalScores(reranked=score),
+            origin_rank=1,
+            expansion_order=0,
+            priority_tier=tier,
+            operator="page_neighbor" if tier else "retrieval",
+        )
+
+    window = candidate("window", 9.0, FALLBACK_CONTEXT_TIER)
+    core = candidate("core", 0.1, PRIMARY_EVIDENCE_TIER)
+
+    ordered = _backfill_order((window, core))
+
+    assert [item.chunk.id for item in ordered] == ["chunk-core", "chunk-window"]
+
+
+@pytest.mark.parametrize("budget", range(0, 61, 4))
+def test_adaptive_never_exceeds_the_token_budget(
+    tmp_path: Path, budget: int
+) -> None:
+    scope, counter = _adaptive_scope(tmp_path)
+
+    packet = compile_context(
+        ADAPTIVE_QUERY,
+        scope,
+        budget,
+        compiler_config(packing_strategy="adaptive"),
+        tokenizer=counter,
+    )
+
+    assert packet.token_count <= budget
+    assert sum(item.token_count for item in packet.items) == packet.token_count
+
+
+def test_adaptive_compilation_is_repeatable(tmp_path: Path) -> None:
+    scope, counter = _adaptive_scope(tmp_path)
+    config = compiler_config(packing_strategy="adaptive")
+
+    first = compile_context(ADAPTIVE_QUERY, scope, 40, config, tokenizer=counter)
+    second = compile_context(ADAPTIVE_QUERY, scope, 40, config, tokenizer=counter)
+
+    assert first.model_dump_json() == second.model_dump_json()
+    assert first.metadata["packing_strategy"] == "adaptive"

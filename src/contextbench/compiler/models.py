@@ -103,7 +103,10 @@ class CompilerConfig(BaseModel):
     keyed_table_join_enabled: bool = True
     keyed_table_join_candidate_limit: int = Field(default=16, ge=1)
     keyed_table_join_empty_marker: str = Field(default="[blank]", min_length=1)
-    packing_strategy: Literal["ranked", "coverage"] = "coverage"
+    # ``coverage`` stays the default until the preregistered rule in
+    # ``docs/research-log/prereg-adaptive-packing.md`` says otherwise.
+    # ``ranked`` and ``coverage`` are ablation controls and must stay.
+    packing_strategy: Literal["ranked", "coverage", "adaptive"] = "coverage"
     max_expanded_candidates: int = Field(default=500, ge=1)
 
     @model_validator(mode="after")

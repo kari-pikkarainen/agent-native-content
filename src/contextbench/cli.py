@@ -275,7 +275,13 @@ def evaluate_retrieval(
     ] = 250,
     compiler_packing_strategy: Annotated[
         str,
-        typer.Option(help="Compiler packing strategy: ranked or coverage."),
+        typer.Option(
+            help=(
+                "Compiler packing strategy: ranked, coverage, or adaptive "
+                "(coverage-pack until breadth is exhausted, then backfill in "
+                "reranked order)."
+            )
+        ),
     ] = "coverage",
     compiler_node_heading_search_context: Annotated[
         bool,
