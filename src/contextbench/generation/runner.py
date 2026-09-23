@@ -76,11 +76,18 @@ def run_generation_benchmark(
     git_dirty: bool | None = None,
     allow_dirty: bool = False,
     clock: Callable[[], datetime] = utc_now,
+    expected_retrieval_artifact_sha256: str | None = None,
 ) -> GenerationRun:
     """Generate and score answers from a completed retrieval run.
 
     Supplying ``git_commit`` means the caller owns the recorded provenance: the
     worktree is not inspected, so ``git_dirty`` must be supplied too.
+
+    ``expected_retrieval_artifact_sha256`` is the preregistration guard. When
+    given, the retrieval artifact is hashed and compared before any provider
+    call and before anything is written, and a mismatch fails closed. It is
+    optional so that ordinary development runs are not forced to pin an input;
+    a registered run supplies it in its registered command.
     """
     manifest_path = retrieval_run_path / "manifest.json"
     contexts_path = retrieval_run_path / "contexts.jsonl"
@@ -88,7 +95,24 @@ def run_generation_benchmark(
         raise GenerationError(
             "retrieval run must contain manifest.json and contexts.jsonl"
         )
-    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    # Each file is read exactly once. The bytes that are hashed are the bytes
+    # that are parsed, generated from and recorded, so the verified value, the
+    # recorded value and the input actually used cannot disagree. Previously
+    # the manifest and the contexts were parsed from one read and hashed from a
+    # second read at the very end, after every provider call.
+    manifest_bytes = manifest_path.read_bytes()
+    contexts_bytes = contexts_path.read_bytes()
+    retrieval_artifact_sha256 = _bytes_hash(manifest_bytes, contexts_bytes)
+    if (
+        expected_retrieval_artifact_sha256 is not None
+        and retrieval_artifact_sha256 != expected_retrieval_artifact_sha256
+    ):
+        raise GenerationError(
+            "retrieval artifact does not match the expected hash: "
+            f"expected {expected_retrieval_artifact_sha256}, "
+            f"found {retrieval_artifact_sha256} at {retrieval_run_path}"
+        )
+    manifest = json.loads(manifest_bytes.decode("utf-8"))
     retrieval_run_id = str(manifest["run_id"])
     question_by_id = {question.id: question for question in questions}
     if len(question_by_id) != len(questions):
@@ -123,7 +147,7 @@ def run_generation_benchmark(
         error=GenerationError,
     )
 
-    context_rows = _read_jsonl(contexts_path)
+    context_rows = _parse_jsonl(contexts_bytes.decode("utf-8"))
     selected_rows = [
         row
         for row in context_rows
@@ -346,7 +370,7 @@ def run_generation_benchmark(
         "git_commit": resolved_commit,
         "git_dirty": resolved_dirty,
         "retrieval_run_id": retrieval_run_id,
-        "retrieval_artifact_sha256": _artifact_hash(manifest_path, contexts_path),
+        "retrieval_artifact_sha256": retrieval_artifact_sha256,
         # Carried from the retrieval manifest so a generation run states which
         # model weights produced the contexts it answered from, without a
         # reader having to open the upstream run. The model names travel with
@@ -377,6 +401,14 @@ def run_generation_benchmark(
         "config_sha256": config_sha256,
         "question_ids": list(manifest["question_ids"]),
     }
+    if expected_retrieval_artifact_sha256 is not None:
+        # Present only on checked runs, so an unchecked run's manifest keeps
+        # exactly the layout it always had. Reaching this line means the check
+        # above passed; a failed check never gets here.
+        generation_manifest["expected_retrieval_artifact_sha256"] = (
+            expected_retrieval_artifact_sha256
+        )
+        generation_manifest["retrieval_artifact_verified"] = True
     _publish_run(final_path, generation_manifest, records, summary)
     return GenerationRun(path=final_path, summary=summary, records=tuple(records))
 
@@ -535,12 +567,8 @@ def _summarize(
     )
 
 
-def _read_jsonl(path: Path) -> list[dict[str, object]]:
-    return [
-        json.loads(line)
-        for line in path.read_text(encoding="utf-8").splitlines()
-        if line
-    ]
+def _parse_jsonl(text: str) -> list[dict[str, object]]:
+    return [json.loads(line) for line in text.splitlines() if line]
 
 
 def _citation_support(
@@ -583,9 +611,15 @@ def _json_hash(value: object) -> str:
 
 
 def _artifact_hash(*paths: Path) -> str:
+    """Hash files in order; the published definition of the artifact hash."""
+    return _bytes_hash(*(path.read_bytes() for path in paths))
+
+
+def _bytes_hash(*chunks: bytes) -> str:
+    """SHA-256 over byte chunks in order, identical to ``_artifact_hash``."""
     digest = hashlib.sha256()
-    for path in paths:
-        digest.update(path.read_bytes())
+    for chunk in chunks:
+        digest.update(chunk)
     return digest.hexdigest()
 
 

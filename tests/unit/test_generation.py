@@ -23,7 +23,11 @@ from contextbench.generation import (
     run_generation_benchmark,
 )
 from contextbench.generation.models import AnswerRequest
-from contextbench.generation.runner import _markdown_report, _summarize
+from contextbench.generation.runner import (
+    _artifact_hash,
+    _markdown_report,
+    _summarize,
+)
 from contextbench.generation.scoring import (
     NUMERIC_RELATIVE_TOLERANCE,
     RELEASED_VERIFICATION_RULES,
@@ -1076,3 +1080,165 @@ def test_numeric_extraction_takes_the_first_number_anywhere() -> None:
     assert accuracy_score("3/4", "0.75", "numeric") == 1.0
     # Text with no number scores 0.0 rather than raising.
     assert accuracy_score("no digits here", "4.5", "numeric") == 0.0
+
+
+def _pinned_run(tmp_path: Path, provider, *, expected: str | None, run_id: str):
+    retrieval = _run(tmp_path, run_id=f"retrieval-{run_id}")
+    artifacts_root = tmp_path / "generation-artifacts"
+    result = run_generation_benchmark(
+        retrieval.path,
+        _corpus(tmp_path).questions,
+        config=_generation_config(),
+        provider=provider,
+        artifacts_root=artifacts_root,
+        run_id=run_id,
+        git_commit="b" * 40,
+        git_dirty=False,
+        clock=lambda: datetime(2026, 9, 20, tzinfo=UTC),
+        expected_retrieval_artifact_sha256=expected,
+    )
+    return retrieval, artifacts_root, result
+
+
+def test_a_mismatched_artifact_hash_is_refused_before_any_provider_call(
+    tmp_path: Path,
+) -> None:
+    """A preregistered run over the wrong contexts must not spend anything.
+
+    The count of provider requests is asserted, not just the exception: a check
+    placed after the answer loop would still raise, and would still have paid.
+    """
+    retrieval = _run(tmp_path, run_id="retrieval-pin-mismatch")
+    provider = FixtureProvider()
+    artifacts_root = tmp_path / "generation-artifacts"
+    wrong = "0" * 64
+    actual = _artifact_hash(
+        retrieval.path / "manifest.json", retrieval.path / "contexts.jsonl"
+    )
+
+    with pytest.raises(GenerationError) as refused:
+        run_generation_benchmark(
+            retrieval.path,
+            _corpus(tmp_path).questions,
+            config=_generation_config(),
+            provider=provider,
+            artifacts_root=artifacts_root,
+            run_id="generation-pin-mismatch",
+            git_commit="b" * 40,
+            git_dirty=False,
+            clock=lambda: datetime(2026, 9, 20, tzinfo=UTC),
+            expected_retrieval_artifact_sha256=wrong,
+        )
+
+    assert provider.requests == []
+    # Both hashes are named, so the operator can see which side is wrong.
+    assert wrong in str(refused.value)
+    assert actual in str(refused.value)
+    # And nothing was written: no run directory, not even the parent.
+    assert not artifacts_root.exists()
+
+
+def test_a_matching_artifact_hash_runs_and_is_recorded_as_verified(
+    tmp_path: Path,
+) -> None:
+    retrieval = _run(tmp_path, run_id="retrieval-pin-match")
+    expected = _artifact_hash(
+        retrieval.path / "manifest.json", retrieval.path / "contexts.jsonl"
+    )
+    provider = FixtureProvider()
+
+    result = run_generation_benchmark(
+        retrieval.path,
+        _corpus(tmp_path).questions,
+        config=_generation_config(),
+        provider=provider,
+        artifacts_root=tmp_path / "generation-artifacts",
+        run_id="generation-pin-match",
+        git_commit="b" * 40,
+        git_dirty=False,
+        clock=lambda: datetime(2026, 9, 20, tzinfo=UTC),
+        expected_retrieval_artifact_sha256=expected,
+    )
+
+    assert len(provider.requests) == len(BenchmarkSystem)
+    recorded = json.loads((result.path / "manifest.json").read_text())
+    assert recorded["retrieval_artifact_sha256"] == expected
+    assert recorded["expected_retrieval_artifact_sha256"] == expected
+    assert recorded["retrieval_artifact_verified"] is True
+
+
+def test_an_unchecked_run_is_unchanged_and_says_nothing_about_verification(
+    tmp_path: Path,
+) -> None:
+    """No option, no check, and the manifest keeps its original layout."""
+    provider = FixtureProvider()
+    retrieval, _root, result = _pinned_run(
+        tmp_path, provider, expected=None, run_id="generation-unchecked"
+    )
+
+    assert len(provider.requests) == len(BenchmarkSystem)
+    recorded = json.loads((result.path / "manifest.json").read_text())
+    assert "expected_retrieval_artifact_sha256" not in recorded
+    assert "retrieval_artifact_verified" not in recorded
+    # The recorded hash is still the published definition of the artifact
+    # hash: the single read at the start hashes exactly what the old end-of-run
+    # re-read would have.
+    assert recorded["retrieval_artifact_sha256"] == _artifact_hash(
+        retrieval.path / "manifest.json", retrieval.path / "contexts.jsonl"
+    )
+
+
+def test_eval_generation_passes_the_expected_hash_through(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    """The CLI option must reach the runner, or the guard is decoration."""
+    from typer.testing import CliRunner
+
+    from contextbench.cli import app
+
+    captured = {}
+
+    def fake_run_generation_benchmark(*args, **kwargs):
+        captured.update(kwargs)
+        raise GenerationError("stop after capture")
+
+    monkeypatch.setattr(
+        "contextbench.generation.run_generation_benchmark",
+        fake_run_generation_benchmark,
+    )
+    monkeypatch.setattr(
+        "contextbench.generation.OpenAIAnswerProvider", lambda: SimpleNamespace()
+    )
+    # Keep the test off the local dataset cache: the CLI loads a subset and the
+    # dataset only to build the question list, which this test never uses.
+    monkeypatch.setattr("contextbench.cli.load_subset", lambda _path: None)
+    monkeypatch.setattr(
+        "contextbench.cli.XLDocBenchDataset",
+        lambda _path: SimpleNamespace(iter_subset=lambda _subset: iter(())),
+    )
+    retrieval = _run(tmp_path, run_id="retrieval-cli-pin")
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "eval-generation",
+            str(retrieval.path),
+            "--model",
+            "fixture-model",
+            "--input-usd-per-million",
+            "0",
+            "--cached-input-usd-per-million",
+            "0",
+            "--output-usd-per-million",
+            "0",
+            "--max-calls",
+            "1000",
+            "--expected-retrieval-artifact-sha256",
+            "a" * 64,
+        ],
+    )
+
+    assert captured.get("expected_retrieval_artifact_sha256") == "a" * 64, (
+        result.output
+    )

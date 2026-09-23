@@ -721,6 +721,16 @@ def evaluate_generation(
             ),
         ),
     ] = False,
+    expected_retrieval_artifact_sha256: Annotated[
+        str | None,
+        typer.Option(
+            help=(
+                "Refuse to run, before any provider call, unless the retrieval "
+                "run's manifest.json and contexts.jsonl hash to this value. "
+                "Use the value a preregistration pins."
+            ),
+        ),
+    ] = None,
 ) -> None:
     """Generate and score answers from immutable retrieval contexts."""
     from contextbench.evaluation import BenchmarkSystem
@@ -779,6 +789,7 @@ def evaluate_generation(
             artifacts_root=artifacts_root,
             run_id=run_id,
             allow_dirty=allow_dirty,
+            expected_retrieval_artifact_sha256=expected_retrieval_artifact_sha256,
         )
     except (DatasetError, GenerationError, OSError, RuntimeError, ValueError) as exc:
         _abort(str(exc))
