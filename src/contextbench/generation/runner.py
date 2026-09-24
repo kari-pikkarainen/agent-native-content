@@ -254,6 +254,7 @@ def run_generation_benchmark(
         # answer. The run continues so the calls already paid for are not
         # lost; the cell is recorded, costed, and scored zero.
         response_valid = parsed_valid and response.provider_valid
+        abstained = response_valid and is_abstention(parsed_answer)
         gold = "" if question.gold_answer is None else str(question.gold_answer)
         kind = answer_type(question)
         accuracy = (
@@ -276,7 +277,11 @@ def run_generation_benchmark(
         judge_raw_response: str | None = None
         judge_response: ProviderAnswer | None = None
         judge_latency_ms = 0.0
-        if config.citation_entailment_judge:
+        # Entailment measures support for an answer. An abstention makes no
+        # factual answer claim, so judging whether citations support the
+        # abstention would reward evidence for *not* answering and reproduce
+        # the confound found in the Gate 2 failure analysis.
+        if config.citation_entailment_judge and not abstained:
             citation_entailment = 0.0
             cited_ids = set(citations)
             cited_items = tuple(
@@ -378,9 +383,10 @@ def run_generation_benchmark(
                     judge_response.text_error if judge_response is not None else None
                 ),
                 citation_present=bool(citations),
+                abstained=abstained,
                 insufficient_evidence_correct=(
                     (not question.answerable)
-                    and accuracy == 1.0
+                    and abstained
                 ),
                 input_tokens=total_input_tokens,
                 cached_input_tokens=total_cached_input_tokens,
@@ -536,6 +542,16 @@ def parse_answer_response(text: str) -> tuple[str, tuple[str, ...], bool]:
     return answer.strip(), tuple(citations), True
 
 
+def is_abstention(answer: str) -> bool:
+    """Whether an answer is the exact abstention marker required by the prompt.
+
+    This is intentionally narrower than the benchmark's historical
+    phrase-substring accuracy rule. A factual answer that happens to mention
+    "insufficient evidence" must not be counted as an abstention.
+    """
+    return answer.strip().casefold() == "insufficient_evidence"
+
+
 def render_citation_entailment_prompt(
     question: str,
     answer: str,
@@ -640,6 +656,7 @@ def _summarize(
                 mean_citation_support=mean(supported) if supported else None,
                 mean_citation_entailment=mean(entailed) if entailed else None,
                 citation_present_rate=mean(cell.citation_present for cell in cells),
+                answer_rate=mean(not cell.abstained for cell in cells),
                 insufficient_evidence_accuracy=(
                     mean(cell.insufficient_evidence_correct for cell in unanswerable)
                     if unanswerable
@@ -760,12 +777,12 @@ def _markdown_report(summary: GenerationBenchmarkSummary) -> str:
         "",
         f"Retrieval contexts: `{summary.retrieval_run_id}`",
         "",
-        "| System | Budget | Valid responses | Valid judges | Accuracy | "
+        "| System | Budget | Valid responses | Answer rate | Valid judges | Accuracy | "
         "Token F1 | ANLS | "
         "Citation valid | Gold-page align | Citation entail | Citation present | "
         "Input tokens | Output tokens | Latency (ms) | $/query | $/correct |",
         "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | "
-        "---: | ---: | ---: | ---: | ---: | ---: |",
+        "---: | ---: | ---: | ---: | ---: | ---: | ---: |",
     ]
     for row in summary.rows:
         dollars_per_correct = (
@@ -790,7 +807,8 @@ def _markdown_report(summary: GenerationBenchmarkSummary) -> str:
         )
         lines.append(
             f"| {row.system.value} | {row.token_budget} "
-            f"| {row.response_valid_rate:.3f} | {judge_valid_rate} "
+            f"| {row.response_valid_rate:.3f} | {row.answer_rate:.3f} "
+            f"| {judge_valid_rate} "
             f"| {row.mean_accuracy:.3f} "
             f"| {row.mean_token_f1:.3f} | {row.mean_anls:.3f} "
             f"| {row.mean_citation_validity:.3f} "
@@ -807,6 +825,9 @@ def _markdown_report(summary: GenerationBenchmarkSummary) -> str:
             "Valid responses is the share of cells the provider completed and "
             "that parsed against the answer contract; a low rate means the "
             "arm's scores measure failed calls, not answer quality.",
+            "Answer rate is the share of cells that did not return the exact "
+            "INSUFFICIENT_EVIDENCE marker. Citation entailment is not judged "
+            "for abstentions because it measures support for an answer.",
             "Valid judges is the same check for the citation-entailment "
             "judge call, over the cells that called it; n/a means no cell in "
             "the row called the judge, which is not a judge failure. A "

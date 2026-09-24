@@ -371,7 +371,10 @@ entailment. An optional second call to the same frozen model judges whether the
 cited evidence supports the generated answer without seeing the gold answer.
 The judge uses only cited items, returns a strict boolean JSON decision, and
 treats embedded evidence as data rather than instructions. Invalid judge
-output scores zero.
+output scores zero. The judge is not called for the exact
+`INSUFFICIENT_EVIDENCE` abstention marker: an abstention makes no factual answer
+claim, and crediting evidence for not answering would not measure support for
+an answer.
 
 Every cell records raw and parsed answer and judge responses, citations,
 provider/model IDs, disaggregated judge usage, total
@@ -519,7 +522,10 @@ evaluator named by `score_evaluator_sha256` and the released
 `results/scores.jsonl`, then diffing per-question scores for the 13 scored
 systems. That fetch is network work and is out of scope here. Until it happens,
 no claim of evaluator parity may be published; report accuracy as
-"relaxed, locally defined" and cite this section.
+"relaxed, locally defined" and cite this section. New runs also record
+`abstained` from the exact marker required by the prompt and summarize
+`answer_rate`; this operational field is intentionally independent of the
+historical phrase-substring accuracy rule.
 
 ## Gold-evidence representation experiment
 

@@ -146,6 +146,9 @@ class GenerationEvaluationRecord(BaseModel):
     judge_provider_incomplete_reason: str | None = None
     judge_provider_text_error: str | None = None
     citation_present: bool
+    # True only for the exact abstention marker required by the prompt. A
+    # wrong answer that merely mentions insufficient evidence is not one.
+    abstained: bool
     insufficient_evidence_correct: bool
     input_tokens: int = Field(ge=0)
     cached_input_tokens: int = Field(ge=0)
@@ -191,6 +194,7 @@ class GenerationSummaryRow(BaseModel):
     mean_citation_support: float | None
     mean_citation_entailment: float | None = None
     citation_present_rate: float
+    answer_rate: float
     insufficient_evidence_accuracy: float | None
     mean_input_tokens: float
     mean_output_tokens: float

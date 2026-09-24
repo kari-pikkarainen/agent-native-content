@@ -19,6 +19,7 @@ from contextbench.generation import (
     OpenAIAnswerProvider,
     PricingMetadata,
     ProviderAnswer,
+    is_abstention,
     parse_answer_response,
     parse_citation_entailment_response,
     run_generation_benchmark,
@@ -320,6 +321,71 @@ def test_citation_entailment_parser_is_strict() -> None:
 
 
 @pytest.mark.parametrize(
+    ("answer", "expected"),
+    (
+        ("INSUFFICIENT_EVIDENCE", True),
+        (" insufficient_evidence ", True),
+        ("There is insufficient evidence.", False),
+        ("Revenue rose, though evidence is insufficient.", False),
+        ("", False),
+    ),
+)
+def test_abstention_is_the_exact_prompt_marker(answer: str, expected: bool) -> None:
+    assert is_abstention(answer) is expected
+
+
+class AbstainingProvider(FixtureProvider):
+    def generate(self, request: AnswerRequest, *, config: GenerationConfig):
+        if request.system.endswith(":citation_entailment_judge"):
+            raise AssertionError("an abstention must not call the entailment judge")
+        self.requests.append(request)
+        return ProviderAnswer(
+            text=json.dumps(
+                {
+                    "answer": "INSUFFICIENT_EVIDENCE",
+                    "citations": list(request.evidence_ids[:1]),
+                }
+            ),
+            model_id=config.model,
+            input_tokens=100,
+            output_tokens=10,
+        )
+
+
+def test_citation_entailment_is_not_applicable_to_abstentions(tmp_path: Path) -> None:
+    retrieval = _run(tmp_path, run_id="retrieval-abstention")
+    provider = AbstainingProvider()
+    config = _generation_config().model_copy(
+        update={
+            "systems": (BenchmarkSystem.COMPILER,),
+            "citation_entailment_judge": True,
+        }
+    )
+
+    result = run_generation_benchmark(
+        retrieval.path,
+        _corpus(tmp_path).questions,
+        config=config,
+        provider=provider,
+        artifacts_root=tmp_path / "artifacts",
+        run_id="generation-abstention",
+        git_commit="b" * 40,
+        git_dirty=False,
+    )
+
+    assert len(provider.requests) == 1
+    record = result.records[0]
+    assert record.abstained is True
+    assert record.citation_entailment is None
+    assert record.citation_entailment_judge_valid is None
+    assert record.calls == 1
+    row = result.summary.rows[0]
+    assert row.answer_rate == 0.0
+    assert row.mean_citation_entailment is None
+    assert row.citation_entailment_judge_valid_rate is None
+
+
+@pytest.mark.parametrize(
     ("prediction", "gold", "kind", "expected"),
     (
         ("25.9", "25", "numeric", 1.0),
@@ -473,6 +539,7 @@ def _generation_record(**overrides) -> GenerationEvaluationRecord:
         "citation_validity": 0.0,
         "citation_support": None,
         "citation_present": False,
+        "abstained": False,
         "insufficient_evidence_correct": False,
         "input_tokens": 100,
         "cached_input_tokens": 20,

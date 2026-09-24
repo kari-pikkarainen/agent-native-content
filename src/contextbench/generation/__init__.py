@@ -14,6 +14,7 @@ from contextbench.generation.providers import AnswerProvider, OpenAIAnswerProvid
 from contextbench.generation.runner import (
     GenerationError,
     GenerationRun,
+    is_abstention,
     parse_answer_response,
     parse_citation_entailment_response,
     render_answer_prompt,
@@ -33,6 +34,7 @@ __all__ = [
     "GenerationEvaluationRecord",
     "GenerationRun",
     "GenerationSummaryRow",
+    "is_abstention",
     "OpenAIAnswerProvider",
     "PricingMetadata",
     "ProviderAnswer",
