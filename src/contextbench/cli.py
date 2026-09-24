@@ -422,6 +422,21 @@ def evaluate_retrieval(
         str | None,
         typer.Option(help="Optional immutable run identifier."),
     ] = None,
+    parse_workers: Annotated[
+        int,
+        typer.Option(
+            min=1,
+            help=(
+                "Parser processes for documents not yet in the ingestion "
+                "cache. 1 (the default) parses them one at a time in the "
+                "main loop, as before; more parses them first in a pool. "
+                "Output is identical either way. Each process needs about "
+                "2.6 GB of memory. Have the Docling models cached first (one "
+                "sequential run, or --docling-artifacts-dir), or every "
+                "process may download them at once."
+            ),
+        ),
+    ] = 1,
     allow_dirty: Annotated[
         bool,
         typer.Option(
@@ -504,6 +519,7 @@ def evaluate_retrieval(
             reranker_revision=reranker_revision,
             run_id=run_id,
             allow_dirty=allow_dirty,
+            parse_workers=parse_workers,
             progress=lambda message: typer.echo(message, err=True),
         )
     except (DatasetError, IngestionError, IRProjectionError, RuntimeError) as exc:
@@ -666,6 +682,21 @@ def evaluate_factorial(
         str | None,
         typer.Option(help="Optional immutable factorial run identifier."),
     ] = None,
+    parse_workers: Annotated[
+        int,
+        typer.Option(
+            min=1,
+            help=(
+                "Parser processes for documents not yet in the ingestion "
+                "cache. 1 (the default) parses them one at a time in the "
+                "main loop, as before; more parses them first in a pool. "
+                "Output is identical either way. Each process needs about "
+                "2.6 GB of memory. Have the Docling models cached first (one "
+                "sequential run, or --docling-artifacts-dir), or every "
+                "process may download them at once."
+            ),
+        ),
+    ] = 1,
     allow_dirty: Annotated[
         bool,
         typer.Option(
@@ -746,6 +777,7 @@ def evaluate_factorial(
             reranker_revision=reranker_revision,
             run_id=run_id,
             allow_dirty=allow_dirty,
+            parse_workers=parse_workers,
             progress=lambda message: typer.echo(message, err=True),
         )
     except (DatasetError, IngestionError, IRProjectionError, RuntimeError) as exc:
@@ -1003,6 +1035,21 @@ def evaluate_representation(
         str | None,
         typer.Option(help="Optional immutable representation run identifier."),
     ] = None,
+    parse_workers: Annotated[
+        int,
+        typer.Option(
+            min=1,
+            help=(
+                "Parser processes for documents not yet in the ingestion "
+                "cache. 1 (the default) parses them one at a time in the "
+                "main loop, as before; more parses them first in a pool. "
+                "Output is identical either way. Each process needs about "
+                "2.6 GB of memory. Have the Docling models cached first (one "
+                "sequential run, or --docling-artifacts-dir), or every "
+                "process may download them at once."
+            ),
+        ),
+    ] = 1,
     allow_dirty: Annotated[
         bool,
         typer.Option(
@@ -1063,6 +1110,7 @@ def evaluate_representation(
             docling_artifacts_dir=docling_artifacts_dir,
             run_id=run_id,
             allow_dirty=allow_dirty,
+            parse_workers=parse_workers,
             progress=lambda message: typer.echo(message, err=True),
         )
     except (

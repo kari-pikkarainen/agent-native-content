@@ -16,6 +16,7 @@ from contextbench.evaluation.factorial import FactorialRun, run_factorial_benchm
 from contextbench.evaluation.factorial_models import FactorialConfig
 from contextbench.evaluation.runner import EvaluationCorpus, EvaluationError
 from contextbench.ingest import DoclingParser, IngestionCache
+from contextbench.ingest.parallel import warm_ingestion_cache
 from contextbench.ir import project_document
 from contextbench.ir.tokenizer import TiktokenTokenCounter
 
@@ -37,8 +38,13 @@ def run_xl_factorial(
     run_id: str | None = None,
     allow_dirty: bool = False,
     progress: ProgressCallback | None = None,
+    parse_workers: int = 1,
 ) -> FactorialRun:
     """Run the controlled factorial on an XL subset and fixed parent corpus."""
+    if parse_workers < 1:
+        # Checked first, before any download, ingestion or run directory:
+        # below, anything but > 1 would silently mean "sequential".
+        raise ValueError(f"parse_workers must be at least 1, got {parse_workers}")
     report = progress or (lambda _message: None)
     report("verifying pinned XL-DocBench release")
     download_release(data_dir)
@@ -74,6 +80,16 @@ def run_xl_factorial(
         ingest_cache_dir,
         DoclingParser(artifacts_path=docling_artifacts_dir),
     )
+    if parse_workers > 1:
+        # Parse uncached documents in parallel first; the loop below then runs
+        # unchanged against a warm cache. At 1 this is skipped entirely.
+        warm_ingestion_cache(
+            [dataset.get_document(document_id) for document_id in document_ids],
+            source_cache=source_cache,
+            ingestion_cache=ingestion_cache,
+            workers=parse_workers,
+            progress=report,
+        )
     tokenizer = TiktokenTokenCounter(config.retrieval.tokenizer_name)
     documents = {}
     source_documents = {}

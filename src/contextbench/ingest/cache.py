@@ -3,7 +3,9 @@
 import hashlib
 import json
 import os
+import shutil
 import tempfile
+import uuid
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Protocol
@@ -13,6 +15,8 @@ from docling_core.types.doc.labels import DocItemLabel
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 _COPY_CHUNK_SIZE = 1024 * 1024
+# Prefix of the private directory an entry is staged in before publication.
+_STAGING_PREFIX = ".partial-"
 _METADATA_SCHEMA_VERSION = 1
 
 
@@ -100,12 +104,7 @@ class IngestionCache:
         self._validate_source(source)
         source_sha256, source_size = _hash_and_size(source)
         parser_config_hash = self._parser_config_hash()
-        artifact_dir = (
-            self.root
-            / source_sha256[:2]
-            / source_sha256
-            / parser_config_hash
-        )
+        artifact_dir = self._artifact_dir(source_sha256, parser_config_hash)
         metadata_path = artifact_dir / "metadata.json"
         document_path = artifact_dir / "document.json"
 
@@ -124,27 +123,65 @@ class IngestionCache:
         except Exception as exc:
             raise IngestionError(f"failed to parse {source}: {exc}") from exc
 
-        artifact_dir.mkdir(parents=True, exist_ok=True)
-        self._save_document_atomic(document, document_path)
-        document_sha256, _ = _hash_and_size(document_path)
-        counts = _document_counts(document)
-        metadata = IngestMetadata(
-            source_path=str(source),
-            source_name=source.name,
-            source_sha256=source_sha256,
-            source_size_bytes=source_size,
-            parser_name=self.parser.name,
-            parser_version=self.parser.version,
-            parser_core_version=self.parser.core_version,
-            parser_config=self.parser.config,
-            parser_config_hash=parser_config_hash,
-            document_file=document_path.name,
-            document_sha256=document_sha256,
-            docling_schema_version=document.version,
-            **counts,
-            created_at=datetime.now(UTC).isoformat(),
-        )
-        _write_json_atomic(metadata_path, metadata.model_dump(mode="json"))
+        # The entry is published as a unit. Both files are written into a
+        # private staging directory beside the entry, then one ``os.rename``
+        # makes the whole directory appear at the entry path. A process killed
+        # at any point before the rename leaves no entry, so a rerun parses
+        # again; before, a kill between the two writes left ``document.json``
+        # without ``metadata.json``, which every later run refused. Staging
+        # names start with ``.partial-`` and are never 64 hex digits, so no
+        # entry lookup can resolve to one. A kill can leave one behind; it is
+        # never read, and can be deleted.
+        # Exclusive ``mkdir`` of a random name rather than ``mkdtemp``, which
+        # creates mode 0700 and would publish the entry unreadable to anyone
+        # but the owner; ``mkdir`` applies the umask as the old path did.
+        artifact_dir.parent.mkdir(parents=True, exist_ok=True)
+        staging = artifact_dir.parent / f"{_STAGING_PREFIX}{uuid.uuid4().hex}"
+        staging.mkdir()
+        try:
+            staged_document = staging / document_path.name
+            self._save_document_atomic(document, staged_document)
+            document_sha256, _ = _hash_and_size(staged_document)
+            counts = _document_counts(document)
+            metadata = IngestMetadata(
+                source_path=str(source),
+                source_name=source.name,
+                source_sha256=source_sha256,
+                source_size_bytes=source_size,
+                parser_name=self.parser.name,
+                parser_version=self.parser.version,
+                parser_core_version=self.parser.core_version,
+                parser_config=self.parser.config,
+                parser_config_hash=parser_config_hash,
+                document_file=document_path.name,
+                document_sha256=document_sha256,
+                docling_schema_version=document.version,
+                **counts,
+                created_at=datetime.now(UTC).isoformat(),
+            )
+            _write_json_atomic(
+                staging / metadata_path.name, metadata.model_dump(mode="json")
+            )
+            try:
+                os.rename(staging, artifact_dir)
+            except OSError as exc:
+                if not artifact_dir.is_dir():
+                    raise IngestionError(
+                        f"cannot publish ingestion cache entry {artifact_dir}: {exc}"
+                    ) from exc
+                # Another writer published this entry while we parsed. Theirs
+                # is complete by construction; verify and use it, and let the
+                # ``finally`` discard ours.
+                return self._load_cached(
+                    source_sha256=source_sha256,
+                    source_size=source_size,
+                    parser_config_hash=parser_config_hash,
+                    artifact_dir=artifact_dir,
+                    metadata_path=metadata_path,
+                    document_path=document_path,
+                )
+        finally:
+            shutil.rmtree(staging, ignore_errors=True)
         return IngestResult(
             document=document,
             metadata=metadata,
@@ -153,6 +190,33 @@ class IngestionCache:
             metadata_path=metadata_path,
             reused=False,
         )
+
+    def entry_dir(self, source: Path) -> Path:
+        """Return the cache entry ``ingest`` would use for ``source``.
+
+        Validates and hashes the source exactly as ``ingest`` does, and parses
+        nothing. Two sources with identical bytes share one entry.
+        """
+        source = source.resolve()
+        self._validate_source(source)
+        source_sha256, _size = _hash_and_size(source)
+        return self._artifact_dir(source_sha256, self._parser_config_hash())
+
+    @staticmethod
+    def has_entry(entry_dir: Path) -> bool:
+        """Whether ``ingest`` would reuse this entry rather than parse.
+
+        The same test ``ingest`` applies: either file present means reuse.
+        ``ingest`` publishes both files in one rename, so an interrupted write
+        leaves no entry at all; a half-entry can only come from outside damage,
+        and ``ingest`` then refuses it loudly rather than parsing over it.
+        """
+        return (entry_dir / "metadata.json").exists() or (
+            entry_dir / "document.json"
+        ).exists()
+
+    def _artifact_dir(self, source_sha256: str, parser_config_hash: str) -> Path:
+        return self.root / source_sha256[:2] / source_sha256 / parser_config_hash
 
     def _load_cached(
         self,
