@@ -39,6 +39,9 @@ commit it was measured at.
 10. [Gate 2 failure analysis](gate2-failure-analysis.md) — the run measured
     abstention rather than evidence; four instrument defects, and the
     fragmentation mechanism that survives.
+11. [Rendered-evidence budget and node merging](stepc-rendered-budget-merge-f916545.md)
+    — every arm charged for what it renders; merging helps at 8K/16K on
+    development data, not on the fresh smoke set, and is not frozen.
 
 Everything else in this directory is earlier development history. Several of
 those records describe configurations, metrics or holdouts that the chain

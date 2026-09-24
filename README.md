@@ -88,6 +88,14 @@ model input, larger than fixed RAG's 5,150-token input at a nominal 4K budget.
 This overhead must be included in the failure analysis and in any future budget
 comparison.
 
+It now is. Since `f916545` every arm is charged for the evidence it renders
+(tags, aliases and separators as well as content), with short `E1`-style
+aliases. On the development set this costs the compiler 7 points of page
+recall at 2K and at most 1.5 points above that. The non-inferiority screen
+against fixed RAG now fails at 16K. The figures in the table below predate
+that change and use content-only accounting. See
+[the re-baseline record](docs/research-log/stepc-rendered-budget-merge-f916545.md).
+
 The frozen compiler leads the best RAG baseline on **page** recall on the
 24-question development set at every tested budget. On **exact quote** recall
 it leads at three of four budgets and trails at 2K, and the difference between
