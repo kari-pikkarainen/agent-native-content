@@ -42,6 +42,9 @@ commit it was measured at.
 11. [Rendered-evidence budget and node merging](stepc-rendered-budget-merge-f916545.md)
     — every arm charged for what it renders; merging helps at 8K/16K on
     development data, not on the fresh smoke set, and is not frozen.
+12. [Parallel parsing performance](parallel-parsing-performance-46c2a61.md) —
+    a six-document operational benchmark; two workers reduced end-to-end wall
+    time by 22%, while four were slower and used more memory.
 
 Everything else in this directory is earlier development history. Several of
 those records describe configurations, metrics or holdouts that the chain

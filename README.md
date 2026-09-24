@@ -4,13 +4,21 @@
 
 ## In plain English
 
+Most content is stored either as pages designed for people or in a data model
+built for one application. This project asks whether content should also carry
+a reusable, **agent-ready layer**: explicit structure, relationships, tables as
+data, navigation cues, and links back to the source. A person can still read
+the original document, while an AI agent can read the prepared features
+directly instead of reconstructing them from scratch for every task.
+
 AI systems usually break a document into loose text snippets and search those
 snippets again for every question. This project explores a different approach:
 prepare the document once in a structured, trustworthy form that keeps its
 sections, tables, and links back to the original pages. Then, for each question,
 assemble a small package containing only the most useful evidence. We test
-whether this gives AI systems better evidence with less unnecessary text than
-conventional document search.
+whether this reusable preparation helps agents find better-supported answers,
+use less unnecessary context, and reuse the same content across different
+tasks more effectively than conventional document search.
 
 This repository explores whether source material can be prepared once into a
 reusable intermediate representation, then assembled into task-specific,
@@ -253,6 +261,35 @@ The first real-data run may download the pinned dataset metadata, referenced
 PDFs, Docling artifacts, and the configured SentenceTransformers models. Later
 runs reuse content- and configuration-verified caches. Remote inference is
 disabled during PDF parsing.
+
+### Parallel document parsing
+
+The three XL commands that ingest documents accept `--parse-workers N`.
+The default, `1`, preserves sequential parsing. A larger value parses only
+uncached documents in spawned worker processes before the otherwise unchanged
+run. Cache entries are published atomically, and a real-Docling integration
+test checks that sequential and parallel parsing produce identical cached
+documents.
+
+On a 12-core Apple M3 Pro with 36 GB of memory, one cold-cache trial over the
+six-document `xldev6-perf` subset took 17m 48.5s with one worker, 13m 53.3s
+with two, and 14m 28.1s with four. Peak process-tree memory was 4.40, 6.24 and
+7.82 GiB respectively. **Use two workers as the measured local default;** use
+one when memory is constrained. Four workers did not improve this small run.
+The comparison is directional, not a general throughput claim; see the
+[complete measurement record](docs/research-log/parallel-parsing-performance-46c2a61.md).
+
+Cache the Docling models before using multiple workers—by completing one
+sequential parse or passing `--docling-artifacts-dir`—so the workers do not
+attempt the same download concurrently. For example:
+
+```shell
+uv run --extra retrieval contextbench eval-retrieval \
+  --subset-file benchmarks/xl-docbench/subsets/xldev2-tables.json \
+  --retrieval-corpus-subset-file benchmarks/xl-docbench/subsets/xldev24.json \
+  --parse-workers 2 \
+  --run-id xldev2-local-parallel
+```
 
 For development:
 
