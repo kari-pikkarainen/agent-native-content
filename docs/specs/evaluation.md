@@ -541,16 +541,12 @@ token F1, ANLS, citation validity/support, latency, and cost. Questions without
 gold pages are skipped and listed in the manifest and summary. Immutable runs
 are published under `artifacts/representation-runs/<run-id>/`.
 
-Known defect, recorded and not fixed: this runner derives its `response_valid`
-from the answer parse alone and never consults the provider's completion
-state, so a response the provider cut short is scored as a wrong answer rather
-than as a failed call, and the summary has no valid-rate field to expose how
-often that happened. This is the unfixed mirror of the fix already made in the
-generation path, whose `response_valid` is the conjunction of the parse result
-and `ProviderAnswer.provider_valid`. The experiment is paid (plan Phase 3
-task 6), so a truncation episode would silently depress one condition's
-accuracy and cost real money to discover. Fixing it moves this experiment's
-numbers and therefore needs its own change and its own remeasurement.
+Like the generation runner, this runner defines `response_valid` as the
+conjunction of the strict answer parse and the provider's completion state. A
+truncated or unreadable response is retained and costed but scores zero as a
+failed call rather than being indistinguishable from a wrong answer. Every
+cell records the provider status, incomplete reason and text error, and every
+condition summary reports `response_valid_rate`.
 
 The initial enriched condition contains deterministic outline, extractive
 section previews, numeric/normative/date/exception facts, definitions,

@@ -193,21 +193,13 @@ def run_gold_representation_benchmark(
                     f"provider failed for {question.id}/{condition.value}: {exc}"
                 ) from exc
             latency_ms = (time.perf_counter_ns() - started) / 1_000_000
-            # Unfixed mirror of the generation-path fix. ``response_valid``
-            # here is the parse result alone: it never consults
-            # ``response.provider_valid``, so a response the provider cut
-            # short still parses or fails to parse on its truncated text and
-            # is scored as a wrong answer rather than as a failed call. The
-            # summary has no valid-rate field, so nothing in the artifact
-            # exposes it either. This experiment is paid (plan Phase 3
-            # task 6), so a truncation episode silently depresses one
-            # condition's accuracy. Left as it is deliberately: the
-            # generation fix was scoped to the generation path, and repeating
-            # it here would move this experiment's numbers without a
-            # remeasurement to attribute them to.
-            parsed_answer, citations, response_valid = parse_answer_response(
+            parsed_answer, citations, parsed_valid = parse_answer_response(
                 response.text
             )
+            # A response the provider did not complete is a failed call, not a
+            # wrong answer. Keep the paid cell, its usage and diagnostics, but
+            # score it zero and expose the failure in the condition summary.
+            response_valid = parsed_valid and response.provider_valid
             gold = "" if question.gold_answer is None else str(question.gold_answer)
             kind = answer_type(question)
             accuracy = (
@@ -234,6 +226,9 @@ def run_gold_representation_benchmark(
                     parsed_answer=parsed_answer,
                     citations=citations,
                     response_valid=response_valid,
+                    provider_status=response.status,
+                    provider_incomplete_reason=response.incomplete_reason,
+                    provider_text_error=response.text_error,
                     accuracy=accuracy,
                     token_f1=token_f1,
                     anls=anls,
@@ -490,6 +485,7 @@ def _summarize(
             RepresentationSummaryRow(
                 condition=condition,
                 question_count=len(cells),
+                response_valid_rate=mean(cell.response_valid for cell in cells),
                 mean_accuracy=mean(cell.accuracy for cell in cells),
                 mean_token_f1=mean(cell.token_f1 for cell in cells),
                 mean_anls=mean(cell.anls for cell in cells),
@@ -554,10 +550,11 @@ def _markdown_report(summary: RepresentationBenchmarkSummary) -> str:
         f"One-time enrichment: {summary.enrichment_prepare_ms:.2f} ms "
         f"({summary.amortized_enrichment_ms_per_question:.2f} ms/question).",
         "",
-        "| Condition | Questions | Accuracy | Token F1 | ANLS | Rep. tokens | "
-        "Citation support | Input tokens | Latency (ms) | $/query | $/correct |",
+        "| Condition | Questions | Valid responses | Accuracy | Token F1 | "
+        "ANLS | Rep. tokens | Citation support | Input tokens | Latency (ms) "
+        "| $/query | $/correct |",
         "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | "
-        "---: | ---: |",
+        "---: | ---: | ---: |",
     ]
     for row in summary.rows:
         cost_correct = (
@@ -567,7 +564,8 @@ def _markdown_report(summary: RepresentationBenchmarkSummary) -> str:
         )
         lines.append(
             f"| {row.condition.value} | {row.question_count} "
-            f"| {row.mean_accuracy:.3f} | {row.mean_token_f1:.3f} "
+            f"| {row.response_valid_rate:.3f} | {row.mean_accuracy:.3f} "
+            f"| {row.mean_token_f1:.3f} "
             f"| {row.mean_anls:.3f} | {row.mean_representation_tokens:.1f} "
             f"| {row.mean_citation_support:.3f} | {row.mean_input_tokens:.1f} "
             f"| {row.mean_latency_ms:.2f} | {row.dollars_per_query:.6f} "

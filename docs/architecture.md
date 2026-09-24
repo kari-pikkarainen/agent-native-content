@@ -148,4 +148,7 @@ The separate gold-evidence representation runner bypasses retrieval entirely.
 It precomputes agent enrichment once per document, fixes the authorized source
 nodes from released evidence pages, and renders RAW, IR, and ENRICHED prompts
 over those identical nodes. Its immutable contexts and results live under
-`artifacts/representation-runs/<run-id>/`.
+`artifacts/representation-runs/<run-id>/`. Provider completion and parsing are
+reported separately from answer correctness: failed calls retain their usage
+and diagnostics, score zero, and contribute to a per-condition valid-response
+rate.

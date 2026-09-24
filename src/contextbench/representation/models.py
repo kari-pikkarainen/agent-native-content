@@ -66,7 +66,12 @@ class RepresentationEvaluationRecord(BaseModel):
     raw_response: str
     parsed_answer: str
     citations: tuple[str, ...]
+    # False when the provider did not complete the response or when the
+    # response did not satisfy the strict JSON answer contract.
     response_valid: bool
+    provider_status: str | None = None
+    provider_incomplete_reason: str | None = None
+    provider_text_error: str | None = None
     accuracy: float = Field(ge=0, le=1)
     token_f1: float = Field(ge=0, le=1)
     anls: float = Field(ge=0, le=1)
@@ -92,6 +97,8 @@ class RepresentationSummaryRow(BaseModel):
 
     condition: RepresentationCondition
     question_count: int
+    # Share of cells whose response was both provider-completed and parseable.
+    response_valid_rate: float = Field(ge=0, le=1)
     mean_accuracy: float
     mean_token_f1: float
     mean_anls: float

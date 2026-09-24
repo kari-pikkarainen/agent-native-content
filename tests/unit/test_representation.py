@@ -44,6 +44,19 @@ class RepresentationProvider:
         )
 
 
+class IncompleteRepresentationProvider(RepresentationProvider):
+    def generate(self, request, *, config):
+        response = super().generate(request, config=config)
+        if request.system == RepresentationCondition.IR.value:
+            return response.model_copy(
+                update={
+                    "status": "incomplete",
+                    "incomplete_reason": "max_output_tokens",
+                }
+            )
+        return response
+
+
 def _config() -> RepresentationExperimentConfig:
     return RepresentationExperimentConfig(
         model="fixture-model",
@@ -140,6 +153,53 @@ def test_gold_representation_runner_varies_encoding_not_source_nodes(
     assert manifest["git_commit"] == "c" * 40
     assert manifest["config"]["enrichment"]["summary_sentences"] == 2
     assert manifest["enrichment_prepare_ms"] >= 0
+
+
+def test_representation_runner_reports_provider_incomplete_responses(
+    tmp_path: Path,
+) -> None:
+    result = run_gold_representation_benchmark(
+        _corpus(tmp_path),
+        config=_config(),
+        provider=IncompleteRepresentationProvider(),
+        artifacts_root=tmp_path / "artifacts",
+        dataset="fixture",
+        dataset_version="v1",
+        dataset_revision="revision-1",
+        subset_name="fixture-two",
+        subset_sha256="1" * 64,
+        run_id="representation-incomplete",
+        tokenizer=FixtureTokenCounter(),
+        git_commit="c" * 40,
+        git_dirty=False,
+        clock=lambda: datetime(2026, 9, 20, tzinfo=UTC),
+    )
+
+    by_condition = {record.condition: record for record in result.records}
+    incomplete = by_condition[RepresentationCondition.IR]
+    assert incomplete.response_valid is False
+    assert incomplete.provider_status == "incomplete"
+    assert incomplete.provider_incomplete_reason == "max_output_tokens"
+    assert incomplete.provider_text_error is None
+    assert incomplete.accuracy == 0
+    assert incomplete.token_f1 == 0
+    assert incomplete.anls == 0
+
+    summary_by_condition = {
+        row.condition: row for row in result.summary.rows
+    }
+    assert summary_by_condition[RepresentationCondition.IR].response_valid_rate == 0
+    assert summary_by_condition[RepresentationCondition.RAW].response_valid_rate == 1
+
+    written = [
+        json.loads(line)
+        for line in (result.path / "representation.jsonl").read_text().splitlines()
+    ]
+    ir_row = next(row for row in written if row["condition"] == "ir")
+    assert ir_row["response_valid"] is False
+    assert ir_row["provider_status"] == "incomplete"
+    assert ir_row["provider_incomplete_reason"] == "max_output_tokens"
+    assert "Valid responses" in (result.path / "report.md").read_text()
 
 
 def test_representation_runner_requires_at_least_one_gold_page(
