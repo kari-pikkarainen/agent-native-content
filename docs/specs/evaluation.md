@@ -532,15 +532,26 @@ historical phrase-substring accuracy rule.
 The representation experiment fixes source-evidence retrieval. It selects the
 same released gold-page IR nodes for `raw`, `ir`, `enriched`, and `indexed`.
 Stable citation IDs and source content are held fixed; only the rendering
-changes. Enrichment is computed once per document without access to questions
-or answers, and a feature is eligible only when all its supporting nodes occur
+changes. An opt-in `question_only` control sends the same answer prompt with an
+empty evidence section: zero source nodes, no evidence IDs, and therefore
+nothing it can validly cite. The prompt still instructs the model to answer
+only from the evidence and to return `INSUFFICIENT_EVIDENCE` when the evidence
+is insufficient, so the compliant response is always that abstention. The
+control therefore measures answers given *despite* no evidence (parametric
+knowledge leakage combined with instruction non-compliance), not what the model
+knows: a model that obeys the prompt scores zero here whatever it knows. The
+default condition set remains `raw`, `ir`, `enriched`, and `indexed`;
+`question_only` runs only when requested with `--condition`.
+
+Enrichment is computed once per document without access to questions or
+answers, and a feature is eligible only when all its supporting nodes occur
 inside the authorized gold-page set.
 
 The run records deterministic enrichment preparation once per referenced
 document, plus total and amortized milliseconds per evaluated question. This
 keeps reusable document-conversion cost separate from per-query model latency.
 
-All four conditions share the answer prompt, provider, requested model,
+All conditions share the answer prompt, provider, requested model,
 reasoning setting, output limit, deterministic scoring, and pricing. Record the
 exact representation, local representation tokens, provider usage, accuracy,
 token F1, ANLS, citation validity/support, latency, and cost. Questions without
@@ -553,6 +564,118 @@ truncated or unreadable response is retained and costed but scores zero as a
 failed call rather than being indistinguishable from a wrong answer. Every
 cell records the provider status, incomplete reason and text error, and every
 condition summary reports `response_valid_rate`.
+
+### Representation judges
+
+Two optional judges use the same frozen model, provider and pricing as the
+answer call, for every condition alike. Both are off by default.
+
+- `--answer-equivalence-judge` asks whether the candidate answer is
+  substantively equivalent to the gold answer. The judge prompt contains only
+  the question, the reference answer and the candidate answer, never the
+  condition name or any evidence, so it is blind to the representation. Its
+  result is recorded as `semantic_accuracy`, a separate metric: the historical
+  deterministic `accuracy` is still computed and reported unchanged beside it.
+- `--citation-entailment-judge` asks whether the cited source nodes support
+  the answer. It sees only the cited nodes that belong to the condition's
+  authorized evidence, rendered as canonical source text, so every evidence
+  condition is judged against the same content regardless of its rendering.
+  `question_only` has no evidence to cite, so it never reaches this judge and
+  scores zero citation entailment when it answers.
+
+Only the exact `INSUFFICIENT_EVIDENCE` marker is an abstention. An abstention
+is sent to neither judge: its citation entailment is null (not zero and not
+one), and its semantic accuracy is decided deterministically as correct
+exactly when the question is unanswerable. An answer that merely mentions
+insufficient evidence is not an abstention and is judged normally.
+
+Judge output must be strict boolean JSON and is never repaired. A truncated,
+unreadable or malformed judge response is recorded with its raw text and
+provider status, costed, marked invalid (`*_judge_valid: false`), and scores
+zero; it is never counted as correct or entailed. Summary rows report
+`answer_equivalence_judge_valid_rate` and
+`citation_entailment_judge_valid_rate` over the cells that actually called
+each judge (null when none did), plus `answer_rate`, `mean_semantic_accuracy`,
+`mean_citation_entailment`, `mean_calls` and `dollars_per_semantic_correct`.
+Citation entailment is averaged over non-abstaining cells only, so it must be
+read together with `answer_rate`.
+
+### Answer-only efficiency versus total cost
+
+Judge calls are evaluation overhead, and their number and prompt size depend
+on the answer: `question_only` never gets a citation judge, abstentions get
+no judge, and more citations make a longer judge prompt. Mixing them into
+efficiency metrics would confound the representation comparison, so every
+cost-like quantity is recorded three ways:
+
+- **Answer call only**, the representation comparison. Per cell:
+  `answer_input_tokens`, `answer_cached_input_tokens`, `answer_output_tokens`,
+  `answer_reasoning_tokens`, `answer_latency_ms`, `answer_cost_usd`. Per
+  condition: `mean_answer_input_tokens`, `mean_answer_output_tokens`,
+  `mean_answer_latency_ms`, `answer_dollars_per_query`,
+  `answer_dollars_per_correct` and `answer_dollars_per_semantic_correct`.
+- **Judge calls only**, the evaluation overhead: `judge_calls`,
+  `judge_input_tokens`, `judge_output_tokens`, `judge_latency_ms`,
+  `judge_cost_usd` per cell, and the matching `mean_judge_*` and
+  `judge_dollars_per_query` per condition.
+- **All calls**, the total cost of running the cell. The pre-existing fields
+  keep that meaning: `input_tokens`, `cached_input_tokens`, `output_tokens`,
+  `reasoning_tokens`, `calls`, `latency_ms` and `cost_usd` per cell, and
+  `mean_input_tokens`, `mean_output_tokens`, `mean_calls`, `mean_latency_ms`,
+  `dollars_per_query`, `dollars_per_correct` and
+  `dollars_per_semantic_correct` per condition. Without judges they equal the
+  answer-only values.
+
+`provider_usage` is split per call when a judge ran. The report presents the
+answer-call table as the representation comparison and the all-calls table
+separately.
+
+### Question-only classification
+
+The summary puts each `question_only` cell in exactly one bucket:
+
+- `question_only_invalid_ids`: the answer call failed, or its equivalence
+  judge response was invalid;
+- `question_only_abstained_ids`: the exact `INSUFFICIENT_EVIDENCE` marker,
+  which is the instruction-compliant response to an empty evidence section
+  and is not counted as a wrong answer;
+- `question_only_correct_ids` and `question_only_incorrect_ids`: every other
+  answer, by semantic accuracy when the equivalence judge is enabled and by
+  deterministic accuracy when it is not.
+
+### Call ceiling and failure behaviour
+
+The CLI refuses to start, before constructing the provider, unless
+eligible questions x selected conditions x (1 + one per enabled judge) is at
+most `--max-calls`. The ceiling counts every enabled judge for every cell,
+although abstentions, failed answers and uncited answers skip judges, so
+actual logical calls can only be fewer. It bounds logical provider calls, not
+HTTP requests: the provider builds `openai.OpenAI()` with the SDK's default
+automatic retries (`max_retries`), so a transient failure can be retried, and
+billed, inside one logical call. Retry behaviour is unchanged.
+
+A provider exception on any call, including a judge call, still aborts the
+whole run. The run is published only after every cell completes, so nothing is
+written and every call already paid for in that run is lost (see "Paid-run
+safeguards and their limits").
+
+### Provenance
+
+The manifest keeps `prompt_sha256` as the hash of the answer instructions, as
+before, and adds `answer_equivalence_prompt_sha256` and
+`citation_entailment_prompt_sha256` only when the corresponding judge is
+enabled. The judge flags are part of the frozen config and its hash.
+
+Config hashes are not comparable across the change that added the judges and
+the question-only control. The new `answer_equivalence_judge` and
+`citation_entailment_judge` fields appear in every config dump, including runs
+that enable neither, so `config_sha256`, and a run ID derived from it, differs
+from a run made before that change with otherwise identical settings. Keeping
+`question_only` out of the default condition set preserves the default
+conditions and call count, not the hash.
+
+No live representation run with either judge or with `question_only` has been
+made; this section describes the implementation only.
 
 The initial enriched condition contains deterministic outline, extractive
 section previews, numeric/normative/date/exception facts, definitions,

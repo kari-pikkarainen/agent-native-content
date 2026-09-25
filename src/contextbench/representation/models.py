@@ -15,16 +15,30 @@ from contextbench.generation import AnswerModelConfig
 class RepresentationCondition(StrEnum):
     """Representations compared without retrieval."""
 
+    QUESTION_ONLY = "question_only"
     RAW = "raw"
     IR = "ir"
     ENRICHED = "enriched"
     INDEXED = "indexed"
 
 
+# ``question_only`` is an opt-in control: adding it to the enum must not
+# silently change the default run's conditions and provider-call count for
+# callers that relied on "all conditions" meaning the four encodings. This does
+# not keep ``config_sha256`` stable: the judge fields added beside it appear in
+# the config dump, so config hashes are not comparable across that change.
+DEFAULT_REPRESENTATION_CONDITIONS: tuple[RepresentationCondition, ...] = (
+    RepresentationCondition.RAW,
+    RepresentationCondition.IR,
+    RepresentationCondition.ENRICHED,
+    RepresentationCondition.INDEXED,
+)
+
+
 class RepresentationExperimentConfig(AnswerModelConfig):
     """Shared model settings and selected representation conditions."""
 
-    conditions: tuple[RepresentationCondition, ...] = tuple(RepresentationCondition)
+    conditions: tuple[RepresentationCondition, ...] = DEFAULT_REPRESENTATION_CONDITIONS
     enrichment: AgentEnrichmentConfig = Field(default_factory=AgentEnrichmentConfig)
     inline_feature_kinds: tuple[AgentFeatureKind, ...] = (
         AgentFeatureKind.OUTLINE,
@@ -39,6 +53,8 @@ class RepresentationExperimentConfig(AnswerModelConfig):
     max_inline_features: int = Field(default=128, ge=1)
     indexed_max_features: int = Field(default=32, ge=1)
     indexed_feature_token_budget: int = Field(default=2048, ge=1)
+    answer_equivalence_judge: bool = False
+    citation_entailment_judge: bool = False
     tokenizer_name: str = "o200k_base"
 
     @model_validator(mode="after")
@@ -72,12 +88,31 @@ class RepresentationEvaluationRecord(BaseModel):
     provider_status: str | None = None
     provider_incomplete_reason: str | None = None
     provider_text_error: str | None = None
+    abstained: bool
     accuracy: float = Field(ge=0, le=1)
+    semantic_accuracy: float | None = Field(default=None, ge=0, le=1)
+    answer_equivalence_judge_valid: bool | None = None
+    answer_equivalence_judge_reason: str | None = None
+    answer_equivalence_judge_raw_response: str | None = None
+    answer_judge_provider_status: str | None = None
+    answer_judge_provider_incomplete_reason: str | None = None
+    answer_judge_provider_text_error: str | None = None
     token_f1: float = Field(ge=0, le=1)
     anls: float = Field(ge=0, le=1)
     citation_validity: float = Field(ge=0, le=1)
     citation_support: float = Field(ge=0, le=1)
+    citation_entailment: float | None = Field(default=None, ge=0, le=1)
+    citation_entailment_judge_valid: bool | None = None
+    citation_entailment_judge_reason: str | None = None
+    citation_entailment_judge_raw_response: str | None = None
+    citation_judge_provider_status: str | None = None
+    citation_judge_provider_incomplete_reason: str | None = None
+    citation_judge_provider_text_error: str | None = None
     citation_present: bool
+    # Totals over every call made for this cell: the answer call plus any
+    # judge calls. Judge calls depend on the answer (none for abstentions,
+    # no citation judge without valid citations, longer prompts for more
+    # citations), so these totals are not a representation comparison.
     input_tokens: int = Field(ge=0)
     cached_input_tokens: int = Field(ge=0)
     output_tokens: int = Field(ge=0)
@@ -88,6 +123,19 @@ class RepresentationEvaluationRecord(BaseModel):
     response_id: str | None = None
     provider_usage: dict[str, Any]
     cost_usd: float = Field(ge=0)
+    # The answer call alone: the efficiency measure for comparing conditions.
+    answer_input_tokens: int = Field(ge=0)
+    answer_cached_input_tokens: int = Field(ge=0)
+    answer_output_tokens: int = Field(ge=0)
+    answer_reasoning_tokens: int = Field(ge=0)
+    answer_latency_ms: float = Field(ge=0)
+    answer_cost_usd: float = Field(ge=0)
+    # Evaluation overhead: every judge call for this cell, summed.
+    judge_calls: int = Field(default=0, ge=0)
+    judge_input_tokens: int = Field(default=0, ge=0)
+    judge_output_tokens: int = Field(default=0, ge=0)
+    judge_latency_ms: float = Field(default=0, ge=0)
+    judge_cost_usd: float = Field(default=0, ge=0)
 
 
 class RepresentationSummaryRow(BaseModel):
@@ -99,18 +147,39 @@ class RepresentationSummaryRow(BaseModel):
     question_count: int
     # Share of cells whose response was both provider-completed and parseable.
     response_valid_rate: float = Field(ge=0, le=1)
+    answer_rate: float = Field(ge=0, le=1)
+    answer_equivalence_judge_valid_rate: float | None = Field(default=None, ge=0, le=1)
+    citation_entailment_judge_valid_rate: float | None = Field(default=None, ge=0, le=1)
     mean_accuracy: float
+    mean_semantic_accuracy: float | None = None
     mean_token_f1: float
     mean_anls: float
     mean_citation_validity: float
     mean_citation_support: float
+    mean_citation_entailment: float | None = None
     citation_present_rate: float
     mean_representation_tokens: float
+    # Answer call only: the representation efficiency comparison.
+    mean_answer_input_tokens: float
+    mean_answer_output_tokens: float
+    mean_answer_latency_ms: float
+    answer_dollars_per_query: float
+    answer_dollars_per_correct: float | None
+    answer_dollars_per_semantic_correct: float | None = None
+    # All calls (answer plus judges): the total cost of running the cell.
     mean_input_tokens: float
     mean_output_tokens: float
+    mean_calls: float
     mean_latency_ms: float
     dollars_per_query: float
     dollars_per_correct: float | None
+    dollars_per_semantic_correct: float | None = None
+    # Judge calls only: evaluation overhead, not representation cost.
+    mean_judge_calls: float = 0
+    mean_judge_input_tokens: float = 0
+    mean_judge_output_tokens: float = 0
+    mean_judge_latency_ms: float = 0
+    judge_dollars_per_query: float = 0
 
 
 class RepresentationBenchmarkSummary(BaseModel):
@@ -121,6 +190,12 @@ class RepresentationBenchmarkSummary(BaseModel):
     run_id: str
     evaluated_question_ids: tuple[str, ...]
     skipped_question_ids: tuple[str, ...]
+    question_only_correct_ids: tuple[str, ...]
+    question_only_incorrect_ids: tuple[str, ...]
+    question_only_invalid_ids: tuple[str, ...]
+    # Exact INSUFFICIENT_EVIDENCE abstentions: the instruction-compliant
+    # response to an empty evidence section, kept apart from wrong answers.
+    question_only_abstained_ids: tuple[str, ...] = ()
     enrichment_prepare_ms: float = Field(ge=0)
     amortized_enrichment_ms_per_question: float = Field(ge=0)
     rows: tuple[RepresentationSummaryRow, ...]

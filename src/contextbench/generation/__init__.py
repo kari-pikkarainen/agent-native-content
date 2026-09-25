@@ -12,19 +12,24 @@ from contextbench.generation.models import (
 )
 from contextbench.generation.providers import AnswerProvider, OpenAIAnswerProvider
 from contextbench.generation.runner import (
+    ANSWER_EQUIVALENCE_PROMPT_INSTRUCTIONS,
     GenerationError,
     GenerationRun,
     is_abstention,
+    parse_answer_equivalence_response,
     parse_answer_response,
     parse_citation_entailment_response,
+    render_answer_equivalence_prompt,
     render_answer_prompt,
     render_citation_entailment_prompt,
+    render_citation_entailment_prompt_from_blocks,
     render_grounded_prompt,
     response_cost,
     run_generation_benchmark,
 )
 
 __all__ = [
+    "ANSWER_EQUIVALENCE_PROMPT_INSTRUCTIONS",
     "AnswerModelConfig",
     "AnswerProvider",
     "AnswerRequest",
@@ -35,13 +40,16 @@ __all__ = [
     "GenerationRun",
     "GenerationSummaryRow",
     "is_abstention",
+    "parse_answer_equivalence_response",
     "OpenAIAnswerProvider",
     "PricingMetadata",
     "ProviderAnswer",
     "parse_answer_response",
     "parse_citation_entailment_response",
     "render_answer_prompt",
+    "render_answer_equivalence_prompt",
     "render_citation_entailment_prompt",
+    "render_citation_entailment_prompt_from_blocks",
     "render_grounded_prompt",
     "response_cost",
     "run_generation_benchmark",

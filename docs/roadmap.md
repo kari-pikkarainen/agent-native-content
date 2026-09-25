@@ -87,6 +87,12 @@ envelope.
 
 ## Gate 4: Test the persistent representation directly
 
+**Implementation status:** the gold-evidence runner supports an opt-in
+question-only control, a representation-blind answer-equivalence judge, and a
+citation-entailment judge that skips abstentions, with judge validity rates,
+total calls, tokens, latency and cost, and judge prompt hashes in the
+manifest. No provider run has been made, so there is no result yet.
+
 Run RAW versus IR on identical gold evidence before adding more enrichment.
 The current two-question diagnostic makes IR about 49% larger than raw text, so
 IR must improve answer or citation quality enough to justify that overhead.

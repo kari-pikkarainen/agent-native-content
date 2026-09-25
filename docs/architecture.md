@@ -146,8 +146,15 @@ results to hashes of the source retrieval manifest and contexts.
 
 The separate gold-evidence representation runner bypasses retrieval entirely.
 It precomputes agent enrichment once per document, fixes the authorized source
-nodes from released evidence pages, and renders RAW, IR, and ENRICHED prompts
-over those identical nodes. Its immutable contexts and results live under
+nodes from released evidence pages, and renders RAW, IR, ENRICHED and INDEXED
+prompts over those identical nodes. An opt-in QUESTION_ONLY control renders no
+evidence at all. Optional same-model judges add a representation-blind
+semantic answer-equivalence score, kept separate from deterministic accuracy,
+and a citation-entailment score that never judges an abstention; the
+provider-call ceiling counts every enabled judge for every cell. Answer-call
+efficiency (tokens, latency, cost) is recorded separately from judge overhead
+and from all-call totals, so judges do not confound the representation
+comparison. Its immutable contexts and results live under
 `artifacts/representation-runs/<run-id>/`. Provider completion and parsing are
 reported separately from answer correctness: failed calls retain their usage
 and diagnostics, score zero, and contribute to a per-condition valid-response

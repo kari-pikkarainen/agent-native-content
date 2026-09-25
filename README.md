@@ -460,7 +460,24 @@ condition the same annotated source pages:
 - `raw`: minimal source text and citation IDs;
 - `ir`: canonical content plus structure and provenance;
 - `enriched`: IR plus bounded, question-independent agent features; and
-- `indexed`: IR plus a compact query-selected view of reusable features.
+- `indexed`: IR plus a compact query-selected view of reusable features; and
+- `question_only`: an opt-in control with no evidence at all, requested with
+  `--condition question_only` (the default remains the four conditions above).
+  The prompt still demands evidence-only answers, so this measures answers
+  given despite no evidence, not what the model knows; compliant abstentions
+  are counted separately.
+
+Two optional judges use the same model for every condition:
+`--answer-equivalence-judge` records a representation-blind semantic accuracy
+beside the unchanged deterministic accuracy, and `--citation-entailment-judge`
+checks whether cited source nodes support the answer. Neither judge is sent an
+exact `INSUFFICIENT_EVIDENCE` abstention, and an invalid judge response scores
+zero. `--max-calls` must cover questions x conditions x (1 + enabled judges);
+it bounds logical calls, not SDK-level retries. Judge calls are evaluation
+overhead, so representations are compared on answer-call-only tokens,
+latency and cost, reported separately from all-call totals.
+This is implemented and unit-tested only; no live run with the judges or the
+question-only control has been made.
 
 ```shell
 uv run --extra generation contextbench eval-representation \

@@ -1020,7 +1020,11 @@ def evaluate_representation(
         list[str] | None,
         typer.Option(
             "--condition",
-            help="Repeatable raw, ir, or enriched condition; defaults to all.",
+            help=(
+                "Repeatable question_only, raw, ir, enriched, or indexed "
+                "condition; defaults to raw, ir, enriched and indexed. "
+                "question_only (no evidence) is opt-in."
+            ),
         ),
     ] = None,
     max_output_tokens: Annotated[
@@ -1031,6 +1035,27 @@ def evaluate_representation(
         str | None,
         typer.Option(help="Optional provider reasoning-effort setting."),
     ] = None,
+    answer_equivalence_judge: Annotated[
+        bool,
+        typer.Option(
+            help=(
+                "Use the same model for a representation-blind call judging "
+                "whether each answer is semantically equivalent to the gold "
+                "answer. Reported as semantic accuracy beside the "
+                "deterministic accuracy."
+            )
+        ),
+    ] = False,
+    citation_entailment_judge: Annotated[
+        bool,
+        typer.Option(
+            help=(
+                "Use the same model for a call judging whether the cited "
+                "source evidence semantically supports each non-abstaining "
+                "answer."
+            )
+        ),
+    ] = False,
     run_id: Annotated[
         str | None,
         typer.Option(help="Optional immutable representation run identifier."),
@@ -1061,12 +1086,14 @@ def evaluate_representation(
         ),
     ] = False,
 ) -> None:
-    """Compare RAW, IR, and enriched encodings of identical gold pages."""
+    """Compare encodings of identical gold pages, optionally against no evidence."""
     from contextbench.generation import OpenAIAnswerProvider, PricingMetadata
     from contextbench.representation import (
+        DEFAULT_REPRESENTATION_CONDITIONS,
         RepresentationCondition,
         RepresentationError,
         RepresentationExperimentConfig,
+        representation_call_ceiling,
         run_xl_gold_representation,
     )
 
@@ -1077,28 +1104,32 @@ def evaluate_representation(
         questions = tuple(dataset.iter_subset(subset))
         conditions = tuple(
             RepresentationCondition(value)
-            for value in (condition or tuple(RepresentationCondition))
+            for value in (condition or DEFAULT_REPRESENTATION_CONDITIONS)
         )
         eligible_count = sum(
             any(evidence.pages for evidence in question.gold_evidence)
             for question in questions
         )
-        expected_calls = eligible_count * len(conditions)
-        if expected_calls > max_calls:
-            raise RepresentationError(
-                f"run requires {expected_calls} calls, above --max-calls {max_calls}"
-            )
         config = RepresentationExperimentConfig(
             model=model,
             max_output_tokens=max_output_tokens,
             reasoning_effort=reasoning_effort,
             conditions=conditions,
+            answer_equivalence_judge=answer_equivalence_judge,
+            citation_entailment_judge=citation_entailment_judge,
             pricing=PricingMetadata(
                 input_usd_per_million=input_usd_per_million,
                 cached_input_usd_per_million=cached_input_usd_per_million,
                 output_usd_per_million=output_usd_per_million,
             ),
         )
+        # Checked before the provider is constructed. Judges are counted for
+        # every cell, so the ceiling is an upper bound on actual calls.
+        expected_calls = representation_call_ceiling(eligible_count, config)
+        if expected_calls > max_calls:
+            raise RepresentationError(
+                f"run requires {expected_calls} calls, above --max-calls {max_calls}"
+            )
         result = run_xl_gold_representation(
             data_dir=data_dir,
             subset_file=subset_file,

@@ -20,8 +20,10 @@ from contextbench.generation import (
     PricingMetadata,
     ProviderAnswer,
     is_abstention,
+    parse_answer_equivalence_response,
     parse_answer_response,
     parse_citation_entailment_response,
+    render_answer_equivalence_prompt,
     run_generation_benchmark,
 )
 from contextbench.generation.models import AnswerRequest
@@ -318,6 +320,29 @@ def test_citation_entailment_parser_is_strict() -> None:
         '{"entailed":"yes","reason":"Direct support."}'
     ) == (False, "", False)
     assert parse_citation_entailment_response("yes") == (False, "", False)
+
+
+def test_answer_equivalence_prompt_is_blind_to_representation() -> None:
+    prompt = render_answer_equivalence_prompt(
+        "Which piles are used?",
+        "Open-end pipe piles",
+        "Open-ended steel pipe piles",
+    )
+
+    assert "Open-end pipe piles" in prompt
+    assert "Open-ended steel pipe piles" in prompt
+    assert "system" not in prompt.casefold()
+    assert "condition" not in prompt.casefold()
+
+
+def test_answer_equivalence_parser_is_strict() -> None:
+    assert parse_answer_equivalence_response(
+        '{"equivalent":true,"reason":"Same pile type."}'
+    ) == (True, "Same pile type.", True)
+    assert parse_answer_equivalence_response(
+        '{"equivalent":"yes","reason":"Same."}'
+    ) == (False, "", False)
+    assert parse_answer_equivalence_response("yes") == (False, "", False)
 
 
 @pytest.mark.parametrize(
