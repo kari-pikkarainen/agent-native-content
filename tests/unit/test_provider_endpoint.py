@@ -755,13 +755,11 @@ def test_eval_representation_sampling_options_reach_config(
         LOCAL_URL,
         "--temperature",
         "0",
-        "--seed",
-        "7",
     )
     config = captured.get("config")
     assert config is not None, result.output
     assert config.temperature == 0.0
-    assert config.seed == 7
+    assert config.seed is None
 
     captured.clear()
     unset, captured = _invoke_representation_cli(
@@ -773,13 +771,67 @@ def test_eval_representation_sampling_options_reach_config(
     assert config.seed is None
 
 
+def test_eval_representation_refuses_a_seed_before_building_a_provider(
+    monkeypatch, fake_openai
+) -> None:
+    result, captured = _invoke_representation_cli(
+        monkeypatch, "--provider-base-url", LOCAL_URL, "--seed", "7"
+    )
+    assert result.exit_code != 0
+    assert "no seed parameter" in result.output
+    assert "--temperature 0" in result.output
+    assert captured == {}
+    assert fake_openai == []
+
+
+def test_eval_generation_refuses_a_seed_before_building_a_provider(
+    tmp_path: Path, monkeypatch, fake_openai
+) -> None:
+    from typer.testing import CliRunner
+
+    from contextbench.cli import app
+
+    captured: dict[str, object] = {}
+    monkeypatch.setattr(
+        "contextbench.generation.run_generation_benchmark",
+        lambda *_args, **kwargs: captured.update(kwargs),
+    )
+    retrieval = _run(tmp_path, run_id="retrieval-cli-seed")
+    result = CliRunner().invoke(
+        app,
+        [
+            "eval-generation",
+            str(retrieval.path),
+            "--model",
+            "qwen3.6-35b-a3b",
+            "--input-usd-per-million",
+            "0",
+            "--cached-input-usd-per-million",
+            "0",
+            "--output-usd-per-million",
+            "0",
+            "--max-calls",
+            "1000",
+            "--provider-base-url",
+            LOCAL_URL,
+            "--seed",
+            "7",
+        ],
+    )
+    assert result.exit_code != 0
+    assert "no seed parameter" in result.output
+    assert "--temperature 0" in result.output
+    assert captured == {}
+    assert fake_openai == []
+
+
 def test_representation_sends_and_records_sampling_only_when_configured(
     tmp_path: Path, fake_openai
 ) -> None:
     runs = {}
     for run_id, sampling in (
         ("representation-sampling-unset", {}),
-        ("representation-sampling-set", {"temperature": 0.0, "seed": 7}),
+        ("representation-sampling-set", {"temperature": 0.0}),
     ):
         config = _representation_config(
             conditions=(RepresentationCondition.RAW,),
@@ -795,16 +847,17 @@ def test_representation_sends_and_records_sampling_only_when_configured(
     unset_calls, unset_manifest = runs["representation-sampling-unset"]
     set_calls, set_manifest = runs["representation-sampling-set"]
     assert unset_calls and set_calls
-    assert all("temperature" not in call and "seed" not in call for call in unset_calls)
+    assert all("temperature" not in call for call in unset_calls)
     # 0.0 is a configured temperature, not an unset one.
-    assert all(call["temperature"] == 0.0 and call["seed"] == 7 for call in set_calls)
+    assert all(call["temperature"] == 0.0 for call in set_calls)
+    assert all("seed" not in call for call in (*unset_calls, *set_calls))
     assert unset_manifest["temperature"] is None
     assert unset_manifest["seed"] is None
     assert unset_manifest["config"]["temperature"] is None
     assert set_manifest["temperature"] == 0.0
-    assert set_manifest["seed"] == 7
+    assert set_manifest["seed"] is None
     assert set_manifest["config"]["temperature"] == 0.0
-    assert set_manifest["config"]["seed"] == 7
+    assert set_manifest["config"]["seed"] is None
 
 
 def test_eval_representation_ceiling_ignores_an_existing_checkpoint(

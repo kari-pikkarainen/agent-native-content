@@ -31,7 +31,7 @@ class AnswerProvider(Protocol):
 
 
 class ProviderConfigurationError(RuntimeError):
-    """The provider would not use exactly the endpoint the config records."""
+    """The provider would not make exactly the calls the config records."""
 
 
 # The only key a configured, non-default endpoint ever receives. The SDK
@@ -52,6 +52,48 @@ FORWARDED_OPENAI_ENV_VARS = (
     "OPENAI_ADMIN_KEY",
     "OPENAI_CUSTOM_HEADERS",
 )
+
+# The Responses API has no seed parameter: the SDK's ``Responses.create``
+# rejects ``seed=`` with a TypeError, and a seed sent through ``extra_body``
+# was measured to be accepted but ignored by LM Studio. A configured seed
+# could therefore only be recorded, never applied, so it is refused. The
+# config field stays (default ``None``) so earlier configs still parse.
+SEED_UNSUPPORTED_MESSAGE = (
+    "seed is not supported: the OpenAI Responses API has no seed parameter, "
+    "so a configured seed would be recorded but never applied; leave seed "
+    "unset and use --temperature 0 for repeatable answers"
+)
+
+
+def refuse_unsupported_seed(seed: int | None) -> None:
+    """Refuse a configured sampling seed before any provider call."""
+    if seed is not None:
+        raise ProviderConfigurationError(SEED_UNSUPPORTED_MESSAGE)
+
+
+def responses_create_kwargs(
+    request: AnswerRequest,
+    config: AnswerModelConfig,
+) -> dict[str, Any]:
+    """Build the ``responses.create`` arguments for one answer call.
+
+    Every name returned must be a parameter of the installed SDK's
+    ``Responses.create``; a unit test checks this against its real signature,
+    because fake clients accept any keyword.
+    """
+    params: dict[str, Any] = {
+        "model": config.model,
+        "input": request.prompt,
+        "max_output_tokens": config.max_output_tokens,
+        "store": False,
+    }
+    if config.reasoning_effort is not None:
+        params["reasoning"] = {"effort": config.reasoning_effort}
+    # Sent only when configured: several reasoning models reject an
+    # explicit temperature, so an unset value must not become a default.
+    if config.temperature is not None:
+        params["temperature"] = config.temperature
+    return params
 
 
 def openai_client_kwargs(
@@ -151,6 +193,7 @@ class OpenAIAnswerProvider:
         environ: Mapping[str, str] | None = None,
     ) -> "OpenAIAnswerProvider":
         """Build a client for exactly the endpoint, retries and timeout recorded."""
+        refuse_unsupported_seed(config.seed)
         return cls(
             base_url=config.provider_base_url,
             max_retries=config.provider_max_retries,
@@ -176,21 +219,10 @@ class OpenAIAnswerProvider:
                 "provider was built for a different base URL, max_retries or "
                 "timeout than the run config records"
             )
-        params: dict[str, Any] = {
-            "model": config.model,
-            "input": request.prompt,
-            "max_output_tokens": config.max_output_tokens,
-            "store": False,
-        }
-        if config.reasoning_effort is not None:
-            params["reasoning"] = {"effort": config.reasoning_effort}
-        # Sent only when configured: several reasoning models reject an
-        # explicit temperature, so an unset value must not become a default.
-        if config.temperature is not None:
-            params["temperature"] = config.temperature
-        if config.seed is not None:
-            params["seed"] = config.seed
-        response = self._client.responses.create(**params)
+        refuse_unsupported_seed(config.seed)
+        response = self._client.responses.create(
+            **responses_create_kwargs(request, config)
+        )
         text, text_error = _response_text(response)
         usage = response.usage
         input_details = getattr(usage, "input_tokens_details", None)

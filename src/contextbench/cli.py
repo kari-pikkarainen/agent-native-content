@@ -65,6 +65,11 @@ PROVIDER_TIMEOUT_HELP = (
     "uses the OpenAI SDK default of 600. A non-streaming call sends nothing "
     "until generation ends, so a slow local model needs a longer limit."
 )
+SEED_HELP = (
+    "Not supported: the OpenAI Responses API has no seed parameter, so any "
+    "value is refused before the provider is built. Use --temperature 0 for "
+    "repeatable answers. Kept only to explain the refusal."
+)
 
 
 def _provider_settings(
@@ -893,7 +898,7 @@ def evaluate_generation(
     ] = None,
     seed: Annotated[
         int | None,
-        typer.Option(help="Optional provider sampling seed; unset sends no seed."),
+        typer.Option(help=SEED_HELP),
     ] = None,
     provider_base_url: Annotated[
         str | None,
@@ -950,8 +955,10 @@ def evaluate_generation(
         PricingMetadata,
         run_generation_benchmark,
     )
+    from contextbench.generation.providers import refuse_unsupported_seed
 
     try:
+        refuse_unsupported_seed(seed)
         retrieval_manifest = json.loads(
             (retrieval_run / "manifest.json").read_text(encoding="utf-8")
         )
@@ -1100,12 +1107,7 @@ def evaluate_representation(
     ] = None,
     seed: Annotated[
         int | None,
-        typer.Option(
-            help=(
-                "Optional provider sampling seed, recorded in the run config; "
-                "unset sends no seed."
-            ),
-        ),
+        typer.Option(help=SEED_HELP),
     ] = None,
     provider_base_url: Annotated[
         str | None,
@@ -1179,6 +1181,7 @@ def evaluate_representation(
 ) -> None:
     """Compare encodings of identical gold pages, optionally against no evidence."""
     from contextbench.generation import OpenAIAnswerProvider, PricingMetadata
+    from contextbench.generation.providers import refuse_unsupported_seed
     from contextbench.representation import (
         DEFAULT_REPRESENTATION_CONDITIONS,
         RepresentationCondition,
@@ -1189,6 +1192,7 @@ def evaluate_representation(
     )
 
     try:
+        refuse_unsupported_seed(seed)
         download_release(data_dir)
         dataset = XLDocBenchDataset(data_dir)
         subset = load_subset(subset_file)

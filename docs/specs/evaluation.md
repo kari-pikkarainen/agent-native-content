@@ -411,8 +411,9 @@ constructing the provider and counts the optional judge in that ceiling. Runs
 are atomically published under
 `artifacts/generation-runs/<run-id>/` and bind to hashes of the retrieval
 manifest and contexts. The run manifest records the configured `temperature`
-and `seed` alongside the frozen config; null means the setting was not sent
-and the provider default applied.
+alongside the frozen config; null means the setting was not sent and the
+provider default applied. It also records `seed`, which is always null for a
+run made through the OpenAI provider (see below).
 
 ### Provider endpoint and retries
 
@@ -443,12 +444,26 @@ level:
   failure the SDK may retry, up to `provider_max_retries` times. It must be a
   finite positive number.
 
-`eval-representation` also accepts `--temperature` and `--seed`, as
-`eval-generation` already did. Both are recorded in the config and repeated at
-the top of the manifest; an unset value is not sent at all, so the server's
-default applies and the manifest records `null`. A local server's default
-sampling is not recorded anywhere, so a reproducible local run should set
-both.
+`eval-representation` also accepts `--temperature`, as `eval-generation`
+already did. It is recorded in the config and repeated at the top of the
+manifest; an unset value is not sent at all, so the server's default applies
+and the manifest records `null`. A local server's default sampling is not
+recorded anywhere, so a reproducible local run should set `--temperature 0`.
+Measured against LM Studio, temperature 0 gave identical answers on repeated
+calls.
+
+Sampling seeds are not supported. The OpenAI Responses API has no `seed`
+parameter: the installed SDK's `Responses.create()` rejects it with a
+`TypeError`, and a seed sent through `extra_body` was accepted but ignored by
+LM Studio (the same seed gave different answers at temperature 1). A seed
+could therefore be recorded but never applied. Both commands still accept
+`--seed` only to refuse it, before the provider is built and before any call,
+with an error pointing to `--temperature 0`; the provider refuses a config
+with `seed` set in `from_config` and in `generate` as well. The `seed` config
+field remains, defaulting to null, so earlier configs and manifests still
+parse. A unit test checks every argument the provider passes to
+`responses.create` against the installed SDK's real signature, because fake
+clients accept any keyword.
 
 The SDK would otherwise read `OPENAI_BASE_URL` silently, and that is not
 recorded. The provider therefore refuses to start if `OPENAI_BASE_URL` is set
@@ -741,7 +756,7 @@ revision, subset name, subset file SHA-256 and resolved subset file path,
 all question IDs, the ordered list of (question ID, condition) cells, the
 document provenance (IR ID, source hash, parser versions), provider name and
 SDK version, provider base URL, retries and timeout, and the tokenizer. The
-config includes `temperature`, `seed` and the timeout, so changing any of
+config includes `temperature`, `seed` (always null) and the timeout, so changing any of
 them refuses a resume. Each line also stores the SHA-256 of the prompt the cell
 was answered from.
 

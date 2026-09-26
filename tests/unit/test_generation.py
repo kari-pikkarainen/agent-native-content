@@ -28,6 +28,10 @@ from contextbench.generation import (
     run_generation_benchmark,
 )
 from contextbench.generation.models import AnswerRequest
+from contextbench.generation.providers import (
+    ProviderConfigurationError,
+    responses_create_kwargs,
+)
 from contextbench.generation.runner import (
     ANSWER_PROMPT_INSTRUCTIONS,
     ANSWER_PROMPT_INSTRUCTIONS_ALIASED,
@@ -758,7 +762,7 @@ def test_response_valid_rate_separates_failed_calls_from_wrong_answers() -> None
     assert summary.rows[0].question_count == 2
 
 
-def test_generation_manifest_records_configured_temperature_and_seed(
+def test_generation_manifest_records_configured_temperature(
     tmp_path: Path,
 ) -> None:
     retrieval = _run(tmp_path, run_id="retrieval-sampling")
@@ -776,9 +780,7 @@ def test_generation_manifest_records_configured_temperature_and_seed(
     configured = run_generation_benchmark(
         retrieval.path,
         _corpus(tmp_path).questions,
-        config=_generation_config().model_copy(
-            update={"temperature": 0.0, "seed": 7}
-        ),
+        config=_generation_config().model_copy(update={"temperature": 0.0}),
         provider=FixtureProvider(),
         artifacts_root=tmp_path / "artifacts",
         run_id="generation-sampling-configured",
@@ -798,50 +800,120 @@ def test_generation_manifest_records_configured_temperature_and_seed(
         (configured.path / "manifest.json").read_text(encoding="utf-8")
     )
     assert configured_manifest["temperature"] == 0.0
-    assert configured_manifest["seed"] == 7
+    assert configured_manifest["seed"] is None
     assert configured_manifest["config"]["temperature"] == 0.0
-    assert configured_manifest["config"]["seed"] == 7
+    assert configured_manifest["config"]["seed"] is None
+
+
+class _RecordingResponses:
+    """Fake ``client.responses``; like every fake, it accepts any keyword."""
+
+    def __init__(self) -> None:
+        self.calls: list[dict[str, object]] = []
+
+    def create(self, **kwargs):
+        self.calls.append(kwargs)
+        return SimpleNamespace(
+            id="response-1",
+            model="resolved-model",
+            output_text='{"answer":"yes","citations":[]}',
+            status="completed",
+            incomplete_details=None,
+            usage=SimpleNamespace(
+                input_tokens=10,
+                output_tokens=5,
+                total_tokens=15,
+                input_tokens_details=None,
+                output_tokens_details=None,
+            ),
+        )
 
 
 def test_openai_provider_sends_sampling_settings_only_when_configured() -> None:
-    calls: list[dict[str, object]] = []
-
-    class Responses:
-        @staticmethod
-        def create(**kwargs):
-            calls.append(kwargs)
-            return SimpleNamespace(
-                id="response-1",
-                model="resolved-model",
-                output_text='{"answer":"yes","citations":[]}',
-                status="completed",
-                incomplete_details=None,
-                usage=SimpleNamespace(
-                    input_tokens=10,
-                    output_tokens=5,
-                    total_tokens=15,
-                    input_tokens_details=None,
-                    output_tokens_details=None,
-                ),
-            )
-
-    provider = OpenAIAnswerProvider(client=SimpleNamespace(responses=Responses()))
+    responses = _RecordingResponses()
+    calls = responses.calls
+    provider = OpenAIAnswerProvider(client=SimpleNamespace(responses=responses))
     request = _provider_request()
 
     unset = provider.generate(request, config=_generation_config())
     provider.generate(
         request,
-        config=_generation_config().model_copy(
-            update={"temperature": 0.0, "seed": 7}
-        ),
+        config=_generation_config().model_copy(update={"temperature": 0.0}),
     )
 
     assert "temperature" not in calls[0]
-    assert "seed" not in calls[0]
     # 0.0 is a configured temperature, not an unset one.
     assert calls[1]["temperature"] == 0.0
-    assert calls[1]["seed"] == 7
+    assert all("seed" not in call for call in calls)
     assert unset.provider_valid is True
+
+
+def test_openai_provider_refuses_a_seed_before_any_call() -> None:
+    # The Responses API has no seed parameter, so a configured seed could only
+    # be recorded, never applied. Old configs with seed unset still parse.
+    seeded = _generation_config().model_copy(update={"temperature": 0.0, "seed": 7})
+    assert GenerationConfig.model_validate(
+        _generation_config().model_dump(mode="json")
+    ).seed is None
+    with pytest.raises(ProviderConfigurationError, match="no seed parameter"):
+        OpenAIAnswerProvider.from_config(seeded, environ={})
+
+    responses = _RecordingResponses()
+    provider = OpenAIAnswerProvider(client=SimpleNamespace(responses=responses))
+    with pytest.raises(ProviderConfigurationError, match="--temperature 0"):
+        provider.generate(_provider_request(), config=seeded)
+    assert responses.calls == []
+
+
+def _every_optional_setting_config() -> GenerationConfig:
+    """A config with every optional request setting set, seed included."""
+    config = _generation_config().model_copy(
+        update={
+            "max_output_tokens": 999,
+            "reasoning_effort": "low",
+            "temperature": 0.0,
+            "seed": 7,
+            "provider_base_url": "http://127.0.0.1:1234/v1",
+        }
+    )
+    unset_optional = [
+        name
+        for name, field in GenerationConfig.model_fields.items()
+        if field.default is None and getattr(config, name) is None
+    ]
+    # A new optional setting must be added here so its request key is checked.
+    assert unset_optional == []
+    return config
+
+
+def test_responses_create_kwargs_exist_in_the_installed_sdk_signature() -> None:
+    import inspect
+
+    responses_module = pytest.importorskip("openai.resources.responses")
+    parameters = inspect.signature(responses_module.Responses.create).parameters
+    accepted = {
+        name
+        for name, parameter in parameters.items()
+        if name != "self" and parameter.kind is not inspect.Parameter.VAR_KEYWORD
+    }
+    # The premise of refusing a seed: the installed SDK has no such parameter.
+    assert "seed" not in accepted
+
+    config = _every_optional_setting_config()
+    request = _provider_request()
+    kwargs = responses_create_kwargs(request, config)
+    assert {"reasoning", "temperature", "max_output_tokens"} <= set(kwargs)
+    assert set(kwargs) - accepted == set()
+
+    # ``generate`` sends exactly these arguments (seed unset, as it must be).
+    responses = _RecordingResponses()
+    provider = OpenAIAnswerProvider(
+        client=SimpleNamespace(responses=responses),
+        base_url=config.provider_base_url,
+    )
+    unseeded = config.model_copy(update={"seed": None})
+    provider.generate(request, config=unseeded)
+    assert responses.calls == [responses_create_kwargs(request, unseeded)]
 
 
 def test_openai_provider_marks_non_completed_responses_provider_invalid() -> None:
