@@ -229,3 +229,57 @@ falls back to deterministic accuracy, with the reason recorded.
 - A local 4-bit quantization. Results may not transfer to frontier models.
 - Representations differ in length, so a gain may come from length rather than
   structure.
+
+## Dated note: 2026-09-26, a pipeline defect found by the pilot
+
+The pilot's first call failed before any answer existed:
+`Responses.create() got an unexpected keyword argument 'seed'`. The installed
+OpenAI SDK's Responses API has no seed parameter. Measured against this LM
+Studio server:
+- a seed sent in the request body is accepted but ignored (the same seed gave
+  different answers at temperature 1);
+- temperature 0 is repeatable on its own (3 of 3 identical outputs).
+
+So `--seed 20260926` could never have been applied. Commit `8e47c52` refuses
+any seed, and **the setting is removed**. `--temperature 0` is the determinism
+control. Nothing else changes. This is a pipeline defect under the "Pilot"
+rules above. No answer or score of either run existed when it was found; the
+failed pilot wrote no cell.
+
+The registered commands, corrected, are the commands above with
+`--seed 20260926` deleted:
+
+```text
+uv run contextbench eval-representation \
+  --subset-file benchmarks/xl-docbench/subsets/xldev24-pilot2.json \
+  --condition question_only --condition raw --condition ir \
+  --condition enriched --condition indexed \
+  --model gemma-4-12b-it-mlx \
+  --provider-base-url http://127.0.0.1:1234/v1 \
+  --provider-timeout 3600 --provider-max-retries 0 \
+  --temperature 0 --max-output-tokens 1024 \
+  --answer-equivalence-judge --citation-entailment-judge \
+  --input-usd-per-million 0 --cached-input-usd-per-million 0 \
+  --output-usd-per-million 0 \
+  --max-calls 30 \
+  --run-id xldev24-pilot2-gemma4-12b
+```
+
+```text
+uv run contextbench eval-representation \
+  --subset-file benchmarks/xl-docbench/subsets/xldev24.json \
+  --condition question_only --condition raw --condition ir \
+  --condition enriched --condition indexed \
+  --model gemma-4-12b-it-mlx \
+  --provider-base-url http://127.0.0.1:1234/v1 \
+  --provider-timeout 3600 --provider-max-retries 0 \
+  --temperature 0 --max-output-tokens 1024 \
+  --answer-equivalence-judge --citation-entailment-judge \
+  --input-usd-per-million 0 --cached-input-usd-per-million 0 \
+  --output-usd-per-million 0 \
+  --max-calls 270 \
+  --run-id xldev24-representation-gemma4-12b
+```
+
+The run's commit is now the one that adds this note, or a later commit that
+changes nothing under `src/`.
