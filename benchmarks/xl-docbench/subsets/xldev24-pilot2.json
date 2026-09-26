@@ -1,0 +1,17 @@
+{
+  "name": "xldev24-pilot2",
+  "dataset": "microsoft/XL-DocBench",
+  "release_version": "xldocbench_strict_1345_v1",
+  "release_revision": "72954bd70ffffe230f08b57c57fa9274ec14d7ea",
+  "selection_seed": 20260926,
+  "selection_method": "PIPELINE CHECK, NOT EVIDENCE. The two answerable xldev24 questions with the smallest and the largest gold-page representation, measured by the largest rendered prompt across conditions in a no-call dry run (o200k_base: adubench_single_000266 at 4,244 tokens, adubench_single_001102 at 135,748). Chosen by size only, to exercise a local-model run end to end (timeout, judges, parsing, memory, resume) before the preregistered xldev24 run. Both questions are also in that run, which answers them again; only its answers count.",
+  "strata": {
+    "purpose": "pipeline_check_not_evidence",
+    "answerable": 2,
+    "parent_subset": "xldev24"
+  },
+  "question_ids": [
+    "adubench_single_000266",
+    "adubench_single_001102"
+  ]
+}
