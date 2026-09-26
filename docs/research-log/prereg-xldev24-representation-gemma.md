@@ -283,3 +283,35 @@ uv run contextbench eval-representation \
 
 The run's commit is now the one that adds this note, or a later commit that
 changes nothing under `src/`.
+
+## Dated note: 2026-09-26, a second pipeline defect: the bare abstention marker
+
+In the resumed pilot, Gemma twice produced something other than the JSON the
+prompt asks for:
+- for `adubench_single_000266` under `ir`, the bare text `INSUFFICIENT_EVIDENCE`;
+- under `question_only`, a sentence of prose.
+
+The old parser scored the first as **invalid**, although it is an unambiguous
+abstention.
+
+The owner decided, before any answer of the registered run exists, that a
+response that is **exactly** the marker is a valid abstention with no
+citations, as of commit `5ba6e35`:
+- the match uses `is_abstention`'s own case and whitespace rule, after the
+  existing code-fence removal;
+- it skips both judges, like any abstention;
+- every other non-JSON response, including prose and a marker inside a
+  sentence, stays invalid.
+
+The rule does not look at the condition or the evidence. Its effect is that
+bare-marker abstentions count as abstained instead of invalid. On answerable
+questions both score zero accuracy; answer validity rises. Validity and
+abstention rates from this run are therefore not comparable with runs scored
+under the earlier parser.
+
+The pilot was resumed at `a23a848` and so uses the old parser. That does not
+matter, because the pilot is not evidence.
+
+The registered commands are unchanged from the previous note. The run's commit
+is now the one that adds this note, or a later commit that changes nothing
+under `src/`.
