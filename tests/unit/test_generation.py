@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
@@ -343,6 +344,106 @@ def test_answer_equivalence_parser_is_strict() -> None:
         '{"equivalent":"yes","reason":"Same."}'
     ) == (False, "", False)
     assert parse_answer_equivalence_response("yes") == (False, "", False)
+
+
+def _legacy_parse_answer_response(text: str) -> tuple[str, tuple[str, ...], bool]:
+    """Frozen copy of the answer parser before fence handling was shared."""
+    value = text.strip()
+    if value.startswith("```"):
+        lines = value.splitlines()
+        if len(lines) >= 3 and lines[-1].strip() == "```":
+            value = "\n".join(lines[1:-1])
+            if value.lstrip().startswith("json"):
+                value = value.lstrip()[4:].lstrip()
+    try:
+        payload = json.loads(value)
+    except json.JSONDecodeError:
+        return "", (), False
+    if not isinstance(payload, dict):
+        return "", (), False
+    answer = payload.get("answer")
+    citations = payload.get("citations")
+    if not isinstance(answer, str) or not isinstance(citations, list):
+        return "", (), False
+    if any(not isinstance(citation, str) for citation in citations):
+        return "", (), False
+    return answer.strip(), tuple(citations), True
+
+
+_ANSWER_JSON = '{"answer":" 42 ","citations":["E1","E2"]}'
+_ANSWER_PARSER_CASES = (
+    _ANSWER_JSON,
+    f"  \n{_ANSWER_JSON}\n\t",
+    f"```json\n{_ANSWER_JSON}\n```",
+    f"```\n{_ANSWER_JSON}\n```",
+    f"  ```json  \n{_ANSWER_JSON}\n  ```  \n",
+    f"```JSON\n{_ANSWER_JSON}\n```",
+    f"```python\n{_ANSWER_JSON}\n```",
+    f"```\njson\n{_ANSWER_JSON}\n```",
+    f"```\njson{_ANSWER_JSON}\n```",
+    f"```json\n{_ANSWER_JSON}```",
+    f"```json\n{_ANSWER_JSON}",
+    f"```json {_ANSWER_JSON} ```",
+    f"```json\n{_ANSWER_JSON}\n```\n```",
+    f"```json\n```json\n{_ANSWER_JSON}\n```\n```",
+    f"Here you go:\n```json\n{_ANSWER_JSON}\n```",
+    f"```json\n{_ANSWER_JSON}\n```\nHope that helps.",
+    f"Answer: {_ANSWER_JSON}",
+    '```json\n{"answer":"42","citations":["E1"\n```',
+    '{"answer":"42","citations":["E1"],}',
+    '{"answer":"42","citations":"E1"}',
+    '{"answer":42,"citations":[]}',
+    '{"answer":"42","citations":[1]}',
+    '["42"]',
+    "",
+    "```",
+    "```\n```",
+    "```json\n\n```",
+    "Answer: 42",
+    '{"answer":"INSUFFICIENT_EVIDENCE","citations":[]}',
+)
+
+
+@pytest.mark.parametrize("text", _ANSWER_PARSER_CASES)
+def test_answer_parser_is_unchanged_by_shared_fence_helper(text: str) -> None:
+    assert parse_answer_response(text) == _legacy_parse_answer_response(text)
+
+
+@pytest.mark.parametrize(
+    ("parser", "payload", "expected"),
+    (
+        (
+            parse_citation_entailment_response,
+            '{"entailed":true,"reason":"Direct support."}',
+            (True, "Direct support.", True),
+        ),
+        (
+            parse_answer_equivalence_response,
+            '{"equivalent":false,"reason":"Different pile type."}',
+            (False, "Different pile type.", True),
+        ),
+    ),
+)
+def test_judge_parsers_accept_only_an_enclosing_code_fence(
+    parser: Callable[[str], tuple[bool, str, bool]],
+    payload: str,
+    expected: tuple[bool, str, bool],
+) -> None:
+    invalid = (False, "", False)
+    # A fence around otherwise valid JSON is the only tolerated wrapper.
+    assert parser(f"```json\n{payload}\n```") == expected
+    assert parser(f"```\n{payload}\n```") == expected
+    assert parser(f"\n  ```json\n{payload}\n```  \n") == expected
+    # Truncated output stays invalid, fenced or not.
+    assert parser(f"```json\n{payload[:-5]}\n```") == invalid
+    assert parser(f"```json\n{payload}") == invalid
+    assert parser(payload[:-1]) == invalid
+    # Prose around the JSON is not extracted.
+    assert parser(f"Sure:\n```json\n{payload}\n```") == invalid
+    assert parser(f"```json\n{payload}\n```\nDone.") == invalid
+    assert parser(f"The judgment is {payload}") == invalid
+    # No other repair, such as dropping trailing commas.
+    assert parser(payload[:-1] + ",}") == invalid
 
 
 @pytest.mark.parametrize(

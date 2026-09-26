@@ -532,8 +532,17 @@ def render_grounded_prompt(
     return f"{instructions}\n\nQuestion:\n{question}\n\nEvidence:\n{evidence}"
 
 
-def parse_answer_response(text: str) -> tuple[str, tuple[str, ...], bool]:
-    """Parse the strict JSON answer contract without repairing invalid output."""
+def _strip_json_code_fence(text: str) -> str:
+    """Remove one enclosing Markdown code fence, and nothing else.
+
+    Local models often wrap an otherwise valid JSON object in a ```` ```json ````
+    fence. Only a response that *starts* with a fence line and *ends* with a
+    closing ```` ``` ```` line is unwrapped; surrounding whitespace is ignored.
+    No other repair happens: prose around the JSON, truncation, or malformed
+    JSON still fails the caller's ``json.loads``. The logic is exactly the
+    answer parser's historical fence handling, shared so every parser
+    (answer and both judges) accepts the same outputs.
+    """
     value = text.strip()
     if value.startswith("```"):
         lines = value.splitlines()
@@ -541,8 +550,13 @@ def parse_answer_response(text: str) -> tuple[str, tuple[str, ...], bool]:
             value = "\n".join(lines[1:-1])
             if value.lstrip().startswith("json"):
                 value = value.lstrip()[4:].lstrip()
+    return value
+
+
+def parse_answer_response(text: str) -> tuple[str, tuple[str, ...], bool]:
+    """Parse the strict JSON answer contract without repairing invalid output."""
     try:
-        payload = json.loads(value)
+        payload = json.loads(_strip_json_code_fence(text))
     except json.JSONDecodeError:
         return "", (), False
     if not isinstance(payload, dict):
@@ -617,7 +631,7 @@ def render_citation_entailment_prompt_from_blocks(
 def parse_citation_entailment_response(text: str) -> tuple[bool, str, bool]:
     """Parse a strict boolean entailment judgment without repair."""
     try:
-        payload = json.loads(text.strip())
+        payload = json.loads(_strip_json_code_fence(text))
     except json.JSONDecodeError:
         return False, "", False
     if not isinstance(payload, dict):
@@ -650,7 +664,7 @@ def render_answer_equivalence_prompt(
 def parse_answer_equivalence_response(text: str) -> tuple[bool, str, bool]:
     """Parse a strict boolean answer-equivalence judgment without repair."""
     try:
-        payload = json.loads(text.strip())
+        payload = json.loads(_strip_json_code_fence(text))
     except json.JSONDecodeError:
         return False, "", False
     if not isinstance(payload, dict):

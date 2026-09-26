@@ -371,7 +371,12 @@ entailment. An optional second call to the same frozen model judges whether the
 cited evidence supports the generated answer without seeing the gold answer.
 The judge uses only cited items, returns a strict boolean JSON decision, and
 treats embedded evidence as data rather than instructions. Invalid judge
-output scores zero. The judge is not called for the exact
+output scores zero. The answer, citation-entailment, and answer-equivalence
+parsers share one rule: a single enclosing Markdown code fence around the JSON
+is removed (the whole opening fence line, whatever its info string, plus a
+closing ```` ``` ```` line, and a bare `json` token directly after the opening
+line), and nothing else is repaired, so prose around the JSON, truncation, a
+nested fence or malformed JSON stays invalid. The judge is not called for the exact
 `INSUFFICIENT_EVIDENCE` abstention marker: an abstention makes no factual answer
 claim, and crediting evidence for not answering would not measure support for
 an answer.
