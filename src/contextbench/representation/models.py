@@ -12,6 +12,10 @@ from contextbench.agentdoc import (
 from contextbench.generation import AnswerModelConfig
 
 
+class RepresentationError(RuntimeError):
+    """Raised when a representation experiment cannot run reproducibly."""
+
+
 class RepresentationCondition(StrEnum):
     """Representations compared without retrieval."""
 
@@ -119,7 +123,11 @@ class RepresentationEvaluationRecord(BaseModel):
     reasoning_tokens: int = Field(ge=0)
     calls: int = Field(default=1, ge=1)
     latency_ms: float = Field(ge=0)
+    # Provider-reported served model of the answer call, and of each judge
+    # call when one was made. A run refuses to mix served models.
     model_id: str
+    answer_judge_model_id: str | None = None
+    citation_judge_model_id: str | None = None
     response_id: str | None = None
     provider_usage: dict[str, Any]
     cost_usd: float = Field(ge=0)

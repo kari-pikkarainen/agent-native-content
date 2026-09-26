@@ -59,13 +59,25 @@ PROVIDER_MAX_RETRIES_HELP = (
 )
 
 
+PROVIDER_TIMEOUT_HELP = (
+    "Seconds one HTTP attempt may take (read, write and pool limits; the "
+    "5-second connect limit is the SDK's), recorded in the run config. Unset "
+    "uses the OpenAI SDK default of 600. A non-streaming call sends nothing "
+    "until generation ends, so a slow local model needs a longer limit."
+)
+
+
 def _provider_settings(
-    base_url: str | None, max_retries: int | None
-) -> dict[str, str | int | None]:
-    """Config fields for the provider endpoint; unset retries keep the default."""
-    settings: dict[str, str | int | None] = {"provider_base_url": base_url}
+    base_url: str | None,
+    max_retries: int | None,
+    timeout_seconds: float | None = None,
+) -> dict[str, str | int | float | None]:
+    """Config fields for the provider endpoint; unset values keep the default."""
+    settings: dict[str, str | int | float | None] = {"provider_base_url": base_url}
     if max_retries is not None:
         settings["provider_max_retries"] = max_retries
+    if timeout_seconds is not None:
+        settings["provider_timeout_seconds"] = timeout_seconds
     return settings
 
 
@@ -891,6 +903,10 @@ def evaluate_generation(
         int | None,
         typer.Option(min=0, help=PROVIDER_MAX_RETRIES_HELP),
     ] = None,
+    provider_timeout: Annotated[
+        float | None,
+        typer.Option("--provider-timeout", help=PROVIDER_TIMEOUT_HELP),
+    ] = None,
     citation_entailment_judge: Annotated[
         bool,
         typer.Option(
@@ -965,7 +981,9 @@ def evaluate_generation(
             reasoning_effort=reasoning_effort,
             temperature=temperature,
             seed=seed,
-            **_provider_settings(provider_base_url, provider_max_retries),
+            **_provider_settings(
+                provider_base_url, provider_max_retries, provider_timeout
+            ),
             systems=selected_systems,
             budgets=selected_budgets,
             citation_entailment_judge=citation_entailment_judge,
@@ -982,6 +1000,7 @@ def evaluate_generation(
             provider=OpenAIAnswerProvider(
                 base_url=config.provider_base_url,
                 max_retries=config.provider_max_retries,
+                timeout_seconds=config.provider_timeout_seconds,
             ),
             artifacts_root=artifacts_root,
             run_id=run_id,
@@ -1069,6 +1088,25 @@ def evaluate_representation(
         str | None,
         typer.Option(help="Optional provider reasoning-effort setting."),
     ] = None,
+    temperature: Annotated[
+        float | None,
+        typer.Option(
+            min=0,
+            help=(
+                "Optional sampling temperature, recorded in the run config; "
+                "unset sends no temperature, so the server default applies."
+            ),
+        ),
+    ] = None,
+    seed: Annotated[
+        int | None,
+        typer.Option(
+            help=(
+                "Optional provider sampling seed, recorded in the run config; "
+                "unset sends no seed."
+            ),
+        ),
+    ] = None,
     provider_base_url: Annotated[
         str | None,
         typer.Option(help=PROVIDER_BASE_URL_HELP),
@@ -1076,6 +1114,10 @@ def evaluate_representation(
     provider_max_retries: Annotated[
         int | None,
         typer.Option(min=0, help=PROVIDER_MAX_RETRIES_HELP),
+    ] = None,
+    provider_timeout: Annotated[
+        float | None,
+        typer.Option("--provider-timeout", help=PROVIDER_TIMEOUT_HELP),
     ] = None,
     answer_equivalence_judge: Annotated[
         bool,
@@ -1100,7 +1142,14 @@ def evaluate_representation(
     ] = False,
     run_id: Annotated[
         str | None,
-        typer.Option(help="Optional immutable representation run identifier."),
+        typer.Option(
+            help=(
+                "Optional immutable representation run identifier. Completed "
+                "cells are checkpointed as the run goes; rerunning the same "
+                "command with the same explicit --run-id after an interruption "
+                "resumes it, calling the provider only for unfinished cells."
+            )
+        ),
     ] = None,
     parse_workers: Annotated[
         int,
@@ -1156,7 +1205,11 @@ def evaluate_representation(
             model=model,
             max_output_tokens=max_output_tokens,
             reasoning_effort=reasoning_effort,
-            **_provider_settings(provider_base_url, provider_max_retries),
+            temperature=temperature,
+            seed=seed,
+            **_provider_settings(
+                provider_base_url, provider_max_retries, provider_timeout
+            ),
             conditions=conditions,
             answer_equivalence_judge=answer_equivalence_judge,
             citation_entailment_judge=citation_entailment_judge,
@@ -1167,7 +1220,9 @@ def evaluate_representation(
             ),
         )
         # Checked before the provider is constructed. Judges are counted for
-        # every cell, so the ceiling is an upper bound on actual calls.
+        # every cell, so the ceiling is an upper bound on actual calls. It is
+        # the planned total of the whole run, also when resuming: cells loaded
+        # from a checkpoint never lower or reset it.
         expected_calls = representation_call_ceiling(eligible_count, config)
         if expected_calls > max_calls:
             raise RepresentationError(
@@ -1183,6 +1238,7 @@ def evaluate_representation(
             provider=OpenAIAnswerProvider(
                 base_url=config.provider_base_url,
                 max_retries=config.provider_max_retries,
+                timeout_seconds=config.provider_timeout_seconds,
             ),
             docling_artifacts_dir=docling_artifacts_dir,
             run_id=run_id,

@@ -23,7 +23,11 @@ from contextbench.generation import (
     OpenAIAnswerProvider,
     run_generation_benchmark,
 )
-from contextbench.generation.models import OPENAI_SDK_DEFAULT_MAX_RETRIES
+from contextbench.generation.models import (
+    OPENAI_SDK_DEFAULT_CONNECT_TIMEOUT_SECONDS,
+    OPENAI_SDK_DEFAULT_MAX_RETRIES,
+    OPENAI_SDK_DEFAULT_TIMEOUT_SECONDS,
+)
 from contextbench.generation.providers import (
     FORWARDED_OPENAI_ENV_VARS,
     LOCAL_PLACEHOLDER_API_KEY,
@@ -38,6 +42,15 @@ from contextbench.representation import (
 
 LOCAL_URL = "http://127.0.0.1:1234/v1"
 SECRET_KEY = "sk-test-never-recorded-0123456789"
+DEFAULT_SECONDS = OPENAI_SDK_DEFAULT_TIMEOUT_SECONDS
+
+
+def _client_timeout(seconds: float = DEFAULT_SECONDS):
+    """The timeout object the provider passes to ``openai.OpenAI``."""
+    openai = pytest.importorskip("openai")
+    return openai.Timeout(
+        seconds, connect=OPENAI_SDK_DEFAULT_CONNECT_TIMEOUT_SECONDS
+    )
 
 
 class _Responses:
@@ -92,11 +105,12 @@ def test_defaults_build_the_client_exactly_as_before() -> None:
     # No base URL: nothing but the SDK's own retry default is passed, so the
     # SDK still requires the real key and still targets the OpenAI API.
     assert openai_client_kwargs(base_url=None, max_retries=2, environ={}) == {
-        "max_retries": 2
+        "max_retries": 2,
+        "timeout": DEFAULT_SECONDS,
     }
     assert openai_client_kwargs(
         base_url=None, max_retries=2, environ={"OPENAI_API_KEY": SECRET_KEY}
-    ) == {"max_retries": 2}
+    ) == {"max_retries": 2, "timeout": DEFAULT_SECONDS}
     config = _generation_config()
     assert config.provider_base_url is None
     assert config.provider_max_retries == OPENAI_SDK_DEFAULT_MAX_RETRIES
@@ -108,6 +122,7 @@ def test_a_configured_endpoint_only_ever_gets_the_placeholder_key(environ) -> No
     assert local == {
         "base_url": LOCAL_URL,
         "max_retries": 0,
+        "timeout": DEFAULT_SECONDS,
         "api_key": LOCAL_PLACEHOLDER_API_KEY,
     }
     # Without a base URL no placeholder is ever supplied: the SDK uses the
@@ -145,7 +160,7 @@ def test_forwarded_openai_variables_are_refused_for_a_configured_endpoint(
     # The OpenAI API itself keeps its existing behaviour.
     assert openai_client_kwargs(
         base_url=None, max_retries=2, environ={name: "org-secret"}
-    ) == {"max_retries": 2}
+    ) == {"max_retries": 2, "timeout": DEFAULT_SECONDS}
 
 
 def test_unrecorded_environment_endpoint_is_refused() -> None:
@@ -178,12 +193,16 @@ def test_provider_passes_base_url_and_retries_to_the_client(fake_openai) -> None
         {
             "base_url": LOCAL_URL,
             "max_retries": 0,
+            "timeout": _client_timeout(),
             "api_key": LOCAL_PLACEHOLDER_API_KEY,
         }
     ]
 
     default = OpenAIAnswerProvider(environ={"OPENAI_API_KEY": SECRET_KEY})
-    assert fake_openai[1] == {"max_retries": OPENAI_SDK_DEFAULT_MAX_RETRIES}
+    assert fake_openai[1] == {
+        "max_retries": OPENAI_SDK_DEFAULT_MAX_RETRIES,
+        "timeout": _client_timeout(),
+    }
 
     # A config naming another endpoint than the client's is refused per call.
     with pytest.raises(ProviderConfigurationError):
@@ -465,6 +484,7 @@ def test_eval_representation_options_reach_config_and_client(
         {
             "base_url": LOCAL_URL,
             "max_retries": 0,
+            "timeout": _client_timeout(),
             "api_key": LOCAL_PLACEHOLDER_API_KEY,
         }
     ]
@@ -480,7 +500,12 @@ def test_eval_representation_defaults_keep_the_sdk_endpoint(
     assert config is not None, result.output
     assert config.provider_base_url is None
     assert config.provider_max_retries == OPENAI_SDK_DEFAULT_MAX_RETRIES
-    assert fake_openai == [{"max_retries": OPENAI_SDK_DEFAULT_MAX_RETRIES}]
+    assert fake_openai == [
+        {
+            "max_retries": OPENAI_SDK_DEFAULT_MAX_RETRIES,
+            "timeout": _client_timeout(),
+        }
+    ]
 
 
 @pytest.mark.parametrize(
@@ -549,6 +574,7 @@ def test_eval_representation_never_passes_the_real_key_to_an_endpoint(
         {
             "base_url": LOCAL_URL,
             "max_retries": OPENAI_SDK_DEFAULT_MAX_RETRIES,
+            "timeout": _client_timeout(),
             "api_key": LOCAL_PLACEHOLDER_API_KEY,
         }
     ]
@@ -606,6 +632,7 @@ def test_eval_generation_options_reach_config_and_client(
     assert fake_openai[-1] == {
         "base_url": LOCAL_URL,
         "max_retries": 0,
+        "timeout": _client_timeout(),
         "api_key": LOCAL_PLACEHOLDER_API_KEY,
     }
 
@@ -617,3 +644,277 @@ def test_eval_generation_options_reach_config_and_client(
     assert "OPENAI_BASE_URL" in refused.output
     assert captured == {}
     assert len(fake_openai) == constructions
+
+
+def test_default_timeout_matches_the_installed_sdk() -> None:
+    constants = pytest.importorskip("openai._constants")
+    # The default config builds a client whose timeout is the SDK's own.
+    assert _client_timeout() == constants.DEFAULT_TIMEOUT
+    assert constants.DEFAULT_TIMEOUT.read == OPENAI_SDK_DEFAULT_TIMEOUT_SECONDS
+    assert (
+        constants.DEFAULT_TIMEOUT.connect == OPENAI_SDK_DEFAULT_CONNECT_TIMEOUT_SECONDS
+    )
+    assert _generation_config().provider_timeout_seconds == DEFAULT_SECONDS
+
+
+@pytest.mark.parametrize("value", [0, -1, float("inf"), float("nan")])
+def test_unusable_timeouts_are_rejected(value: float) -> None:
+    with pytest.raises(ValidationError):
+        GenerationConfig(
+            **{**_generation_config().model_dump(), "provider_timeout_seconds": value}
+        )
+
+
+def test_provider_passes_the_configured_timeout_to_the_client(fake_openai) -> None:
+    config = _generation_config().model_copy(
+        update={"provider_base_url": LOCAL_URL, "provider_timeout_seconds": 2400.0}
+    )
+    provider = OpenAIAnswerProvider.from_config(config, environ={})
+    assert fake_openai[-1]["timeout"] == _client_timeout(2400.0)
+    assert fake_openai[-1]["timeout"].connect == (
+        OPENAI_SDK_DEFAULT_CONNECT_TIMEOUT_SECONDS
+    )
+    # A config recording another timeout than the client's is refused.
+    with pytest.raises(ProviderConfigurationError, match="timeout"):
+        provider.generate(
+            _request(),
+            config=config.model_copy(update={"provider_timeout_seconds": 600.0}),
+        )
+
+
+def test_real_sdk_client_uses_the_configured_timeout() -> None:
+    pytest.importorskip("openai")
+    provider = OpenAIAnswerProvider(
+        base_url=LOCAL_URL, max_retries=0, timeout_seconds=2400.0, environ={}
+    )
+    # Construction only; no request is sent.
+    assert provider._client.timeout == _client_timeout(2400.0)
+
+
+def test_manifests_record_the_timeout(tmp_path: Path, fake_openai) -> None:
+    generation_config = _generation_config().model_copy(
+        update={"provider_base_url": LOCAL_URL, "provider_timeout_seconds": 2400.0}
+    )
+    generation = _run_generation(
+        tmp_path,
+        generation_config,
+        OpenAIAnswerProvider.from_config(generation_config, environ={}),
+        "generation-timeout",
+    )
+    representation_config = _representation_config(
+        conditions=(RepresentationCondition.RAW,),
+        provider_base_url=LOCAL_URL,
+        provider_timeout_seconds=2400.0,
+    )
+    representation = _run_representation(
+        tmp_path,
+        representation_config,
+        OpenAIAnswerProvider.from_config(representation_config, environ={}),
+        "representation-timeout",
+    )
+    for result in (generation, representation):
+        recorded = json.loads((result.path / "manifest.json").read_text())
+        assert recorded["provider_timeout_seconds"] == 2400.0
+        assert recorded["config"]["provider_timeout_seconds"] == 2400.0
+
+
+def test_eval_representation_timeout_reaches_config_and_client(
+    monkeypatch, fake_openai
+) -> None:
+    result, captured = _invoke_representation_cli(
+        monkeypatch,
+        "--provider-base-url",
+        LOCAL_URL,
+        "--provider-timeout",
+        "2400",
+    )
+    config = captured.get("config")
+    assert config is not None, result.output
+    assert config.provider_timeout_seconds == 2400.0
+    assert fake_openai[-1]["timeout"] == _client_timeout(2400.0)
+
+
+@pytest.mark.parametrize("value", ["0", "-5", "nan", "inf"])
+def test_eval_representation_refuses_an_unusable_timeout(
+    monkeypatch, fake_openai, value: str
+) -> None:
+    result, captured = _invoke_representation_cli(
+        monkeypatch, "--provider-timeout", value
+    )
+    assert result.exit_code != 0
+    assert captured == {}
+    assert fake_openai == []
+
+
+def test_eval_representation_sampling_options_reach_config(
+    monkeypatch, fake_openai
+) -> None:
+    result, captured = _invoke_representation_cli(
+        monkeypatch,
+        "--provider-base-url",
+        LOCAL_URL,
+        "--temperature",
+        "0",
+        "--seed",
+        "7",
+    )
+    config = captured.get("config")
+    assert config is not None, result.output
+    assert config.temperature == 0.0
+    assert config.seed == 7
+
+    captured.clear()
+    unset, captured = _invoke_representation_cli(
+        monkeypatch, "--provider-base-url", LOCAL_URL
+    )
+    config = captured.get("config")
+    assert config is not None, unset.output
+    assert config.temperature is None
+    assert config.seed is None
+
+
+def test_representation_sends_and_records_sampling_only_when_configured(
+    tmp_path: Path, fake_openai
+) -> None:
+    runs = {}
+    for run_id, sampling in (
+        ("representation-sampling-unset", {}),
+        ("representation-sampling-set", {"temperature": 0.0, "seed": 7}),
+    ):
+        config = _representation_config(
+            conditions=(RepresentationCondition.RAW,),
+            provider_base_url=LOCAL_URL,
+            **sampling,
+        )
+        provider = OpenAIAnswerProvider.from_config(config, environ={})
+        result = _run_representation(tmp_path, config, provider, run_id)
+        runs[run_id] = (
+            provider._client.responses.calls,
+            json.loads((result.path / "manifest.json").read_text()),
+        )
+    unset_calls, unset_manifest = runs["representation-sampling-unset"]
+    set_calls, set_manifest = runs["representation-sampling-set"]
+    assert unset_calls and set_calls
+    assert all("temperature" not in call and "seed" not in call for call in unset_calls)
+    # 0.0 is a configured temperature, not an unset one.
+    assert all(call["temperature"] == 0.0 and call["seed"] == 7 for call in set_calls)
+    assert unset_manifest["temperature"] is None
+    assert unset_manifest["seed"] is None
+    assert unset_manifest["config"]["temperature"] is None
+    assert set_manifest["temperature"] == 0.0
+    assert set_manifest["seed"] == 7
+    assert set_manifest["config"]["temperature"] == 0.0
+    assert set_manifest["config"]["seed"] == 7
+
+
+def test_eval_representation_ceiling_ignores_an_existing_checkpoint(
+    tmp_path: Path, monkeypatch, fake_openai
+) -> None:
+    from contextbench.representation.checkpoint import checkpoint_path
+
+    # A checkpoint holding most of the run does not lower the ceiling: it is
+    # the planned total, checked before any provider is built.
+    partial = checkpoint_path(tmp_path / "representation-runs", "resumable")
+    partial.mkdir(parents=True)
+    (partial / "cells.jsonl").write_text('{"cell_index": 0}\n' * 3)
+    result, captured = _invoke_representation_cli(
+        monkeypatch,
+        "--artifacts-root",
+        str(tmp_path),
+        "--run-id",
+        "resumable",
+        "--max-calls",
+        "3",
+        "--condition",
+        "raw",
+        "--condition",
+        "ir",
+        "--condition",
+        "enriched",
+        "--condition",
+        "indexed",
+    )
+    assert result.exit_code != 0
+    assert "run requires 4 calls, above --max-calls 3" in result.output
+    assert captured == {}
+    assert fake_openai == []
+
+
+def test_eval_generation_timeout_reaches_config_and_client(
+    tmp_path: Path, monkeypatch, fake_openai
+) -> None:
+    from typer.testing import CliRunner
+
+    from contextbench.cli import app
+    from contextbench.generation import GenerationError
+
+    captured: dict[str, object] = {}
+
+    def fake_run(*_args, **kwargs):
+        captured.update(kwargs)
+        raise GenerationError("stop after capture")
+
+    monkeypatch.setattr("contextbench.generation.run_generation_benchmark", fake_run)
+    monkeypatch.setattr("contextbench.cli.load_subset", lambda _path: None)
+    monkeypatch.setattr(
+        "contextbench.cli.XLDocBenchDataset",
+        lambda _path: SimpleNamespace(iter_subset=lambda _subset: iter(())),
+    )
+    retrieval = _run(tmp_path, run_id="retrieval-cli-timeout")
+    result = CliRunner().invoke(
+        app,
+        [
+            "eval-generation",
+            str(retrieval.path),
+            "--model",
+            "qwen3.6-35b-a3b",
+            "--input-usd-per-million",
+            "0",
+            "--cached-input-usd-per-million",
+            "0",
+            "--output-usd-per-million",
+            "0",
+            "--max-calls",
+            "1000",
+            "--provider-base-url",
+            LOCAL_URL,
+            "--provider-timeout",
+            "2400",
+        ],
+    )
+    config = captured.get("config")
+    assert config is not None, result.output
+    assert config.provider_timeout_seconds == 2400.0
+    assert fake_openai[-1]["timeout"] == _client_timeout(2400.0)
+
+
+def test_a_checkpoint_never_contains_a_key(tmp_path: Path, fake_openai) -> None:
+    from contextbench.representation import RepresentationError
+    from contextbench.representation.checkpoint import checkpoint_path
+
+    config = _representation_config(
+        conditions=(RepresentationCondition.RAW, RepresentationCondition.IR),
+        provider_base_url=LOCAL_URL,
+    )
+    provider = OpenAIAnswerProvider.from_config(
+        config, environ={"OPENAI_API_KEY": SECRET_KEY}
+    )
+    responses = provider._client.responses
+    succeed = responses.create
+
+    def fail_second_call(**kwargs):
+        if responses.calls:
+            raise RuntimeError("local server went away")
+        return succeed(**kwargs)
+
+    responses.create = fail_second_call
+    with pytest.raises(RepresentationError, match="to resume"):
+        _run_representation(tmp_path, config, provider, "representation-keyless")
+    partial = checkpoint_path(
+        tmp_path / "artifacts" / "representation-runs", "representation-keyless"
+    )
+    text = _all_artifact_text(partial)
+    assert '"cell_index": 0' in text
+    assert SECRET_KEY not in text
+    assert LOCAL_PLACEHOLDER_API_KEY not in text
+    assert "api_key" not in text

@@ -118,6 +118,7 @@ def run_xl_gold_representation(
         dataset_revision=RELEASE_REVISION,
         subset_name=subset.name,
         subset_sha256=hashlib.sha256(subset_file.read_bytes()).hexdigest(),
+        subset_path=str(subset_file.resolve()),
         run_id=run_id,
         tokenizer=tokenizer,
         allow_dirty=allow_dirty,

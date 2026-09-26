@@ -467,6 +467,15 @@ cannot be reproduced. It also refuses to start if `OPENAI_ORG_ID`,
 because the SDK would forward them to that endpoint. Pricing is still required. For a
 free local model, pass `0`.
 
+`--provider-timeout` sets how many seconds one HTTP attempt may take (default
+600, the OpenAI SDK default). A non-streaming call returns nothing until the
+model finishes, so a slow local model with long prompts needs a larger value,
+for example `--provider-timeout 3600` for calls of up to about 30 minutes.
+`eval-representation` also takes `--temperature` and `--seed`, as
+`eval-generation` does; unset values are not sent, so the server's own,
+unrecorded sampling default applies. All three are recorded in the config
+and manifest.
+
 ### Isolate the value of document encoding
 
 The gold-evidence representation experiment bypasses retrieval and gives each
@@ -514,12 +523,34 @@ uv run --extra generation contextbench eval-representation \
   --model <local-model-id> \
   --provider-base-url http://127.0.0.1:1234/v1 \
   --provider-max-retries 0 \
+  --provider-timeout 3600 \
+  --temperature 0 \
+  --seed 7 \
   --input-usd-per-million 0 \
   --cached-input-usd-per-million 0 \
   --output-usd-per-million 0 \
   --max-calls 8 \
   --run-id xldev2-representation-local
 ```
+
+Representation runs are resumable. Each completed question x condition cell,
+including its judge calls, is saved as it finishes in
+`artifacts/representation-runs/.partial-<run-id>/`. If a provider call fails,
+the command stops, says how many cells are saved, and prints the run ID. To
+resume, rerun the same command with `--run-id <run-id>`; always passing
+`--run-id` makes that the identical command. Only unfinished cells are
+called. The resume refuses, naming the fields, if the Git commit, config
+(including temperature, seed and timeout), prompts, subset file or inputs
+changed. It also refuses if the server now reports another model ID than
+the saved cells were answered by, for example after an LM Studio restart
+with a different model loaded. A different quantization under the same ID
+cannot be detected. A run started with `--allow-dirty` from a modified
+worktree cannot be resumed. `--max-calls` still has to cover the whole run. The calls of a cell
+that was interrupted part-way are made again. When the run completes, it is
+published as usual, the manifest records `resumed` and
+`checkpoint_cells_loaded`, and the staging directory is removed. To start
+over instead, delete the `.partial-<run-id>` directory. See
+[docs/specs/evaluation.md](docs/specs/evaluation.md) for the exact rules.
 
 A no-call preparation smoke test found these mean local token counts on the
 two table-heavy questions:

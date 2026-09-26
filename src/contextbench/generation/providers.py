@@ -5,7 +5,9 @@ from collections.abc import Mapping
 from typing import Any, Protocol
 
 from contextbench.generation.models import (
+    OPENAI_SDK_DEFAULT_CONNECT_TIMEOUT_SECONDS,
     OPENAI_SDK_DEFAULT_MAX_RETRIES,
+    OPENAI_SDK_DEFAULT_TIMEOUT_SECONDS,
     AnswerModelConfig,
     AnswerRequest,
     ProviderAnswer,
@@ -57,6 +59,7 @@ def openai_client_kwargs(
     base_url: str | None,
     max_retries: int,
     environ: Mapping[str, str],
+    timeout_seconds: float = OPENAI_SDK_DEFAULT_TIMEOUT_SECONDS,
 ) -> dict[str, Any]:
     """Build ``openai.OpenAI`` arguments that match the recorded config.
 
@@ -65,6 +68,9 @@ def openai_client_kwargs(
     environment could name an endpoint the manifest does not, so any
     disagreement between the two is refused rather than resolved. Error
     messages never echo either URL, which could carry credentials.
+
+    ``timeout`` is returned as plain seconds; the provider wraps it in the
+    SDK's timeout object, keeping the SDK's own connect limit.
     """
     env_base_url = environ.get("OPENAI_BASE_URL")
     if env_base_url is not None:
@@ -79,7 +85,10 @@ def openai_client_kwargs(
                 "OPENAI_BASE_URL differs from the configured provider base URL; "
                 "unset it or make them equal"
             )
-    kwargs: dict[str, Any] = {"max_retries": max_retries}
+    kwargs: dict[str, Any] = {
+        "max_retries": max_retries,
+        "timeout": timeout_seconds,
+    }
     if base_url is not None:
         forwarded = [name for name in FORWARDED_OPENAI_ENV_VARS if name in environ]
         if forwarded:
@@ -103,6 +112,7 @@ class OpenAIAnswerProvider:
         *,
         base_url: str | None = None,
         max_retries: int = OPENAI_SDK_DEFAULT_MAX_RETRIES,
+        timeout_seconds: float = OPENAI_SDK_DEFAULT_TIMEOUT_SECONDS,
         environ: Mapping[str, str] | None = None,
     ) -> None:
         if client is None:
@@ -112,19 +122,26 @@ class OpenAIAnswerProvider:
                 raise RuntimeError(
                     "OpenAI generation requires `uv sync --extra generation`"
                 ) from exc
-            client = openai.OpenAI(
-                **openai_client_kwargs(
-                    base_url=base_url,
-                    max_retries=max_retries,
-                    environ=os.environ if environ is None else environ,
-                )
+            kwargs = openai_client_kwargs(
+                base_url=base_url,
+                max_retries=max_retries,
+                environ=os.environ if environ is None else environ,
+                timeout_seconds=timeout_seconds,
             )
+            # Only the read/write/pool limits are configured; connecting keeps
+            # the SDK's own limit, so the default equals the SDK default.
+            kwargs["timeout"] = openai.Timeout(
+                kwargs["timeout"],
+                connect=OPENAI_SDK_DEFAULT_CONNECT_TIMEOUT_SECONDS,
+            )
+            client = openai.OpenAI(**kwargs)
             self.version = openai.__version__
         else:
             self.version = "injected"
         self._client = client
         self.base_url = base_url
         self.max_retries = max_retries
+        self.timeout_seconds = timeout_seconds
 
     @classmethod
     def from_config(
@@ -133,10 +150,11 @@ class OpenAIAnswerProvider:
         *,
         environ: Mapping[str, str] | None = None,
     ) -> "OpenAIAnswerProvider":
-        """Build a client for exactly the endpoint and retries a config records."""
+        """Build a client for exactly the endpoint, retries and timeout recorded."""
         return cls(
             base_url=config.provider_base_url,
             max_retries=config.provider_max_retries,
+            timeout_seconds=config.provider_timeout_seconds,
             environ=environ,
         )
 
@@ -147,14 +165,16 @@ class OpenAIAnswerProvider:
         config: AnswerModelConfig,
     ) -> ProviderAnswer:
         # The client was built once; a config recording another endpoint or
-        # retry count would make the manifest describe calls it did not make.
-        if (config.provider_base_url, config.provider_max_retries) != (
-            self.base_url,
-            self.max_retries,
-        ):
+        # retry count or timeout would make the manifest describe calls it
+        # did not make.
+        if (
+            config.provider_base_url,
+            config.provider_max_retries,
+            config.provider_timeout_seconds,
+        ) != (self.base_url, self.max_retries, self.timeout_seconds):
             raise ProviderConfigurationError(
-                "provider was built for a different base URL or max_retries "
-                "than the run config records"
+                "provider was built for a different base URL, max_retries or "
+                "timeout than the run config records"
             )
         params: dict[str, Any] = {
             "model": config.model,

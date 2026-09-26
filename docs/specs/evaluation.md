@@ -416,7 +416,7 @@ and the provider default applied.
 
 ### Provider endpoint and retries
 
-`eval-generation` and `eval-representation` share two provider settings in
+`eval-generation` and `eval-representation` share three provider settings in
 the frozen answer-model config, and each manifest also repeats them at the top
 level:
 
@@ -431,6 +431,24 @@ level:
 - `provider_max_retries` (`--provider-max-retries`): automatic HTTP retries per
   logical call. The default is 2, the installed SDK's `DEFAULT_MAX_RETRIES`;
   0 disables retries.
+- `provider_timeout_seconds` (`--provider-timeout`): the read, write and pool
+  timeout of one HTTP attempt, in seconds. The default is 600, the read limit
+  of the installed SDK's `DEFAULT_TIMEOUT` (`httpx.Timeout(timeout=600,
+  connect=5.0)` in `openai/_constants.py`, openai 2.54.0). The connect limit
+  stays at the SDK's 5 seconds, so the default builds a client whose timeout
+  equals the SDK default; unit tests pin both values to the installed SDK. A
+  non-streaming Responses call sends nothing until generation ends, so the
+  read limit bounds one attempt: a local model that needs 30 minutes for a
+  long prompt needs a value above 1800. A timed-out attempt counts as a
+  failure the SDK may retry, up to `provider_max_retries` times. It must be a
+  finite positive number.
+
+`eval-representation` also accepts `--temperature` and `--seed`, as
+`eval-generation` already did. Both are recorded in the config and repeated at
+the top of the manifest; an unset value is not sent at all, so the server's
+default applies and the manifest records `null`. A local server's default
+sampling is not recorded anywhere, so a reproducible local run should set
+both.
 
 The SDK would otherwise read `OPENAI_BASE_URL` silently, and that is not
 recorded. The provider therefore refuses to start if `OPENAI_BASE_URL` is set
@@ -464,10 +482,11 @@ continues so the calls already paid for are still recorded. They are not crash
 safety. An exception raised by the provider call — a rate limit, a timeout, a
 transport error — propagates out of the cell loop, and the run is published
 only after that loop completes, so every response already paid for in that run
-is lost and no artifact is written. The same is true of the representation
-experiment. Durable partial artifacts are not implemented; until they are, a
-paid run is all-or-nothing against provider failures and should be sized and
-scheduled on that basis.
+is lost and no artifact is written. Durable partial artifacts are not
+implemented for generation runs; a paid generation run is all-or-nothing
+against provider failures and should be sized and scheduled on that basis.
+The representation experiment checkpoints completed cells and can be resumed;
+see "Checkpoint and resume" under the representation experiment.
 
 ## Released rule mapping and deviations
 
@@ -705,9 +724,97 @@ as `provider_max_retries` (default 2, the installed OpenAI SDK's own
 HTTP requests. See "Provider endpoint and retries".
 
 A provider exception on any call, including a judge call, still aborts the
-whole run. The run is published only after every cell completes, so nothing is
-written and every call already paid for in that run is lost (see "Paid-run
-safeguards and their limits").
+run, and the run is still published only after every cell completes. Cells
+completed before the failure are kept in a checkpoint, and the abort message
+says how to resume (see "Checkpoint and resume").
+
+### Checkpoint and resume
+
+A cell is one question x condition, including its judge calls. As each cell
+completes, its full record is appended as one JSON line, flushed and
+`fsync`ed, to `cells.jsonl` in the staging directory
+`<artifacts-root>/representation-runs/.partial-<run-id>/`. Beside it,
+`header.json` is written once, before the first call, and records what must
+match to resume: Git commit and dirty flag, the full config and its
+`config_sha256`, every prompt-template hash, dataset name, version and
+revision, subset name, subset file SHA-256 and resolved subset file path,
+all question IDs, the ordered list of (question ID, condition) cells, the
+document provenance (IR ID, source hash, parser versions), provider name and
+SDK version, provider base URL, retries and timeout, and the tokenizer. The
+config includes `temperature`, `seed` and the timeout, so changing any of
+them refuses a resume. Each line also stores the SHA-256 of the prompt the cell
+was answered from.
+
+Rerunning the same command with the same explicit `--run-id` resumes:
+
+- The resume refuses unless every header field except `created_at` is
+  identical. The error names the differing fields (for example
+  `config.temperature`) and never prints their values.
+- A resume requires `--run-id`. A run started without one gets an automatic
+  ID, which the abort message prints; pass that ID explicitly to resume. A
+  rerun without `--run-id` that would reuse an existing checkpoint is refused.
+- The final run directory must not exist; a published run is never resumed or
+  changed. This is checked again after the checkpoint lock is taken, so a
+  process that raced past the first check does not run a run another process
+  has just published.
+- A run started from a modified worktree (`git_dirty: true`, with
+  `--allow-dirty`) is never resumed. The header records only the flag, not
+  the uncommitted code, so a code change between attempts could not be
+  detected. Hashing `git diff HEAD` and untracked files was rejected as the
+  more complex option: it still misses ignored files and caller-supplied
+  provenance. The abort message of such a run says it cannot be resumed.
+- Served models are not mixed. Each record keeps the provider-reported model
+  ID of every call: `model_id` for the answer, plus `answer_judge_model_id`
+  and `citation_judge_model_id` when a judge was called. The first completed
+  cell pins its ID in `served_model.json` in the checkpoint, written once and
+  `fsync`ed. Before a cell is written, the run refuses if its answer and judge
+  calls report different IDs, or if its ID differs from the pinned one, for
+  example after a server restart with another model loaded. The error names
+  both IDs, keeps the completed cells, and the run can be resumed once the
+  original model is served again. On resume, every loaded cell must match the
+  pin. The manifest records `served_model_ids`, every ID behind any call.
+- A line counts only once its newline is on disk. An unterminated final line,
+  left by a crash during an append, is discarded and cut from the file, and
+  its cell is run again. Any other unreadable line, a line naming a cell
+  outside the planned set, a duplicated cell, a record that does not validate
+  or belongs to another cell, or a cell whose prompt no longer renders to the
+  stored hash refuses the resume.
+- Loaded cells are not called again. Missing cells run in the original planned
+  order.
+- An exclusive lock on the checkpoint refuses a second process that tries to
+  run or resume the same run ID at the same time.
+
+When every cell is done, the run is published exactly as before: the same five
+files, with the summary and report computed from all records in planned
+order. The staging directory is then removed. A resumed run's artifacts equal
+an uninterrupted run's except for per-call and per-process fields: latencies,
+response IDs, the enrichment timings (re-measured by the final process), and
+three manifest fields: `resumed` (true or false),
+`checkpoint_cells_loaded`, and `checkpoint_partial_lines_discarded`.
+`created_at` stays the time the run was first started.
+
+Limits:
+
+- The unit of resumption is the cell. Calls already made for a cell that did
+  not complete, for example its answer call before a failed judge call, are
+  not kept and are made again on resume. Across attempts, total logical calls
+  can therefore exceed the planned total by at most the completed calls of
+  the interrupted cell (at most two per interruption, with both judges
+  enabled). SDK retries of a failed attempt are also not counted.
+- `--max-calls` is still checked against the planned total of the whole run
+  before any provider is built. A resume does not lower, reset or bypass it,
+  even when most cells are already checkpointed.
+- The checkpoint holds model outputs, as the published artifacts do, and never
+  a key: the header is built from the config and provider metadata.
+- The served-model check compares only the ID the server reports. A different
+  quantization or weights file served under the same ID cannot be detected.
+  Pin the weights by other means, such as the model file's hash recorded in a
+  preregistration.
+- If the process stops after publishing but before the staging directory is
+  removed, the leftover directory is harmless: the run exists, so it cannot be
+  resumed. Delete it by hand. Likewise, delete a checkpoint to start a run
+  over.
+- The lock uses `fcntl.flock`, so the runner requires a POSIX system.
 
 ### Provenance
 
@@ -729,7 +836,9 @@ every generation and representation config dump, including runs that set
 neither. `config_sha256`, and a run ID derived from it, therefore differs from
 an earlier run with otherwise identical settings. Prompt hashes are unchanged.
 A run that sets neither option uses the same endpoint and retry count as
-before.
+before. `provider_timeout_seconds` was added the same way and changes
+`config_sha256` again; a run that does not set it uses the SDK's default
+timeout, as before.
 
 No live representation run with either judge or with `question_only` has been
 made; this section describes the implementation only.

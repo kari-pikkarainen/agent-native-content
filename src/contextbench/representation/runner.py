@@ -51,17 +51,20 @@ from contextbench.generation.scoring import (
 )
 from contextbench.ir.models import IRNode, IRNodeKind
 from contextbench.ir.tokenizer import TiktokenTokenCounter, TokenCounter
+from contextbench.representation.checkpoint import (
+    CHECKPOINT_FORMAT,
+    RepresentationCheckpoint,
+    checkpoint_path,
+    record_model_ids,
+)
 from contextbench.representation.models import (
     RepresentationBenchmarkSummary,
     RepresentationCondition,
+    RepresentationError,
     RepresentationEvaluationRecord,
     RepresentationExperimentConfig,
     RepresentationSummaryRow,
 )
-
-
-class RepresentationError(RuntimeError):
-    """Raised when a representation experiment cannot run reproducibly."""
 
 
 @dataclass(frozen=True)
@@ -138,11 +141,28 @@ def _generate(
     try:
         response = provider.generate(request, config=config)
     except Exception as exc:
-        # A provider exception still aborts the all-or-nothing run. Durable
-        # partial paid artifacts are a separate design change; the call limit
-        # keeps this experiment deliberately small until that exists.
-        raise RepresentationError(f"provider failed for {cell}: {exc}") from exc
+        # A provider exception still aborts the run, but every cell completed
+        # before it is already in the checkpoint; the runner adds how to
+        # resume. The failing cell's earlier calls are not kept.
+        raise _ProviderCallError(f"provider failed for {cell}: {exc}") from exc
     return response, (time.perf_counter_ns() - started) / 1_000_000
+
+
+class _ProviderCallError(RepresentationError):
+    """A provider call raised; the run can be resumed from its checkpoint."""
+
+
+@dataclass(frozen=True)
+class _PlannedCell:
+    """One question x condition cell, rendered before any provider call."""
+
+    question: BenchmarkQuestion
+    condition: RepresentationCondition
+    condition_nodes: tuple[_EvidenceNode, ...]
+    representation: str
+    feature_count: int
+    request: AnswerRequest
+    prompt_sha256: str
 
 
 def run_gold_representation_benchmark(
@@ -162,6 +182,7 @@ def run_gold_representation_benchmark(
     git_dirty: bool | None = None,
     allow_dirty: bool = False,
     clock: Callable[[], datetime] = utc_now,
+    subset_path: str | None = None,
 ) -> RepresentationRun:
     """Compare encodings of identical gold evidence without retrieval.
 
@@ -171,6 +192,12 @@ def run_gold_representation_benchmark(
 
     Supplying ``git_commit`` means the caller owns the recorded provenance: the
     worktree is not inspected, so ``git_dirty`` must be supplied too.
+
+    Each completed cell is checkpointed. If a checkpoint exists for an
+    explicitly given ``run_id`` and every recorded input matches, the run
+    resumes: completed cells are loaded, not called again, and only the
+    missing cells are run, in planned order. ``subset_path`` is recorded in the
+    checkpoint header only, so a resume must name the same subset file.
     """
     counter = tokenizer or TiktokenTokenCounter(config.tokenizer_name)
     eligible = tuple(
@@ -203,9 +230,17 @@ def run_gold_representation_benchmark(
     )
     if not re.fullmatch(r"[A-Za-z0-9_.-]+", resolved_run_id):
         raise RepresentationError("run_id contains unsafe path characters")
-    final_path = artifacts_root / "representation-runs" / resolved_run_id
+    runs_dir = artifacts_root / "representation-runs"
+    final_path = runs_dir / resolved_run_id
     if final_path.exists():
         raise RepresentationError(f"completed run already exists: {final_path}")
+    staging_path = checkpoint_path(runs_dir, resolved_run_id)
+    if run_id is None and staging_path.exists():
+        # Refused before any work; opening the checkpoint checks it again.
+        raise RepresentationError(
+            f"a checkpoint already exists at {staging_path}; resuming requires "
+            "passing its run ID explicitly with --run-id"
+        )
     resolved_commit, resolved_dirty = resolve_git_state(
         git_commit=git_commit,
         git_dirty=git_dirty,
@@ -228,8 +263,9 @@ def run_gold_representation_benchmark(
     enrichment_prepare_ms = (
         time.perf_counter_ns() - enrichment_started
     ) / 1_000_000
-    records: list[RepresentationEvaluationRecord] = []
-    contexts: list[dict[str, object]] = []
+    # Every cell is rendered before any provider call, so a resume can check
+    # that each checkpointed cell was made from an identical prompt.
+    planned: list[_PlannedCell] = []
     for question in eligible:
         evidence_nodes = _gold_evidence_nodes(question, corpus)
         if not evidence_nodes:
@@ -261,263 +297,105 @@ def run_gold_representation_benchmark(
                 prompt=prompt,
                 evidence_ids=evidence_ids,
             )
-            response, answer_latency_ms = _generate(
-                provider,
-                request,
-                config=config,
-                cell=f"{question.id}/{condition.value}",
-            )
-            parsed_answer, citations, parsed_valid = parse_answer_response(
-                response.text
-            )
-            # A response the provider did not complete is a failed call, not a
-            # wrong answer. Keep the paid cell, its usage and diagnostics, but
-            # score it zero and expose the failure in the condition summary.
-            response_valid = parsed_valid and response.provider_valid
-            abstained = response_valid and is_abstention(parsed_answer)
-            gold = "" if question.gold_answer is None else str(question.gold_answer)
-            kind = answer_type(question)
-            accuracy = (
-                accuracy_score(parsed_answer, gold, kind) if response_valid else 0.0
-            )
-            token_f1 = (
-                token_f1_score(parsed_answer, gold) if response_valid else 0.0
-            )
-            anls = anls_score(parsed_answer, gold) if response_valid else 0.0
-            valid_ids = set(evidence_ids)
-            valid_citations = sum(citation in valid_ids for citation in citations)
-            citation_score = valid_citations / len(citations) if citations else 0.0
-
-            answer_judge_response: ProviderAnswer | None = None
-            answer_judge_valid: bool | None = None
-            answer_judge_reason: str | None = None
-            answer_judge_raw: str | None = None
-            semantic_accuracy: float | None = None
-            answer_judge_latency_ms = 0.0
-            if config.answer_equivalence_judge:
-                semantic_accuracy = 0.0
-                if abstained:
-                    # The exact abstention marker has no content to compare:
-                    # it is correct exactly when the question is unanswerable.
-                    # Deciding that deterministically avoids a paid call and
-                    # keeps the judge from ever grading an abstention.
-                    semantic_accuracy = float(not question.answerable)
-                elif response_valid:
-                    answer_judge_request = AnswerRequest(
-                        question_id=question.id,
-                        system=f"{condition.value}:answer_equivalence_judge",
-                        prompt=render_answer_equivalence_prompt(
-                            question.question,
-                            gold,
-                            parsed_answer,
-                        ),
-                        evidence_ids=(),
-                    )
-                    answer_judge_response, answer_judge_latency_ms = _generate(
-                        provider,
-                        answer_judge_request,
-                        config=config,
-                        cell=(
-                            f"{question.id}/{condition.value}/"
-                            "answer_equivalence_judge"
-                        ),
-                    )
-                    answer_judge_raw = answer_judge_response.text
-                    equivalent, answer_judge_reason, judge_parsed = (
-                        parse_answer_equivalence_response(answer_judge_raw)
-                    )
-                    answer_judge_valid = (
-                        judge_parsed and answer_judge_response.provider_valid
-                    )
-                    semantic_accuracy = float(equivalent) if answer_judge_valid else 0.0
-
-            citation_judge_response: ProviderAnswer | None = None
-            citation_judge_valid: bool | None = None
-            citation_judge_reason: str | None = None
-            citation_judge_raw: str | None = None
-            citation_entailment: float | None = None
-            citation_judge_latency_ms = 0.0
-            if config.citation_entailment_judge and not abstained:
-                citation_entailment = 0.0
-                node_by_evidence_id = {
-                    item.evidence_id: item for item in condition_nodes
-                }
-                cited_nodes = tuple(
-                    node_by_evidence_id[citation]
-                    for citation in citations
-                    if citation in node_by_evidence_id
-                )
-                if response_valid and citations and cited_nodes:
-                    citation_judge_request = AnswerRequest(
-                        question_id=question.id,
-                        system=f"{condition.value}:citation_entailment_judge",
-                        prompt=render_citation_entailment_prompt_from_blocks(
-                            question.question,
-                            parsed_answer,
-                            (
-                                (item.evidence_id, item.node.text)
-                                for item in cited_nodes
-                            ),
-                        ),
-                        evidence_ids=tuple(
-                            item.evidence_id for item in cited_nodes
-                        ),
-                    )
-                    citation_judge_response, citation_judge_latency_ms = _generate(
-                        provider,
-                        citation_judge_request,
-                        config=config,
-                        cell=(
-                            f"{question.id}/{condition.value}/"
-                            "citation_entailment_judge"
-                        ),
-                    )
-                    citation_judge_raw = citation_judge_response.text
-                    entailed, citation_judge_reason, judge_parsed = (
-                        parse_citation_entailment_response(citation_judge_raw)
-                    )
-                    citation_judge_valid = (
-                        judge_parsed and citation_judge_response.provider_valid
-                    )
-                    citation_entailment = (
-                        float(entailed) if citation_judge_valid else 0.0
-                    )
-
-            responses = tuple(
-                value
-                for value in (
-                    response,
-                    answer_judge_response,
-                    citation_judge_response,
-                )
-                if value is not None
-            )
-            judge_responses = responses[1:]
-            answer_cost = response_cost(response, config)
-            judge_cost = sum(response_cost(value, config) for value in judge_responses)
-            total_cost = answer_cost + judge_cost
-            judge_latency_ms = answer_judge_latency_ms + citation_judge_latency_ms
-            usage = (
-                response.provider_usage
-                if len(responses) == 1
-                else {
-                    "answer": response.provider_usage,
-                    "answer_equivalence_judge": (
-                        answer_judge_response.provider_usage
-                        if answer_judge_response is not None
-                        else None
-                    ),
-                    "citation_entailment_judge": (
-                        citation_judge_response.provider_usage
-                        if citation_judge_response is not None
-                        else None
-                    ),
-                }
-            )
-            records.append(
-                RepresentationEvaluationRecord(
-                    question_id=question.id,
+            planned.append(
+                _PlannedCell(
+                    question=question,
                     condition=condition,
-                    answerable=question.answerable,
-                    gold_answer=gold,
-                    gold_pages=question.gold_evidence_pages,
-                    source_node_count=len(condition_nodes),
+                    condition_nodes=condition_nodes,
+                    representation=representation,
                     feature_count=feature_count,
-                    representation_tokens=counter.count(representation),
-                    raw_response=response.text,
-                    parsed_answer=parsed_answer,
-                    citations=citations,
-                    response_valid=response_valid,
-                    provider_status=response.status,
-                    provider_incomplete_reason=response.incomplete_reason,
-                    provider_text_error=response.text_error,
-                    abstained=abstained,
-                    accuracy=accuracy,
-                    semantic_accuracy=semantic_accuracy,
-                    answer_equivalence_judge_valid=answer_judge_valid,
-                    answer_equivalence_judge_reason=answer_judge_reason,
-                    answer_equivalence_judge_raw_response=answer_judge_raw,
-                    answer_judge_provider_status=(
-                        answer_judge_response.status
-                        if answer_judge_response is not None
-                        else None
-                    ),
-                    answer_judge_provider_incomplete_reason=(
-                        answer_judge_response.incomplete_reason
-                        if answer_judge_response is not None
-                        else None
-                    ),
-                    answer_judge_provider_text_error=(
-                        answer_judge_response.text_error
-                        if answer_judge_response is not None
-                        else None
-                    ),
-                    token_f1=token_f1,
-                    anls=anls,
-                    citation_validity=citation_score,
-                    citation_support=citation_score,
-                    citation_entailment=citation_entailment,
-                    citation_entailment_judge_valid=citation_judge_valid,
-                    citation_entailment_judge_reason=citation_judge_reason,
-                    citation_entailment_judge_raw_response=citation_judge_raw,
-                    citation_judge_provider_status=(
-                        citation_judge_response.status
-                        if citation_judge_response is not None
-                        else None
-                    ),
-                    citation_judge_provider_incomplete_reason=(
-                        citation_judge_response.incomplete_reason
-                        if citation_judge_response is not None
-                        else None
-                    ),
-                    citation_judge_provider_text_error=(
-                        citation_judge_response.text_error
-                        if citation_judge_response is not None
-                        else None
-                    ),
-                    citation_present=bool(citations),
-                    input_tokens=sum(value.input_tokens for value in responses),
-                    cached_input_tokens=sum(
-                        value.cached_input_tokens for value in responses
-                    ),
-                    output_tokens=sum(value.output_tokens for value in responses),
-                    reasoning_tokens=sum(
-                        value.reasoning_tokens for value in responses
-                    ),
-                    calls=len(responses),
-                    latency_ms=answer_latency_ms + judge_latency_ms,
-                    model_id=response.model_id,
-                    response_id=response.response_id,
-                    provider_usage=usage,
-                    cost_usd=total_cost,
-                    answer_input_tokens=response.input_tokens,
-                    answer_cached_input_tokens=response.cached_input_tokens,
-                    answer_output_tokens=response.output_tokens,
-                    answer_reasoning_tokens=response.reasoning_tokens,
-                    answer_latency_ms=answer_latency_ms,
-                    answer_cost_usd=answer_cost,
-                    judge_calls=len(judge_responses),
-                    judge_input_tokens=sum(
-                        value.input_tokens for value in judge_responses
-                    ),
-                    judge_output_tokens=sum(
-                        value.output_tokens for value in judge_responses
-                    ),
-                    judge_latency_ms=judge_latency_ms,
-                    judge_cost_usd=judge_cost,
+                    request=request,
+                    prompt_sha256=_sha256_text(prompt),
                 )
             )
-            contexts.append(
-                {
-                    "question_id": question.id,
-                    "condition": condition.value,
-                    "evidence_ids": evidence_ids,
-                    "representation": representation,
-                    "prompt_sha256": hashlib.sha256(
-                        prompt.encode("utf-8")
-                    ).hexdigest(),
-                }
-            )
+    contexts = [
+        {
+            "question_id": cell.question.id,
+            "condition": cell.condition.value,
+            "evidence_ids": cell.request.evidence_ids,
+            "representation": cell.representation,
+            "prompt_sha256": cell.prompt_sha256,
+        }
+        for cell in planned
+    ]
+    cell_keys = [(cell.question.id, cell.condition.value) for cell in planned]
+    documents = {
+        dataset_id: {
+            "ir_document_id": document.id,
+            "source_sha256": document.source_sha256,
+            "parser_name": document.parser_name,
+            "parser_version": document.parser_version,
+            "parser_core_version": document.parser_core_version,
+        }
+        for dataset_id, document in sorted(corpus.documents.items())
+    }
+    # Everything that decides what a cell's record would be. A resume must
+    # match all of it except ``created_at``; the config cannot hold a key.
+    header = {
+        "format": CHECKPOINT_FORMAT,
+        "run_id": resolved_run_id,
+        "created_at": created_at.isoformat(),
+        "git_commit": resolved_commit,
+        "git_dirty": resolved_dirty,
+        "dataset": dataset,
+        "dataset_version": dataset_version,
+        "dataset_revision": dataset_revision,
+        "subset_name": subset_name,
+        "subset_sha256": subset_sha256,
+        "subset_path": subset_path,
+        "question_ids": [question.id for question in corpus.questions],
+        "cells": [list(key) for key in cell_keys],
+        "documents": documents,
+        "provider": provider.name,
+        "provider_version": provider.version,
+        "provider_base_url": config.provider_base_url,
+        "provider_max_retries": config.provider_max_retries,
+        "provider_timeout_seconds": config.provider_timeout_seconds,
+        "prompt_hashes": representation_prompt_hashes(config),
+        "tokenizer": counter.name,
+        "tokenizer_version": counter.version,
+        "config": config_value,
+        "config_sha256": config_sha256,
+    }
+    checkpoint = RepresentationCheckpoint.open(
+        staging_path,
+        header,
+        cells=cell_keys,
+        prompt_sha256=[cell.prompt_sha256 for cell in planned],
+        explicit_run_id=run_id is not None,
+    )
+    if final_path.exists():
+        # Checked again under the lock: a process that raced past the first
+        # check must not run a finished run again.
+        if checkpoint.resumed:
+            checkpoint.close()
+        else:
+            checkpoint.remove()
+        raise RepresentationError(f"completed run already exists: {final_path}")
+    resume_hint = (
+        f"rerun the same command with --run-id {resolved_run_id} to resume"
+        if not resolved_dirty
+        else "a run from a modified worktree cannot be resumed"
+    )
+    try:
+        for index, cell in enumerate(planned):
+            if index in checkpoint.records:
+                continue
+            try:
+                record = _evaluate_cell(
+                    cell, provider=provider, config=config, counter=counter
+                )
+            except _ProviderCallError as exc:
+                raise RepresentationError(
+                    f"{exc}. {len(checkpoint.records)} of {len(planned)} cells "
+                    f"are checkpointed in {checkpoint.path}; {resume_hint}"
+                ) from exc
+            # Refuses, before writing, a cell from another served model.
+            checkpoint.append(index, prompt_sha256=cell.prompt_sha256, record=record)
+    except BaseException:
+        checkpoint.close()
+        raise
+    records = [checkpoint.records[index] for index in range(len(planned))]
 
     summary = _summarize(
         resolved_run_id,
@@ -528,7 +406,8 @@ def run_gold_representation_benchmark(
     )
     manifest = {
         "run_id": resolved_run_id,
-        "created_at": created_at.isoformat(),
+        # A resumed run keeps the time the run was first started.
+        "created_at": checkpoint.created_at,
         "git_commit": resolved_commit,
         "git_dirty": resolved_dirty,
         "dataset": dataset,
@@ -539,35 +418,324 @@ def run_gold_representation_benchmark(
         "question_ids": [question.id for question in corpus.questions],
         "evaluated_question_ids": list(summary.evaluated_question_ids),
         "skipped_question_ids": list(summary.skipped_question_ids),
-        "documents": {
-            dataset_id: {
-                "ir_document_id": document.id,
-                "source_sha256": document.source_sha256,
-                "parser_name": document.parser_name,
-                "parser_version": document.parser_version,
-                "parser_core_version": document.parser_core_version,
-            }
-            for dataset_id, document in sorted(corpus.documents.items())
-        },
+        "documents": documents,
         "provider": provider.name,
         "provider_version": provider.version,
-        # The endpoint and retry count the client was built with; null base
-        # URL means the SDK default (the OpenAI API). No key is ever recorded.
+        # Sampling settings sent with every call; ``null`` means the setting
+        # was not sent and the provider's default applied.
+        "temperature": config.temperature,
+        "seed": config.seed,
+        # The endpoint, retry count and timeout the client was built with;
+        # null base URL means the SDK default (the OpenAI API). No key is ever
+        # recorded.
         "provider_base_url": config.provider_base_url,
         "provider_max_retries": config.provider_max_retries,
+        "provider_timeout_seconds": config.provider_timeout_seconds,
         **representation_prompt_hashes(config),
         "tokenizer": counter.name,
         "tokenizer_version": counter.version,
+        # Timings of the process that published the run; a resumed run
+        # re-enriches, so these describe the final attempt only.
         "enrichment_prepare_ms": enrichment_prepare_ms,
         "enrichment_document_ms": enrichment_document_ms,
         "config": config_value,
         "config_sha256": config_sha256,
+        # Whether completed cells were loaded from a checkpoint instead of
+        # being called in this process, and how many.
+        # Every provider-reported model ID behind any call, answer or judge.
+        # The checkpoint admits only one, so this has one element.
+        "served_model_ids": sorted(
+            {model_id for record in records for model_id in record_model_ids(record)}
+        ),
+        "resumed": checkpoint.resumed,
+        "checkpoint_cells_loaded": checkpoint.cells_loaded,
+        "checkpoint_partial_lines_discarded": checkpoint.partial_lines_discarded,
     }
-    _publish_run(final_path, manifest, contexts, records, summary)
+    # The lock is held until the run is published, so no second process can
+    # resume and publish the same checkpoint meanwhile.
+    try:
+        _publish_run(final_path, manifest, contexts, records, summary)
+    except BaseException:
+        checkpoint.close()
+        raise
+    # Only after the immutable run is published; if this is interrupted the
+    # leftover checkpoint cannot be resumed, because the run now exists.
+    checkpoint.remove()
     return RepresentationRun(
         path=final_path,
         summary=summary,
         records=tuple(records),
+    )
+
+
+def _evaluate_cell(
+    cell: _PlannedCell,
+    *,
+    provider: AnswerProvider,
+    config: RepresentationExperimentConfig,
+    counter: TokenCounter,
+) -> RepresentationEvaluationRecord:
+    """Make every provider call for one cell and score it."""
+    question = cell.question
+    condition = cell.condition
+    condition_nodes = cell.condition_nodes
+    evidence_ids = cell.request.evidence_ids
+    request = cell.request
+    representation = cell.representation
+    feature_count = cell.feature_count
+    response, answer_latency_ms = _generate(
+        provider,
+        request,
+        config=config,
+        cell=f"{question.id}/{condition.value}",
+    )
+    parsed_answer, citations, parsed_valid = parse_answer_response(
+        response.text
+    )
+    # A response the provider did not complete is a failed call, not a
+    # wrong answer. Keep the paid cell, its usage and diagnostics, but
+    # score it zero and expose the failure in the condition summary.
+    response_valid = parsed_valid and response.provider_valid
+    abstained = response_valid and is_abstention(parsed_answer)
+    gold = "" if question.gold_answer is None else str(question.gold_answer)
+    kind = answer_type(question)
+    accuracy = (
+        accuracy_score(parsed_answer, gold, kind) if response_valid else 0.0
+    )
+    token_f1 = (
+        token_f1_score(parsed_answer, gold) if response_valid else 0.0
+    )
+    anls = anls_score(parsed_answer, gold) if response_valid else 0.0
+    valid_ids = set(evidence_ids)
+    valid_citations = sum(citation in valid_ids for citation in citations)
+    citation_score = valid_citations / len(citations) if citations else 0.0
+
+    answer_judge_response: ProviderAnswer | None = None
+    answer_judge_valid: bool | None = None
+    answer_judge_reason: str | None = None
+    answer_judge_raw: str | None = None
+    semantic_accuracy: float | None = None
+    answer_judge_latency_ms = 0.0
+    if config.answer_equivalence_judge:
+        semantic_accuracy = 0.0
+        if abstained:
+            # The exact abstention marker has no content to compare:
+            # it is correct exactly when the question is unanswerable.
+            # Deciding that deterministically avoids a paid call and
+            # keeps the judge from ever grading an abstention.
+            semantic_accuracy = float(not question.answerable)
+        elif response_valid:
+            answer_judge_request = AnswerRequest(
+                question_id=question.id,
+                system=f"{condition.value}:answer_equivalence_judge",
+                prompt=render_answer_equivalence_prompt(
+                    question.question,
+                    gold,
+                    parsed_answer,
+                ),
+                evidence_ids=(),
+            )
+            answer_judge_response, answer_judge_latency_ms = _generate(
+                provider,
+                answer_judge_request,
+                config=config,
+                cell=(
+                    f"{question.id}/{condition.value}/"
+                    "answer_equivalence_judge"
+                ),
+            )
+            answer_judge_raw = answer_judge_response.text
+            equivalent, answer_judge_reason, judge_parsed = (
+                parse_answer_equivalence_response(answer_judge_raw)
+            )
+            answer_judge_valid = (
+                judge_parsed and answer_judge_response.provider_valid
+            )
+            semantic_accuracy = float(equivalent) if answer_judge_valid else 0.0
+
+    citation_judge_response: ProviderAnswer | None = None
+    citation_judge_valid: bool | None = None
+    citation_judge_reason: str | None = None
+    citation_judge_raw: str | None = None
+    citation_entailment: float | None = None
+    citation_judge_latency_ms = 0.0
+    if config.citation_entailment_judge and not abstained:
+        citation_entailment = 0.0
+        node_by_evidence_id = {
+            item.evidence_id: item for item in condition_nodes
+        }
+        cited_nodes = tuple(
+            node_by_evidence_id[citation]
+            for citation in citations
+            if citation in node_by_evidence_id
+        )
+        if response_valid and citations and cited_nodes:
+            citation_judge_request = AnswerRequest(
+                question_id=question.id,
+                system=f"{condition.value}:citation_entailment_judge",
+                prompt=render_citation_entailment_prompt_from_blocks(
+                    question.question,
+                    parsed_answer,
+                    (
+                        (item.evidence_id, item.node.text)
+                        for item in cited_nodes
+                    ),
+                ),
+                evidence_ids=tuple(
+                    item.evidence_id for item in cited_nodes
+                ),
+            )
+            citation_judge_response, citation_judge_latency_ms = _generate(
+                provider,
+                citation_judge_request,
+                config=config,
+                cell=(
+                    f"{question.id}/{condition.value}/"
+                    "citation_entailment_judge"
+                ),
+            )
+            citation_judge_raw = citation_judge_response.text
+            entailed, citation_judge_reason, judge_parsed = (
+                parse_citation_entailment_response(citation_judge_raw)
+            )
+            citation_judge_valid = (
+                judge_parsed and citation_judge_response.provider_valid
+            )
+            citation_entailment = (
+                float(entailed) if citation_judge_valid else 0.0
+            )
+
+    responses = tuple(
+        value
+        for value in (
+            response,
+            answer_judge_response,
+            citation_judge_response,
+        )
+        if value is not None
+    )
+    judge_responses = responses[1:]
+    answer_cost = response_cost(response, config)
+    judge_cost = sum(response_cost(value, config) for value in judge_responses)
+    total_cost = answer_cost + judge_cost
+    judge_latency_ms = answer_judge_latency_ms + citation_judge_latency_ms
+    usage = (
+        response.provider_usage
+        if len(responses) == 1
+        else {
+            "answer": response.provider_usage,
+            "answer_equivalence_judge": (
+                answer_judge_response.provider_usage
+                if answer_judge_response is not None
+                else None
+            ),
+            "citation_entailment_judge": (
+                citation_judge_response.provider_usage
+                if citation_judge_response is not None
+                else None
+            ),
+        }
+    )
+    return RepresentationEvaluationRecord(
+        question_id=question.id,
+        condition=condition,
+        answerable=question.answerable,
+        gold_answer=gold,
+        gold_pages=question.gold_evidence_pages,
+        source_node_count=len(condition_nodes),
+        feature_count=feature_count,
+        representation_tokens=counter.count(representation),
+        raw_response=response.text,
+        parsed_answer=parsed_answer,
+        citations=citations,
+        response_valid=response_valid,
+        provider_status=response.status,
+        provider_incomplete_reason=response.incomplete_reason,
+        provider_text_error=response.text_error,
+        abstained=abstained,
+        accuracy=accuracy,
+        semantic_accuracy=semantic_accuracy,
+        answer_equivalence_judge_valid=answer_judge_valid,
+        answer_equivalence_judge_reason=answer_judge_reason,
+        answer_equivalence_judge_raw_response=answer_judge_raw,
+        answer_judge_provider_status=(
+            answer_judge_response.status
+            if answer_judge_response is not None
+            else None
+        ),
+        answer_judge_provider_incomplete_reason=(
+            answer_judge_response.incomplete_reason
+            if answer_judge_response is not None
+            else None
+        ),
+        answer_judge_provider_text_error=(
+            answer_judge_response.text_error
+            if answer_judge_response is not None
+            else None
+        ),
+        token_f1=token_f1,
+        anls=anls,
+        citation_validity=citation_score,
+        citation_support=citation_score,
+        citation_entailment=citation_entailment,
+        citation_entailment_judge_valid=citation_judge_valid,
+        citation_entailment_judge_reason=citation_judge_reason,
+        citation_entailment_judge_raw_response=citation_judge_raw,
+        citation_judge_provider_status=(
+            citation_judge_response.status
+            if citation_judge_response is not None
+            else None
+        ),
+        citation_judge_provider_incomplete_reason=(
+            citation_judge_response.incomplete_reason
+            if citation_judge_response is not None
+            else None
+        ),
+        citation_judge_provider_text_error=(
+            citation_judge_response.text_error
+            if citation_judge_response is not None
+            else None
+        ),
+        citation_present=bool(citations),
+        input_tokens=sum(value.input_tokens for value in responses),
+        cached_input_tokens=sum(
+            value.cached_input_tokens for value in responses
+        ),
+        output_tokens=sum(value.output_tokens for value in responses),
+        reasoning_tokens=sum(
+            value.reasoning_tokens for value in responses
+        ),
+        calls=len(responses),
+        latency_ms=answer_latency_ms + judge_latency_ms,
+        model_id=response.model_id,
+        answer_judge_model_id=(
+            answer_judge_response.model_id
+            if answer_judge_response is not None
+            else None
+        ),
+        citation_judge_model_id=(
+            citation_judge_response.model_id
+            if citation_judge_response is not None
+            else None
+        ),
+        response_id=response.response_id,
+        provider_usage=usage,
+        cost_usd=total_cost,
+        answer_input_tokens=response.input_tokens,
+        answer_cached_input_tokens=response.cached_input_tokens,
+        answer_output_tokens=response.output_tokens,
+        answer_reasoning_tokens=response.reasoning_tokens,
+        answer_latency_ms=answer_latency_ms,
+        answer_cost_usd=answer_cost,
+        judge_calls=len(judge_responses),
+        judge_input_tokens=sum(
+            value.input_tokens for value in judge_responses
+        ),
+        judge_output_tokens=sum(
+            value.output_tokens for value in judge_responses
+        ),
+        judge_latency_ms=judge_latency_ms,
+        judge_cost_usd=judge_cost,
     )
 
 

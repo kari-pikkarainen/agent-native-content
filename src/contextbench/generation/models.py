@@ -11,6 +11,13 @@ from contextbench.evaluation.models import DEFAULT_TOKEN_BUDGETS, BenchmarkSyste
 # in openai 2.x). Kept here so the config module needs no optional import; a
 # unit test pins it to the SDK value, so the default run keeps its behaviour.
 OPENAI_SDK_DEFAULT_MAX_RETRIES = 2
+# The installed SDK's default request timeout (``openai._constants.DEFAULT_TIMEOUT``
+# is ``httpx.Timeout(timeout=600, connect=5.0)`` in openai 2.x). The configured
+# ``provider_timeout_seconds`` replaces the 600 s read, write and pool limits;
+# the connect limit stays at the SDK's 5 s, so the default config builds a
+# client whose timeout equals the SDK default exactly. A unit test pins both.
+OPENAI_SDK_DEFAULT_TIMEOUT_SECONDS = 600.0
+OPENAI_SDK_DEFAULT_CONNECT_TIMEOUT_SECONDS = 5.0
 
 
 class PricingMetadata(BaseModel):
@@ -46,6 +53,13 @@ class AnswerModelConfig(BaseModel):
     provider_base_url: str | None = None
     # Automatic HTTP retries the client may make inside one logical call.
     provider_max_retries: int = Field(default=OPENAI_SDK_DEFAULT_MAX_RETRIES, ge=0)
+    # Per-request read/write/pool timeout of one HTTP attempt, in seconds. A
+    # non-streaming response sends nothing until generation ends, so this
+    # bounds how long one attempt may take. Adding this field changes every
+    # config dump and therefore ``config_sha256``.
+    provider_timeout_seconds: float = Field(
+        default=OPENAI_SDK_DEFAULT_TIMEOUT_SECONDS, gt=0, allow_inf_nan=False
+    )
 
     @field_validator("provider_base_url")
     @classmethod
