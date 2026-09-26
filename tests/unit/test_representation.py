@@ -15,7 +15,7 @@ from contextbench.experiments import manifest
 from contextbench.generation import AnswerRequest, PricingMetadata, ProviderAnswer
 from contextbench.generation.runner import (
     ANSWER_EQUIVALENCE_PROMPT_INSTRUCTIONS,
-    ANSWER_PROMPT_INSTRUCTIONS,
+    ANSWER_PROMPT_INSTRUCTIONS_ALIASED,
     CITATION_ENTAILMENT_PROMPT_INSTRUCTIONS,
 )
 from contextbench.representation import (
@@ -27,23 +27,44 @@ from contextbench.representation import (
     representation_prompt_hashes,
     run_gold_representation_benchmark,
 )
+from contextbench.retrieval.rendering import evidence_label
 
 
 class RepresentationProvider:
+    """Cites the first evidence item under the label the prompt showed it.
+
+    Under v2 and v3 that is ``E1``; under v1 the full ID. The
+    label is read from the rendering module, as a model would read it from the
+    prompt, and the fixture checks the prompt really shows it.
+    """
+
     name = "fixture"
     version = "1"
 
     def __init__(self) -> None:
         self.requests: list[AnswerRequest] = []
+        # Full evidence ID -> label, from every answer prompt seen.
+        self.labels: dict[str, str] = {}
+
+    def _first_citation(self, request, config) -> list[str]:
+        # question_only carries no evidence, so there is nothing to cite.
+        if ":" in request.system or not request.evidence_ids:
+            return []
+        for index, evidence_id in enumerate(request.evidence_ids):
+            self.labels[evidence_id] = evidence_label(
+                evidence_id, index, config.evidence_render_version
+            )
+        label = self.labels[request.evidence_ids[0]]
+        assert f'<evidence id="{label}"' in request.prompt
+        return [label]
 
     def generate(self, request, *, config):
         self.requests.append(request)
-        # question_only carries no evidence, so there is nothing to cite.
         return ProviderAnswer(
             text=json.dumps(
                 {
                     "answer": "revenue",
-                    "citations": list(request.evidence_ids[:1]),
+                    "citations": self._first_citation(request, config),
                 }
             ),
             model_id=config.model,
@@ -197,11 +218,14 @@ def test_gold_representation_runner_varies_encoding_not_source_nodes(
     assert manifest["git_commit"] == "c" * 40
     assert manifest["config"]["enrichment"]["summary_sentences"] == 2
     assert manifest["enrichment_prepare_ms"] >= 0
-    # The historical answer-prompt hash is unchanged and disabled judges add
-    # no prompt hashes.
+    # New runs label evidence with aliases, so the hash is of the aliased
+    # answer instructions actually sent; disabled judges add no prompt hashes.
+    assert manifest["evidence_render_version"] == "evidence-render-v3"
+    assert manifest["config"]["evidence_render_version"] == "evidence-render-v3"
     assert manifest["prompt_sha256"] == hashlib.sha256(
-        ANSWER_PROMPT_INSTRUCTIONS.encode("utf-8")
+        ANSWER_PROMPT_INSTRUCTIONS_ALIASED.encode("utf-8")
     ).hexdigest()
+    assert requests["raw"].prompt.startswith(ANSWER_PROMPT_INSTRUCTIONS_ALIASED)
     assert "answer_equivalence_prompt_sha256" not in manifest
     assert "citation_entailment_prompt_sha256" not in manifest
     assert manifest["config"]["answer_equivalence_judge"] is False
@@ -358,7 +382,8 @@ class JudgedRepresentationProvider(RepresentationProvider):
             text = json.dumps(
                 {
                     "entailed": all(
-                        evidence_id in request.prompt
+                        f'<evidence id="{self.labels[evidence_id]}">'
+                        in request.prompt
                         for evidence_id in request.evidence_ids
                     ),
                     "reason": "fixture",
@@ -375,7 +400,10 @@ class JudgedRepresentationProvider(RepresentationProvider):
         return response.model_copy(
             update={
                 "text": json.dumps(
-                    {"answer": answer, "citations": list(request.evidence_ids[:1])}
+                    {
+                        "answer": answer,
+                        "citations": self._first_citation(request, config),
+                    }
                 )
             }
         )
@@ -511,7 +539,7 @@ def test_judges_score_a_paraphrase_that_exact_scoring_rejects(
 
     manifest = json.loads((result.path / "manifest.json").read_text())
     assert manifest["prompt_sha256"] == hashlib.sha256(
-        ANSWER_PROMPT_INSTRUCTIONS.encode("utf-8")
+        ANSWER_PROMPT_INSTRUCTIONS_ALIASED.encode("utf-8")
     ).hexdigest()
     assert manifest["answer_equivalence_prompt_sha256"] == hashlib.sha256(
         ANSWER_EQUIVALENCE_PROMPT_INSTRUCTIONS.encode("utf-8")

@@ -41,6 +41,7 @@ from contextbench.generation import (
 )
 from contextbench.generation.runner import (
     ANSWER_PROMPT_INSTRUCTIONS,
+    ANSWER_PROMPT_INSTRUCTIONS_ALIASED,
     CITATION_ENTAILMENT_PROMPT_INSTRUCTIONS,
 )
 from contextbench.generation.scoring import (
@@ -58,12 +59,21 @@ from contextbench.representation.checkpoint import (
     record_model_ids,
 )
 from contextbench.representation.models import (
+    DEFAULT_REPRESENTATION_RENDER_VERSION,
+    REPRESENTATION_RENDER_V1,
+    REPRESENTATION_RENDER_V3,
     RepresentationBenchmarkSummary,
     RepresentationCondition,
     RepresentationError,
     RepresentationEvaluationRecord,
     RepresentationExperimentConfig,
+    RepresentationRenderVersion,
     RepresentationSummaryRow,
+)
+from contextbench.retrieval.rendering import (
+    EVIDENCE_RENDER_V1,
+    EVIDENCE_RENDER_V2,
+    evidence_labels,
 )
 
 
@@ -83,8 +93,82 @@ class _EvidenceNode:
     node: IRNode
 
 
+@dataclass(frozen=True)
+class QuestionLabels:
+    """Every label one question's prompts show, assigned once per question.
+
+    The runner builds this before any condition is rendered and passes the
+    same instance to every evidence-bearing condition, so the same evidence
+    item and the same IR node carry the same label in all of them.
+    """
+
+    version: RepresentationRenderVersion
+    # Full evidence ID -> the label shown (``E1`` or, under v1, the ID).
+    evidence: Mapping[str, str]
+    # Full IR node ID -> the label shown in ``source_node`` (``N1`` under v3,
+    # the node ID itself under v1 and v2).
+    nodes: Mapping[str, str]
+
+    @property
+    def short_feature_refs(self) -> bool:
+        """Whether indexed features are referenced as ``F1`` or by ID suffix."""
+        return self.version == REPRESENTATION_RENDER_V3
+
+
+def question_labels(
+    evidence_nodes: Sequence["_EvidenceNode"],
+    version: RepresentationRenderVersion,
+) -> QuestionLabels:
+    """Label one question's gold evidence items and nodes, in gold order.
+
+    Evidence labels come from ``retrieval/rendering.py``, the mechanism
+    generation uses: ``E1``, ``E2``, ... under v2 and v3, the full evidence
+    ID under v1. Node references are ``N1``, ``N2``, ... under v3, in the
+    same order, and the node ID itself otherwise.
+    """
+    evidence_ids = tuple(item.evidence_id for item in evidence_nodes)
+    id_by_label = evidence_labels(
+        evidence_ids,
+        (
+            EVIDENCE_RENDER_V1
+            if version == REPRESENTATION_RENDER_V1
+            else EVIDENCE_RENDER_V2
+        ),
+    )
+    nodes: dict[str, str] = {}
+    for item in evidence_nodes:
+        if item.node.id not in nodes:
+            nodes[item.node.id] = (
+                f"N{len(nodes) + 1}"
+                if version == REPRESENTATION_RENDER_V3
+                else item.node.id
+            )
+    return QuestionLabels(
+        version=version,
+        evidence={evidence_id: label for label, evidence_id in id_by_label.items()},
+        nodes=nodes,
+    )
+
+
+def _no_labels(version: RepresentationRenderVersion) -> QuestionLabels:
+    return QuestionLabels(version=version, evidence={}, nodes={})
+
+
 def _sha256_text(value: str) -> str:
     return hashlib.sha256(value.encode("utf-8")).hexdigest()
+
+
+def _answer_instructions(version: RepresentationRenderVersion) -> str:
+    """The answer instructions matching how evidence is labelled.
+
+    The same two texts generation uses (``answer_prompt_instructions``), read
+    through this module's names so the recorded hash and the prompt actually
+    sent cannot disagree. v2 and v3 cite the same ``E1`` aliases, so they
+    share the aliased text.
+    """
+    if version == REPRESENTATION_RENDER_V1:
+        return ANSWER_PROMPT_INSTRUCTIONS
+    return ANSWER_PROMPT_INSTRUCTIONS_ALIASED
 
 
 def representation_prompt_hashes(
@@ -92,12 +176,18 @@ def representation_prompt_hashes(
 ) -> dict[str, str]:
     """Hash every fixed prompt template a run can send to the provider.
 
-    ``prompt_sha256`` keeps its historical meaning (the answer instructions)
-    so earlier manifests stay comparable. A judge's hash is present only when
-    that judge is enabled, so a run's config plus Git SHA identifies exactly
-    which prompt templates could have been used.
+    ``prompt_sha256`` keeps its historical meaning, the answer instructions
+    actually sent: under ``evidence-render-v1`` the historical text, so v1
+    manifests stay comparable, and under ``evidence-render-v2`` the aliased
+    text, which asks for labels such as ``E1``. A judge's hash is present only
+    when that judge is enabled, so a run's config plus Git SHA identifies
+    exactly which prompt templates could have been used.
     """
-    hashes = {"prompt_sha256": _sha256_text(ANSWER_PROMPT_INSTRUCTIONS)}
+    hashes = {
+        "prompt_sha256": _sha256_text(
+            _answer_instructions(config.evidence_render_version)
+        )
+    }
     if config.answer_equivalence_judge:
         hashes["answer_equivalence_prompt_sha256"] = _sha256_text(
             ANSWER_EQUIVALENCE_PROMPT_INSTRUCTIONS
@@ -159,6 +249,9 @@ class _PlannedCell:
     question: BenchmarkQuestion
     condition: RepresentationCondition
     condition_nodes: tuple[_EvidenceNode, ...]
+    # Every label the prompt shows. Empty for question_only; the same instance
+    # for every evidence-bearing condition of one question.
+    labels: QuestionLabels
     representation: str
     feature_count: int
     request: AnswerRequest
@@ -272,15 +365,28 @@ def run_gold_representation_benchmark(
             raise RepresentationError(
                 f"question {question.id} has gold pages but no projected nodes"
             )
+        # Assigned once per question, in gold-evidence order, before any
+        # condition is rendered: every evidence-bearing condition shows the
+        # same labels for the same items and nodes, so conditions differ only
+        # in encoding.
+        shared_labels = question_labels(
+            evidence_nodes, config.evidence_render_version
+        )
         for condition in config.conditions:
             condition_nodes = (
                 ()
                 if condition == RepresentationCondition.QUESTION_ONLY
                 else evidence_nodes
             )
+            cell_labels = (
+                shared_labels
+                if condition_nodes
+                else _no_labels(config.evidence_render_version)
+            )
             representation, feature_count = render_representation(
                 condition,
                 condition_nodes,
+                labels=cell_labels,
                 query=question.question,
                 enrichments=enrichments,
                 inline_feature_kinds=set(config.inline_feature_kinds),
@@ -289,7 +395,11 @@ def run_gold_representation_benchmark(
                 indexed_feature_token_budget=config.indexed_feature_token_budget,
                 tokenizer=counter,
             )
-            prompt = render_grounded_prompt(question.question, representation)
+            prompt = render_grounded_prompt(
+                question.question,
+                representation,
+                instructions=_answer_instructions(config.evidence_render_version),
+            )
             evidence_ids = tuple(item.evidence_id for item in condition_nodes)
             request = AnswerRequest(
                 question_id=question.id,
@@ -302,6 +412,7 @@ def run_gold_representation_benchmark(
                     question=question,
                     condition=condition,
                     condition_nodes=condition_nodes,
+                    labels=cell_labels,
                     representation=representation,
                     feature_count=feature_count,
                     request=request,
@@ -313,6 +424,17 @@ def run_gold_representation_benchmark(
             "question_id": cell.question.id,
             "condition": cell.condition.value,
             "evidence_ids": cell.request.evidence_ids,
+            # Label shown in the prompt -> full evidence ID, for every item the
+            # cell shows. Empty for question_only.
+            "evidence_labels": {
+                label: evidence_id
+                for evidence_id, label in cell.labels.evidence.items()
+            },
+            # Label shown in ``source_node`` -> full IR node ID: the node
+            # provenance a short v3 reference stands for.
+            "node_labels": {
+                label: node_id for node_id, label in cell.labels.nodes.items()
+            },
             "representation": cell.representation,
             "prompt_sha256": cell.prompt_sha256,
         }
@@ -352,6 +474,9 @@ def run_gold_representation_benchmark(
         "provider_max_retries": config.provider_max_retries,
         "provider_timeout_seconds": config.provider_timeout_seconds,
         "prompt_hashes": representation_prompt_hashes(config),
+        # Also inside ``config``; named at the top level so a resume under
+        # another labelling scheme is refused naming this field.
+        "evidence_render_version": config.evidence_render_version,
         "tokenizer": counter.name,
         "tokenizer_version": counter.version,
         "config": config_value,
@@ -432,6 +557,10 @@ def run_gold_representation_benchmark(
         "provider_max_retries": config.provider_max_retries,
         "provider_timeout_seconds": config.provider_timeout_seconds,
         **representation_prompt_hashes(config),
+        # How evidence was labelled in the prompts: ``evidence-render-v2``
+        # aliases (E1, E2, ...) or ``evidence-render-v1`` full IDs. Manifests
+        # without this key predate it and were v1.
+        "evidence_render_version": config.evidence_render_version,
         "tokenizer": counter.name,
         "tokenizer_version": counter.version,
         # Timings of the process that published the run; a resumed run
@@ -489,9 +618,11 @@ def _evaluate_cell(
         config=config,
         cell=f"{question.id}/{condition.value}",
     )
-    parsed_answer, citations, parsed_valid = parse_answer_response(
+    parsed_answer, cited_labels, parsed_valid = parse_answer_response(
         response.text
     )
+    # Every recorded and scored citation is a full evidence ID.
+    citations = map_citations(cited_labels, cell.labels.evidence)
     # A response the provider did not complete is a failed call, not a
     # wrong answer. Keep the paid cell, its usage and diagnostics, but
     # score it zero and expose the failure in the condition summary.
@@ -576,8 +707,11 @@ def _evaluate_cell(
                 prompt=render_citation_entailment_prompt_from_blocks(
                     question.question,
                     parsed_answer,
+                    # Canonical node text under the label the answer prompt
+                    # showed it under. Both are the same in every condition,
+                    # so the judge prompt is too.
                     (
-                        (item.evidence_id, item.node.text)
+                        (cell.labels.evidence[item.evidence_id], item.node.text)
                         for item in cited_nodes
                     ),
                 ),
@@ -750,15 +884,31 @@ def render_representation(
     indexed_max_features: int,
     indexed_feature_token_budget: int,
     tokenizer: TokenCounter,
+    labels: QuestionLabels | None = None,
 ) -> tuple[str, int]:
-    """Render one condition while keeping the underlying source nodes fixed."""
+    """Render one condition while keeping the underlying source nodes fixed.
+
+    ``labels`` holds the label of every evidence item and IR node, used in
+    every place the rendering names one: the ``<evidence id>`` and
+    ``source_node`` attributes, and the source references of enriched and
+    indexed features. Under v3 it also switches indexed feature refs to
+    ``F1``, ``F2``, ... The runner passes one instance per question to every
+    condition, so the same item carries the same labels in all of them.
+    ``None`` labels ``evidence_nodes`` in order under the default scheme.
+    """
     if condition == RepresentationCondition.QUESTION_ONLY:
         if evidence_nodes:
             raise RepresentationError("question-only condition received evidence")
         return "", 0
+    if labels is None:
+        labels = question_labels(evidence_nodes, DEFAULT_REPRESENTATION_RENDER_VERSION)
+    _check_labels(
+        labels.evidence, [item.evidence_id for item in evidence_nodes], "evidence"
+    )
+    _check_labels(labels.nodes, [item.node.id for item in evidence_nodes], "node")
     if condition == RepresentationCondition.RAW:
-        return "\n\n".join(_raw_block(item) for item in evidence_nodes), 0
-    source = "\n\n".join(_ir_block(item) for item in evidence_nodes)
+        return "\n\n".join(_raw_block(item, labels) for item in evidence_nodes), 0
+    source = "\n\n".join(_ir_block(item, labels) for item in evidence_nodes)
     if condition == RepresentationCondition.IR:
         return source, 0
     if condition not in {
@@ -767,7 +917,9 @@ def render_representation(
     }:
         raise RepresentationError(f"unsupported condition: {condition}")
 
-    ids_by_node = {item.node.id: item.evidence_id for item in evidence_nodes}
+    label_by_node = {
+        item.node.id: labels.evidence[item.evidence_id] for item in evidence_nodes
+    }
     nodes_by_document: dict[str, set[str]] = defaultdict(set)
     for item in evidence_nodes:
         nodes_by_document[item.node.document_id].add(item.node.id)
@@ -788,11 +940,17 @@ def render_representation(
         )
         count_value = ",".join(f"{kind}:{count}" for kind, count in counts.items())
         blocks = []
-        for item in selected:
+        for position, item in enumerate(selected):
             feature = item.feature
-            source_ids = [ids_by_node[node_id] for node_id in feature.source_node_ids]
+            source_ids = [label_by_node[node_id] for node_id in feature.source_node_ids]
+            # The ref only distinguishes features within this map; nothing
+            # maps it back. v3 numbers them in map order instead of showing
+            # 12 hex digits of the feature ID.
+            ref = (
+                f"F{position + 1}" if labels.short_feature_refs else feature.id[-12:]
+            )
             blocks.append(
-                f'<feature ref="{feature.id[-12:]}" type="{feature.kind.value}" '
+                f'<feature ref="{ref}" type="{feature.kind.value}" '
                 f'src="{",".join(source_ids)}">'
                 f"{html.escape(item.feature.text)}</feature>"
             )
@@ -820,7 +978,7 @@ def render_representation(
     selected_features = selected_features[:max_inline_features]
     feature_blocks = []
     for feature in selected_features:
-        source_ids = [ids_by_node[node_id] for node_id in feature.source_node_ids]
+        source_ids = [label_by_node[node_id] for node_id in feature.source_node_ids]
         feature_blocks.append(
             f'<agent_feature type="{feature.kind.value}" '
             f'importance="{feature.importance:.2f}" '
@@ -867,21 +1025,50 @@ def _gold_evidence_nodes(
     return tuple(selected)
 
 
-def _raw_block(item: _EvidenceNode) -> str:
+def _check_labels(
+    labels: Mapping[str, str],
+    keys: Sequence[str],
+    kind: str,
+) -> None:
+    """Refuse a rendering that would show an item unlabelled or ambiguously."""
+    missing = sum(key not in labels for key in set(keys))
+    if missing:
+        raise RepresentationError(f"{missing} {kind} items have no label")
+    if len({labels[key] for key in keys}) != len(set(keys)):
+        raise RepresentationError(f"{kind} labels must be unique")
+
+
+def map_citations(
+    cited: Sequence[str],
+    label_by_id: Mapping[str, str],
+) -> tuple[str, ...]:
+    """Map every cited label back to the full evidence ID it stands for.
+
+    A label the cell showed is mapped first. Anything else is kept as the
+    model wrote it: a full evidence ID cited verbatim stays that ID and still
+    scores valid when the cell showed that item, while an unknown alias or a
+    garbled ID stays unknown and scores invalid, as unknown IDs always have.
+    This is generation's rule (``id_by_label.get(label, label)``).
+    """
+    id_by_label = {label: evidence_id for evidence_id, label in label_by_id.items()}
+    return tuple(id_by_label.get(citation, citation) for citation in cited)
+
+
+def _raw_block(item: _EvidenceNode, labels: QuestionLabels) -> str:
     return (
-        f'<evidence id="{item.evidence_id}">\n'
+        f'<evidence id="{labels.evidence[item.evidence_id]}">\n'
         f"{html.escape(item.node.text)}\n</evidence>"
     )
 
 
-def _ir_block(item: _EvidenceNode) -> str:
+def _ir_block(item: _EvidenceNode, labels: QuestionLabels) -> str:
     node = item.node
     heading = " > ".join(node.heading_path)
     return (
-        f'<evidence id="{item.evidence_id}" '
+        f'<evidence id="{labels.evidence[item.evidence_id]}" '
         f'document="{html.escape(item.dataset_document_id)}" '
         f'kind="{node.kind.value}" pages="{node.page_start}-{node.page_end}" '
-        f'source_node="{node.id}">\n'
+        f'source_node="{labels.nodes[node.id]}">\n'
         f"Heading: {html.escape(heading or '[root]')}\n"
         f"{html.escape(node.text)}\n</evidence>"
     )

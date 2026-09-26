@@ -1,7 +1,7 @@
 """Models for gold-evidence representation experiments."""
 
 from enum import StrEnum
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -10,6 +10,30 @@ from contextbench.agentdoc import (
     AgentFeatureKind,
 )
 from contextbench.generation import AnswerModelConfig
+
+# How a representation prompt labels what it shows. v1 and v2 are the two
+# schemes of ``retrieval/rendering.py``; v3 exists only here, because only the
+# representation experiment renders IR node IDs and feature references.
+#
+# * ``evidence-render-v1``: full ``evidence_`` + 64-hex evidence IDs, full
+#   ``node_`` + 64-hex node IDs in the ``source_node`` attribute, and the last
+#   12 hex digits of each feature ID as an indexed feature's ``ref``. Every
+#   representation run before these schemes existed.
+# * ``evidence-render-v2``: v1 with evidence aliases ``E1``, ``E2``, ... in
+#   place of evidence IDs. Node IDs and feature refs stay hex.
+# * ``evidence-render-v3``, the default: v2 plus short node references ``N1``,
+#   ``N2``, ... in place of node IDs and short feature references ``F1``,
+#   ``F2``, ... in place of the feature-ID suffix. A v3 prompt shows no hex
+#   identifier at all.
+RepresentationRenderVersion = Literal[
+    "evidence-render-v1", "evidence-render-v2", "evidence-render-v3"
+]
+REPRESENTATION_RENDER_V1: RepresentationRenderVersion = "evidence-render-v1"
+REPRESENTATION_RENDER_V2: RepresentationRenderVersion = "evidence-render-v2"
+REPRESENTATION_RENDER_V3: RepresentationRenderVersion = "evidence-render-v3"
+DEFAULT_REPRESENTATION_RENDER_VERSION: RepresentationRenderVersion = (
+    REPRESENTATION_RENDER_V3
+)
 
 
 class RepresentationError(RuntimeError):
@@ -60,6 +84,20 @@ class RepresentationExperimentConfig(AnswerModelConfig):
     answer_equivalence_judge: bool = False
     citation_entailment_judge: bool = False
     tokenizer_name: str = "o200k_base"
+    # How every evidence-bearing condition labels evidence items, IR nodes and
+    # indexed features (``RepresentationRenderVersion`` above). Aliases and
+    # node references are assigned once per question in gold-evidence order,
+    # so raw, ir, enriched and indexed show the *same* label for the same item
+    # and differ only in encoding. Cited aliases are mapped back to full
+    # evidence IDs before any citation is scored or recorded.
+    #
+    # A 12B local model could not copy 64-hex IDs, and looped on them, so
+    # citation metrics measured ID copying; the hex node IDs also cost only
+    # the structured conditions tokens. Manifests written before this field
+    # existed have no such key in their config; they were all v1.
+    evidence_render_version: RepresentationRenderVersion = (
+        DEFAULT_REPRESENTATION_RENDER_VERSION
+    )
 
     @model_validator(mode="after")
     def conditions_are_unique(self) -> "RepresentationExperimentConfig":

@@ -618,8 +618,8 @@ historical phrase-substring accuracy rule.
 
 The representation experiment fixes source-evidence retrieval. It selects the
 same released gold-page IR nodes for `raw`, `ir`, `enriched`, and `indexed`.
-Stable citation IDs and source content are held fixed; only the rendering
-changes. An opt-in `question_only` control sends the same answer prompt with an
+Stable citation IDs, their prompt labels (see "Evidence labels") and source
+content are held fixed; only the rendering changes. An opt-in `question_only` control sends the same answer prompt with an
 empty evidence section: zero source nodes, no evidence IDs, and therefore
 nothing it can validly cite. The prompt still instructs the model to answer
 only from the evidence and to return `INSUFFICIENT_EVIDENCE` when the evidence
@@ -651,6 +651,75 @@ truncated or unreadable response is retained and costed but scores zero as a
 failed call rather than being indistinguishable from a wrong answer. Every
 cell records the provider status, incomplete reason and text error, and every
 condition summary reports `response_valid_rate`.
+
+### Evidence labels
+
+A representation prompt names three kinds of thing by identifier: evidence
+items (`<evidence id>`, the enriched condition's `source_evidence_ids` and the
+indexed agent map's `src`), IR nodes (the `source_node` attribute of the IR
+evidence block, which `ir`, `enriched` and `indexed` all embed; `raw` has
+none), and indexed features (the agent map's `ref`). How each is shown is
+selected by the config field `evidence_render_version` and the
+`--evidence-render-version` option:
+
+| Scheme | Evidence items | IR nodes (`source_node`) | Indexed features (`ref`) |
+| --- | --- | --- | --- |
+| `evidence-render-v1` | full `evidence_` + 64 hex | full `node_` + 64 hex | last 12 hex digits of the feature ID |
+| `evidence-render-v2` | `E1`, `E2`, … | full `node_` + 64 hex | last 12 hex digits of the feature ID |
+| `evidence-render-v3` (default) | `E1`, `E2`, … | `N1`, `N2`, … | `F1`, `F2`, … |
+
+- Evidence aliases are generation's (`retrieval/rendering.py`). Aliases and
+  node references are assigned once per question, before any condition is
+  rendered, in gold-evidence order (document order, then node order), so
+  every condition shows the same alias and the same node reference for the
+  same item and conditions differ only in encoding. Each gold evidence item is
+  one IR node, so `En` and `Nn` name the same item. `question_only` shows no
+  evidence and assigns no labels.
+- Feature references only distinguish the features of one agent map; nothing
+  maps them back. v3 numbers them in map order.
+- A v3 prompt contains no hexadecimal identifier at all; the tests assert
+  that no hex run of 12 or more characters appears in any condition's answer
+  or judge prompt.
+- v1 renders byte for byte as every representation run before these schemes
+  (whose manifests have no `evidence_render_version` key), and v2 differs
+  from v1 only in the evidence label. Both are checked against a frozen copy
+  of the pre-change renderer.
+- v2 and v3 send generation's aliased answer instructions
+  (`ANSWER_PROMPT_INSTRUCTIONS_ALIASED`), which ask for labels such as `E1`;
+  the manifest's `prompt_sha256` is
+  `af70aa5e83cdd117cbecd100c07223a0240251a90aad2645dd48c419a2a6cb4a`. v1
+  sends the historical text, `prompt_sha256`
+  `050d25fb1c866b01e732d09c67215c4f4c8cc4fa10a22b74174abec7c7d39bf4`.
+
+The schemes were introduced because a 12B local model could not copy full
+IDs. In the `xldev24-pilot2-gemma4-12b` pilot it cited garbled IDs, or
+repeated hex digits until the output cap and truncated its JSON, so citation
+validity was near zero, the citation judge never ran, and the citation metrics
+measured ID copying rather than grounding. v2 removed the evidence IDs, but the
+64-hex node IDs remained, about 39 tokens per item and only in the structured
+conditions: a check of the pilot's largest question counted 1,028 of them per
+structured prompt and none in `raw`. That is the same hex the model looped on, and
+an asymmetric cost, so v3 replaces them too.
+
+Citations are scored on full IDs. Each cited string is first looked up among
+the aliases the cell showed and mapped to its full evidence ID; anything else
+is kept as the model wrote it. So a full ID cited verbatim is still accepted,
+and scores valid when the cell showed that item, while an unknown alias
+(`E999`), a wrongly cased one (`e1`) or a garbled ID scores invalid, exactly
+as an unknown ID always has. `citations` in each record holds these mapped
+values, and the raw response keeps what the model wrote. A node reference
+(`N1`) is not a citation label and scores invalid if cited. Each row of
+`contexts.jsonl` records the cell's `evidence_labels` (alias -> full evidence
+ID) and `node_labels` (label shown in `source_node` -> full IR node ID), so the
+node provenance behind a short reference is kept. The citation-entailment
+judge sees each cited node's canonical text, in citation order, under the
+label the answer prompt showed it, which is the same in every condition, so
+its prompt is identical across conditions for the same citations.
+
+The manifest and the checkpoint header record `evidence_render_version` at
+the top level as well as inside the config, so a resume under another scheme
+is refused, naming the field, and a run never mixes labelling schemes. Adding
+the field changed every representation `config_sha256`.
 
 ### Representation judges
 
@@ -761,7 +830,8 @@ match to resume: Git commit and dirty flag, the full config and its
 revision, subset name, subset file SHA-256 and resolved subset file path,
 all question IDs, the ordered list of (question ID, condition) cells, the
 document provenance (IR ID, source hash, parser versions), provider name and
-SDK version, provider base URL, retries and timeout, and the tokenizer. The
+SDK version, provider base URL, retries and timeout, the evidence labelling
+scheme (`evidence_render_version`), and the tokenizer. The
 config includes `temperature`, `seed` (always null) and the timeout, so changing any of
 them refuses a resume. Each line also stores the SHA-256 of the prompt the cell
 was answered from.

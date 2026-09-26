@@ -1142,6 +1142,23 @@ def evaluate_representation(
             )
         ),
     ] = False,
+    evidence_render_version: Annotated[
+        str,
+        typer.Option(
+            help=(
+                "How evidence items, IR nodes and indexed features are "
+                "labelled in every evidence-bearing condition: "
+                "evidence-render-v3 (the default: evidence aliases E1, E2, "
+                "..., node references N1, N2, ... and feature references F1, "
+                "F2, ..., so no hex ID is shown), evidence-render-v2 (evidence "
+                "aliases only; node IDs and feature refs stay hex), or "
+                "evidence-render-v1 (full IDs everywhere, as earlier runs "
+                "used). Aliases are assigned in gold-evidence order, identical "
+                "across conditions, and mapped back to full evidence IDs "
+                "before scoring."
+            ),
+        ),
+    ] = "evidence-render-v3",
     run_id: Annotated[
         str | None,
         typer.Option(
@@ -1217,6 +1234,7 @@ def evaluate_representation(
             conditions=conditions,
             answer_equivalence_judge=answer_equivalence_judge,
             citation_entailment_judge=citation_entailment_judge,
+            evidence_render_version=evidence_render_version,
             pricing=PricingMetadata(
                 input_usd_per_million=input_usd_per_million,
                 cached_input_usd_per_million=cached_input_usd_per_million,

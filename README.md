@@ -483,7 +483,7 @@ seed smuggled in another way, so a seed could be recorded but never applied.
 The gold-evidence representation experiment bypasses retrieval and gives each
 condition the same annotated source pages:
 
-- `raw`: minimal source text and citation IDs;
+- `raw`: minimal source text and citation labels;
 - `ir`: canonical content plus structure and provenance;
 - `enriched`: IR plus bounded, question-independent agent features; and
 - `indexed`: IR plus a compact query-selected view of reusable features; and
@@ -504,6 +504,22 @@ overhead, so representations are compared on answer-call-only tokens,
 latency and cost, reported separately from all-call totals.
 This is implemented and unit-tested only; no live run with the judges or the
 question-only control has been made.
+
+By default (`--evidence-render-version evidence-render-v3`) prompts show no
+hex identifiers. Evidence items appear as `E1`, `E2`, …, IR nodes as `N1`,
+`N2`, … and indexed features as `F1`, `F2`, …. Aliases and node references
+follow gold-evidence order and are the same for the same item in every
+evidence-bearing condition. The model is asked to cite the `E` aliases, and
+cited aliases are mapped back to full evidence IDs before citations are scored
+or recorded. A full ID cited verbatim is still accepted, and an unknown alias
+counts as an invalid citation. `contexts.jsonl` maps every alias and node
+reference back to its full ID. A 12B local model could not copy the 64-hex
+IDs, and looped on them, so full IDs made the citation metrics measure ID
+copying and cost the structured conditions tokens that `raw` never paid.
+`evidence-render-v2` shows evidence aliases but keeps hex node IDs and feature
+refs. `evidence-render-v1` shows full IDs throughout, as runs before this
+option did. The scheme is recorded in the manifest and the checkpoint, and a
+resume under another scheme is refused.
 
 ```shell
 uv run --extra generation contextbench eval-representation \

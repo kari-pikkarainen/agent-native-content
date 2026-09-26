@@ -267,6 +267,7 @@ def test_checkpoint_lines_are_complete_records_before_the_failure(
     assert len(header["cells"]) == CELL_COUNT
     assert header["subset_path"] == "/subsets/fixture.json"
     assert header["provider_timeout_seconds"] == 600.0
+    assert header["evidence_render_version"] == "evidence-render-v3"
     assert set(header["prompt_hashes"]) == {
         "prompt_sha256",
         "answer_equivalence_prompt_sha256",
@@ -280,6 +281,15 @@ def test_checkpoint_lines_are_complete_records_before_the_failure(
         ({"config": _resume_config(max_output_tokens=512)}, "config.max_output_tokens"),
         ({"config": _resume_config(temperature=0.0)}, "config.temperature"),
         ({"config": _resume_config(seed=7)}, "config.seed"),
+        # A resume must never mix alias-labelled and full-ID-labelled cells.
+        (
+            {"config": _resume_config(evidence_render_version="evidence-render-v1")},
+            ", evidence_render_version",
+        ),
+        (
+            {"config": _resume_config(evidence_render_version="evidence-render-v2")},
+            ", evidence_render_version",
+        ),
         (
             {"config": _resume_config(provider_timeout_seconds=2400)},
             "provider_timeout_seconds",
@@ -313,7 +323,8 @@ def test_resume_refuses_a_changed_prompt_template(
 ) -> None:
     _interrupt(tmp_path)
     monkeypatch.setattr(
-        "contextbench.representation.runner.ANSWER_PROMPT_INSTRUCTIONS",
+        # The instructions a default (evidence-render-v3) run sends.
+        "contextbench.representation.runner.ANSWER_PROMPT_INSTRUCTIONS_ALIASED",
         "A different answer prompt.",
     )
     provider = FlakyProvider()
