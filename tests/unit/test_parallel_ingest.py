@@ -621,7 +621,7 @@ def _stub_representation_preflight(monkeypatch) -> None:
     )
     monkeypatch.setattr("contextbench.cli.load_subset", lambda _path: object())
     monkeypatch.setattr(
-        "contextbench.generation.OpenAIAnswerProvider", lambda: object()
+        "contextbench.generation.OpenAIAnswerProvider", lambda **_kwargs: object()
     )
 
 

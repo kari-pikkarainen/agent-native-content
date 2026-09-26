@@ -45,6 +45,28 @@ OFFLINE_RERANKER_MODEL = "lexical-overlap-v1"
 # Command-line spelling of the two heading-context positions, matching the
 # ``heading-on`` / ``heading-off`` labels the factorial report and manifest use.
 HEADING_CONTEXT_POSITIONS = {"on": True, "off": False}
+PROVIDER_BASE_URL_HELP = (
+    "OpenAI-compatible endpoint, e.g. http://127.0.0.1:1234/v1 for a local "
+    "server. Recorded in the run config. Unset uses the OpenAI API. "
+    "OPENAI_BASE_URL must be unset or equal to it. This endpoint only ever "
+    "receives a placeholder key, never OPENAI_API_KEY; the run refuses to start "
+    "if OPENAI_ORG_ID, OPENAI_PROJECT_ID, OPENAI_ADMIN_KEY or "
+    "OPENAI_CUSTOM_HEADERS is set."
+)
+PROVIDER_MAX_RETRIES_HELP = (
+    "Automatic HTTP retries per logical provider call, recorded in the run "
+    "config. Unset uses the OpenAI SDK default; 0 disables retries."
+)
+
+
+def _provider_settings(
+    base_url: str | None, max_retries: int | None
+) -> dict[str, str | int | None]:
+    """Config fields for the provider endpoint; unset retries keep the default."""
+    settings: dict[str, str | int | None] = {"provider_base_url": base_url}
+    if max_retries is not None:
+        settings["provider_max_retries"] = max_retries
+    return settings
 
 
 def version_callback(value: bool) -> None:
@@ -861,6 +883,14 @@ def evaluate_generation(
         int | None,
         typer.Option(help="Optional provider sampling seed; unset sends no seed."),
     ] = None,
+    provider_base_url: Annotated[
+        str | None,
+        typer.Option(help=PROVIDER_BASE_URL_HELP),
+    ] = None,
+    provider_max_retries: Annotated[
+        int | None,
+        typer.Option(min=0, help=PROVIDER_MAX_RETRIES_HELP),
+    ] = None,
     citation_entailment_judge: Annotated[
         bool,
         typer.Option(
@@ -935,6 +965,7 @@ def evaluate_generation(
             reasoning_effort=reasoning_effort,
             temperature=temperature,
             seed=seed,
+            **_provider_settings(provider_base_url, provider_max_retries),
             systems=selected_systems,
             budgets=selected_budgets,
             citation_entailment_judge=citation_entailment_judge,
@@ -948,7 +979,10 @@ def evaluate_generation(
             retrieval_run,
             questions,
             config=config,
-            provider=OpenAIAnswerProvider(),
+            provider=OpenAIAnswerProvider(
+                base_url=config.provider_base_url,
+                max_retries=config.provider_max_retries,
+            ),
             artifacts_root=artifacts_root,
             run_id=run_id,
             allow_dirty=allow_dirty,
@@ -1035,6 +1069,14 @@ def evaluate_representation(
         str | None,
         typer.Option(help="Optional provider reasoning-effort setting."),
     ] = None,
+    provider_base_url: Annotated[
+        str | None,
+        typer.Option(help=PROVIDER_BASE_URL_HELP),
+    ] = None,
+    provider_max_retries: Annotated[
+        int | None,
+        typer.Option(min=0, help=PROVIDER_MAX_RETRIES_HELP),
+    ] = None,
     answer_equivalence_judge: Annotated[
         bool,
         typer.Option(
@@ -1114,6 +1156,7 @@ def evaluate_representation(
             model=model,
             max_output_tokens=max_output_tokens,
             reasoning_effort=reasoning_effort,
+            **_provider_settings(provider_base_url, provider_max_retries),
             conditions=conditions,
             answer_equivalence_judge=answer_equivalence_judge,
             citation_entailment_judge=citation_entailment_judge,
@@ -1137,7 +1180,10 @@ def evaluate_representation(
             ingest_cache_dir=ingest_cache_dir,
             artifacts_root=artifacts_root,
             config=config,
-            provider=OpenAIAnswerProvider(),
+            provider=OpenAIAnswerProvider(
+                base_url=config.provider_base_url,
+                max_retries=config.provider_max_retries,
+            ),
             docling_artifacts_dir=docling_artifacts_dir,
             run_id=run_id,
             allow_dirty=allow_dirty,

@@ -409,6 +409,48 @@ manifest and contexts. The run manifest records the configured `temperature`
 and `seed` alongside the frozen config; null means the setting was not sent
 and the provider default applied.
 
+### Provider endpoint and retries
+
+`eval-generation` and `eval-representation` share two provider settings in
+the frozen answer-model config, and each manifest also repeats them at the top
+level:
+
+- `provider_base_url` (`--provider-base-url`): the OpenAI-compatible endpoint
+  the Responses API client is built with. Null, the default, means the SDK
+  default, the OpenAI API, exactly as before. A local server, for example LM
+  Studio at `http://127.0.0.1:1234/v1`, is named here so that the endpoint a
+  run used can be reproduced from its config. Only plain `http(s)` URLs
+  with a valid port and without credentials, query or fragment are accepted,
+  because the value is recorded. A trailing slash is removed, so `.../v1` and
+  `.../v1/` record identically.
+- `provider_max_retries` (`--provider-max-retries`): automatic HTTP retries per
+  logical call. The default is 2, the installed SDK's `DEFAULT_MAX_RETRIES`;
+  0 disables retries.
+
+The SDK would otherwise read `OPENAI_BASE_URL` silently, and that is not
+recorded. The provider therefore refuses to start if `OPENAI_BASE_URL` is set
+and no base URL is configured, or if the variable differs from the configured
+value (a trailing slash is ignored). This check runs before the client is
+built and before any call. Neither URL is repeated in error messages, and a
+rejected `--provider-base-url` is not echoed either.
+
+A configured endpoint never receives the real key. When a base URL is
+configured, the client is always built with the placeholder key
+`local-no-key`, which local servers ignore, whether or not `OPENAI_API_KEY`
+is set. Passing a key explicitly also stops the SDK from reading
+`OPENAI_API_KEY`. The SDK also turns `OPENAI_ORG_ID`, `OPENAI_PROJECT_ID`,
+`OPENAI_ADMIN_KEY` and `OPENAI_CUSTOM_HEADERS` into request headers, and a
+client cannot switch that off. `None` makes the SDK read the variable, and an
+empty string sends an empty header. So with a configured endpoint the run
+refuses to start while any of them is set. There is no opt-in to send the
+real key, because no benchmark needs one. With no base URL the SDK still
+requires and uses the real key, as before. No key, real or placeholder, is
+written to any artifact.
+
+Every arm and judge in a run uses the same client, so the endpoint and model
+stay identical across the arms being compared. Prompt templates and their
+hashes do not depend on these settings.
+
 ### Paid-run safeguards and their limits
 
 The valid-rate fields above are a *reporting* safeguard: they keep a
@@ -650,9 +692,12 @@ eligible questions x selected conditions x (1 + one per enabled judge) is at
 most `--max-calls`. The ceiling counts every enabled judge for every cell,
 although abstentions, failed answers and uncited answers skip judges, so
 actual logical calls can only be fewer. It bounds logical provider calls, not
-HTTP requests: the provider builds `openai.OpenAI()` with the SDK's default
-automatic retries (`max_retries`), so a transient failure can be retried, and
-billed, inside one logical call. Retry behaviour is unchanged.
+HTTP requests: the SDK's automatic retries can retry, and bill, a transient
+failure inside one logical call. The retry count is now explicit and recorded
+as `provider_max_retries` (default 2, the installed OpenAI SDK's own
+`DEFAULT_MAX_RETRIES`, so default behaviour is unchanged).
+`--provider-max-retries 0` disables retries, and the ceiling then also bounds
+HTTP requests. See "Provider endpoint and retries".
 
 A provider exception on any call, including a judge call, still aborts the
 whole run. The run is published only after every cell completes, so nothing is
@@ -673,6 +718,13 @@ that enable neither, so `config_sha256`, and a run ID derived from it, differs
 from a run made before that change with otherwise identical settings. Keeping
 `question_only` out of the default condition set preserves the default
 conditions and call count, not the hash.
+
+In the same way, `provider_base_url` and `provider_max_retries` now appear in
+every generation and representation config dump, including runs that set
+neither. `config_sha256`, and a run ID derived from it, therefore differs from
+an earlier run with otherwise identical settings. Prompt hashes are unchanged.
+A run that sets neither option uses the same endpoint and retry count as
+before.
 
 No live representation run with either judge or with `question_only` has been
 made; this section describes the implementation only.

@@ -452,6 +452,21 @@ The command requires explicit pricing and a hard provider-call ceiling. It
 refuses to start if the requested question × system × budget cells exceed
 `--max-calls`. No default command makes a paid model call.
 
+To use a local OpenAI-compatible server (one that serves the Responses API)
+instead of the OpenAI API, pass its endpoint to `eval-generation` or
+`eval-representation`, for example
+`--provider-base-url http://127.0.0.1:1234/v1` for LM Studio. The endpoint
+and `--provider-max-retries` (default 2, the OpenAI SDK default; 0 disables
+automatic retries) are recorded in the run config and manifest. No API key is
+needed. The configured endpoint only ever receives the placeholder key
+`local-no-key`, never your `OPENAI_API_KEY`, and no key is ever recorded. The
+command refuses to start if `OPENAI_BASE_URL` is set and differs from
+`--provider-base-url`, or is set without it, because an unrecorded endpoint
+cannot be reproduced. It also refuses to start if `OPENAI_ORG_ID`,
+`OPENAI_PROJECT_ID`, `OPENAI_ADMIN_KEY` or `OPENAI_CUSTOM_HEADERS` is set,
+because the SDK would forward them to that endpoint. Pricing is still required. For a
+free local model, pass `0`.
+
 ### Isolate the value of document encoding
 
 The gold-evidence representation experiment bypasses retrieval and gives each
@@ -488,6 +503,22 @@ uv run --extra generation contextbench eval-representation \
   --output-usd-per-million <price> \
   --max-calls 8 \
   --run-id xldev2-representation
+```
+
+The same run against a local model served by LM Studio records the endpoint
+in its config:
+
+```shell
+uv run --extra generation contextbench eval-representation \
+  --subset-file benchmarks/xl-docbench/subsets/xldev2-tables.json \
+  --model <local-model-id> \
+  --provider-base-url http://127.0.0.1:1234/v1 \
+  --provider-max-retries 0 \
+  --input-usd-per-million 0 \
+  --cached-input-usd-per-million 0 \
+  --output-usd-per-million 0 \
+  --max-calls 8 \
+  --run-id xldev2-representation-local
 ```
 
 A no-call preparation smoke test found these mean local token counts on the

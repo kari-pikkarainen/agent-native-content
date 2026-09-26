@@ -1328,7 +1328,8 @@ def test_eval_generation_passes_the_expected_hash_through(
         fake_run_generation_benchmark,
     )
     monkeypatch.setattr(
-        "contextbench.generation.OpenAIAnswerProvider", lambda: SimpleNamespace()
+        "contextbench.generation.OpenAIAnswerProvider",
+        lambda **_kwargs: SimpleNamespace(),
     )
     # Keep the test off the local dataset cache: the CLI loads a subset and the
     # dataset only to build the question list, which this test never uses.

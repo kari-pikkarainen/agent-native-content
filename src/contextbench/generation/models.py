@@ -1,10 +1,16 @@
 """Provider-neutral models for answer-generation experiments."""
 
 from typing import Any, Literal
+from urllib.parse import urlsplit
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from contextbench.evaluation.models import DEFAULT_TOKEN_BUDGETS, BenchmarkSystem
+
+# The installed OpenAI SDK's own default (``openai._constants.DEFAULT_MAX_RETRIES``
+# in openai 2.x). Kept here so the config module needs no optional import; a
+# unit test pins it to the SDK value, so the default run keeps its behaviour.
+OPENAI_SDK_DEFAULT_MAX_RETRIES = 2
 
 
 class PricingMetadata(BaseModel):
@@ -20,7 +26,9 @@ class PricingMetadata(BaseModel):
 class AnswerModelConfig(BaseModel):
     """Provider, prompt, and price settings shared across answer experiments."""
 
-    model_config = ConfigDict(extra="forbid", frozen=True)
+    # Rejected values are never echoed: a mistyped provider_base_url can carry
+    # credentials, and validation errors reach the terminal and CI logs.
+    model_config = ConfigDict(extra="forbid", frozen=True, hide_input_in_errors=True)
 
     model: str = Field(min_length=1)
     max_output_tokens: int = Field(default=256, ge=1)
@@ -32,6 +40,40 @@ class AnswerModelConfig(BaseModel):
     seed: int | None = None
     pricing: PricingMetadata
     prompt_version: Literal["answer-json-v1"] = "answer-json-v1"
+    # Provider endpoint. ``None`` means the SDK default (the OpenAI API), as
+    # before this field existed. It is part of the config and its hash so a run
+    # against a local OpenAI-compatible server is reproducible from its config.
+    provider_base_url: str | None = None
+    # Automatic HTTP retries the client may make inside one logical call.
+    provider_max_retries: int = Field(default=OPENAI_SDK_DEFAULT_MAX_RETRIES, ge=0)
+
+    @field_validator("provider_base_url")
+    @classmethod
+    def base_url_is_recordable(cls, value: str | None) -> str | None:
+        """Accept only a plain http(s) endpoint that is safe to record.
+
+        Error messages never include the value. The trailing slash is
+        stripped, so ``.../v1`` and ``.../v1/`` record identically.
+        """
+        if value is None:
+            return None
+        try:
+            parts = urlsplit(value)
+            # ``.port`` parses the port lazily; reading it rejects a
+            # non-numeric or out-of-range port.
+            parts.port  # noqa: B018
+        except ValueError:
+            raise ValueError("provider_base_url is not a valid URL") from None
+        if parts.scheme not in {"http", "https"} or not parts.hostname:
+            raise ValueError("provider_base_url must be an http(s) URL with a host")
+        # The URL is written to the manifest, so it must carry no credentials
+        # or request data.
+        if "@" in parts.netloc or "?" in value or "#" in value:
+            raise ValueError(
+                "provider_base_url must not contain credentials, a query or a "
+                "fragment"
+            )
+        return value.rstrip("/")
 
 
 class GenerationConfig(AnswerModelConfig):

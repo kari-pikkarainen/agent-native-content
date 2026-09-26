@@ -714,7 +714,7 @@ def _invoke_eval_representation(monkeypatch, *args: str):
         captured.update(kwargs)
         raise RepresentationError("stop after capture")
 
-    def forbidden_provider():
+    def forbidden_provider(**_kwargs):
         provider_constructions.append(object())
         return SimpleNamespace()
 

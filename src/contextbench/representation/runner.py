@@ -551,6 +551,10 @@ def run_gold_representation_benchmark(
         },
         "provider": provider.name,
         "provider_version": provider.version,
+        # The endpoint and retry count the client was built with; null base
+        # URL means the SDK default (the OpenAI API). No key is ever recorded.
+        "provider_base_url": config.provider_base_url,
+        "provider_max_retries": config.provider_max_retries,
         **representation_prompt_hashes(config),
         "tokenizer": counter.name,
         "tokenizer_version": counter.version,

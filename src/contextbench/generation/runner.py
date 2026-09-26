@@ -475,6 +475,10 @@ def run_generation_benchmark(
         # default applied.
         "temperature": config.temperature,
         "seed": config.seed,
+        # The endpoint and retry count the client was built with; null base
+        # URL means the SDK default (the OpenAI API). No key is ever recorded.
+        "provider_base_url": config.provider_base_url,
+        "provider_max_retries": config.provider_max_retries,
         "config": config_value,
         "config_sha256": config_sha256,
         "question_ids": list(manifest["question_ids"]),
