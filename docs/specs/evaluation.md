@@ -359,7 +359,8 @@ scoring functions, and pricing metadata.
 
 The prompt requires a concise answer plus evidence-ID citations and requires
 `INSUFFICIENT_EVIDENCE` when the context cannot support an answer. Invalid JSON
-is not repaired and scores zero. Scoring *targets* the released XL-DocBench
+is not repaired and scores zero; the one exception is a response that is only
+the abstention marker, described below. Scoring *targets* the released XL-DocBench
 deterministic evaluator — relaxed rule-based accuracy, normalized token F1, and
 ANLS — but the mapping is **unverified** against it: the released evaluator has
 never been executed or read here, and every difference below is an assumption
@@ -376,7 +377,12 @@ parsers share one rule: a single enclosing Markdown code fence around the JSON
 is removed (the whole opening fence line, whatever its info string, plus a
 closing ```` ``` ```` line, and a bare `json` token directly after the opening
 line), and nothing else is repaired, so prose around the JSON, truncation, a
-nested fence or malformed JSON stays invalid. The judge is not called for the exact
+nested fence or malformed JSON stays invalid. The answer parser alone also
+accepts a response that is nothing but the marker (after that whitespace and
+fence removal, matched case-insensitively as the abstention check matches it)
+as a valid `INSUFFICIENT_EVIDENCE` answer with no citations, so it is an
+abstention; the marker inside prose or followed by anything else stays
+invalid. The judge is not called for the exact
 `INSUFFICIENT_EVIDENCE` abstention marker: an abstention makes no factual answer
 claim, and crediting evidence for not answering would not measure support for
 an answer.

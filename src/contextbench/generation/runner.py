@@ -556,10 +556,19 @@ def _strip_json_code_fence(text: str) -> str:
 
 
 def parse_answer_response(text: str) -> tuple[str, tuple[str, ...], bool]:
-    """Parse the strict JSON answer contract without repairing invalid output."""
+    """Parse the strict JSON answer contract without repairing invalid output.
+
+    One exception: a response that is *only* the abstention marker (after
+    surrounding whitespace and one enclosing code fence are removed, matched
+    as :func:`is_abstention` matches it) is a valid abstention with no
+    citations. The marker inside prose or followed by anything else is not.
+    """
+    value = _strip_json_code_fence(text)
     try:
-        payload = json.loads(_strip_json_code_fence(text))
+        payload = json.loads(value)
     except json.JSONDecodeError:
+        if is_abstention(value):
+            return "INSUFFICIENT_EVIDENCE", (), True
         return "", (), False
     if not isinstance(payload, dict):
         return "", (), False

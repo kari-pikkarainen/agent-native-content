@@ -639,6 +639,32 @@ def test_abstentions_are_never_sent_to_either_judge(tmp_path: Path) -> None:
     assert "abstained: 1" in (result.path / "report.md").read_text()
 
 
+def test_bare_marker_without_json_is_an_abstention(tmp_path: Path) -> None:
+    class BareMarkerProvider(JudgedRepresentationProvider):
+        def generate(self, request, *, config):
+            response = super().generate(request, config=config)
+            if ":" in request.system:
+                return response
+            # A local model answering with the marker alone, no JSON.
+            return response.model_copy(update={"text": "\nINSUFFICIENT_EVIDENCE\n"})
+
+    provider = BareMarkerProvider()
+
+    result = _run_judged(tmp_path, provider, "representation-bare-abstain")
+
+    assert all(":" not in system for system in _systems(provider))
+    assert len(provider.requests) == len(RepresentationCondition)
+    for record in result.records:
+        assert record.response_valid is True
+        assert record.abstained is True
+        assert record.calls == 1
+        assert record.answer_equivalence_judge_valid is None
+        assert record.citation_entailment is None
+        assert record.citation_entailment_judge_valid is None
+    assert result.summary.question_only_abstained_ids == ("question-1",)
+    assert result.summary.question_only_invalid_ids == ()
+
+
 def test_only_the_exact_marker_is_an_abstention(tmp_path: Path) -> None:
     provider = JudgedRepresentationProvider(
         evidence_answer="insufficient evidence to say, but probably revenue"

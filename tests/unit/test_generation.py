@@ -405,12 +405,44 @@ _ANSWER_PARSER_CASES = (
     "```json\n\n```",
     "Answer: 42",
     '{"answer":"INSUFFICIENT_EVIDENCE","citations":[]}',
+    # Near-misses around the bare abstention marker stay invalid.
+    '"INSUFFICIENT_EVIDENCE"',
+    "INSUFFICIENT_EVIDENCE.",
+    "INSUFFICIENT EVIDENCE",
+    "INSUFFICIENT_EVIDENCE\nThe evidence does not say.",
+    "INSUFFICIENT_EVIDENCE {}",
+    "The answer is INSUFFICIENT_EVIDENCE",
+    "Answer: INSUFFICIENT_EVIDENCE",
+    "INSUFFICIENT_EVIDENCE\n```",
+    "```json\nINSUFFICIENT_EVIDENCE",
+    "INSUFFICIENT_EVIDENC",
+    '{"answer":"INSUFFICIENT_EVIDENCE","citations":[]',
+)
+
+# The only intentional differences from the legacy parser: a response that is
+# nothing but the abstention marker (case as ``is_abstention`` matches it,
+# after whitespace and one enclosing fence are removed) is a valid abstention.
+_BARE_ABSTENTION_CASES = (
+    "INSUFFICIENT_EVIDENCE",
+    "  \nINSUFFICIENT_EVIDENCE\n\t",
+    "insufficient_evidence",
+    "Insufficient_Evidence",
+    "```\nINSUFFICIENT_EVIDENCE\n```",
+    "```json\nINSUFFICIENT_EVIDENCE\n```",
+    "```\n  INSUFFICIENT_EVIDENCE  \n```",
 )
 
 
 @pytest.mark.parametrize("text", _ANSWER_PARSER_CASES)
 def test_answer_parser_is_unchanged_by_shared_fence_helper(text: str) -> None:
     assert parse_answer_response(text) == _legacy_parse_answer_response(text)
+
+
+@pytest.mark.parametrize("text", _BARE_ABSTENTION_CASES)
+def test_bare_abstention_marker_is_a_valid_abstention(text: str) -> None:
+    assert _legacy_parse_answer_response(text) == ("", (), False)
+    assert parse_answer_response(text) == ("INSUFFICIENT_EVIDENCE", (), True)
+    assert is_abstention(parse_answer_response(text)[0])
 
 
 @pytest.mark.parametrize(
