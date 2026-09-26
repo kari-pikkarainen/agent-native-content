@@ -315,3 +315,95 @@ matter, because the pilot is not evidence.
 The registered commands are unchanged from the previous note. The run's commit
 is now the one that adds this note, or a later commit that changes nothing
 under `src/`.
+
+## Dated note: 2026-09-26, a third pipeline defect: long hex identifiers
+
+The resumed pilot (`xldev24-pilot2-gemma4-12b`, published at `a23a848`) showed
+that Gemma-4-12B cannot copy the 73-character evidence IDs
+(`evidence_` + 64 hex). On `adubench_single_001102`:
+- under `ir`, it found the right answer, then looped repeating hex digits
+  while copying an ID, until the 1,024-token cap. The JSON was cut off and the
+  answer scored invalid;
+- under `enriched` it cited a garbled ID (validity 0), so the citation judge
+  never ran;
+- under `indexed` one of its two IDs was garbled.
+
+Citation scores were therefore measuring whether a 12B model can copy hex, and
+correct answers were being lost to it.
+
+The same kind of 64-hex string also appeared in the `ir`, `enriched` and
+`indexed` prompts as `source_node="node_…"`, on every evidence item, but not in
+`raw`. That put an identifier hazard and a token cost on the structured
+conditions only.
+
+The owner decided, before any answer of the registered run exists, to adopt
+**`evidence-render-v3`** (commit `43f261b`):
+- evidence is shown as `E1`, `E2`, … in every evidence condition;
+- node references are shown as `N1`, `N2`, … in the structured conditions;
+- the indexed map's feature references are shown as `F1`, `F2`, ….
+
+All three are assigned once per question in gold-evidence order, identical
+across conditions, and mapped back to the full IDs in code. `contexts.jsonl`
+records both maps. No prompt contains a hex run of 12 or more characters.
+
+This changes the prompts. The same labels go to every condition, so conditions
+still differ only in encoding. The answer instructions become the repository's
+aliased text, and the new answer `prompt_sha256` is
+`af70aa5e83cdd117cbecd100c07223a0240251a90aad2645dd48c419a2a6cb4a`. That hash
+is shared by v2 and v3, and the recorded `evidence_render_version` tells them
+apart.
+
+A no-call dry run of the pilot questions measured the effect. On
+`adubench_single_001102` the structured prompts shrink by 40–43% in o200k
+tokens (`ir` from 86,762 to 49,373), and `raw` is unchanged. The run's input
+volume and duration are therefore lower than the estimates above; the new
+pilot will measure them.
+
+**Added diagnostic (reported, not part of the decision rule):** per condition,
+the number of cited strings that are an `N` or `F` reference rather than an
+evidence label. These refs exist only in the structured prompts, and citing one
+scores invalid. This makes visible any penalty the structured conditions pay
+for their extra labels.
+
+**Pilot re-run:** the pilot is re-run under v3 with a new run ID, as a pipeline
+check only, before the registered run. The scheme is now passed explicitly in
+every command:
+
+```text
+uv run contextbench eval-representation \
+  --subset-file benchmarks/xl-docbench/subsets/xldev24-pilot2.json \
+  --condition question_only --condition raw --condition ir \
+  --condition enriched --condition indexed \
+  --model gemma-4-12b-it-mlx \
+  --provider-base-url http://127.0.0.1:1234/v1 \
+  --provider-timeout 3600 --provider-max-retries 0 \
+  --temperature 0 --max-output-tokens 1024 \
+  --evidence-render-version evidence-render-v3 \
+  --answer-equivalence-judge --citation-entailment-judge \
+  --input-usd-per-million 0 --cached-input-usd-per-million 0 \
+  --output-usd-per-million 0 \
+  --max-calls 30 \
+  --run-id xldev24-pilot2-v3-gemma4-12b
+```
+
+The registered run:
+
+```text
+uv run contextbench eval-representation \
+  --subset-file benchmarks/xl-docbench/subsets/xldev24.json \
+  --condition question_only --condition raw --condition ir \
+  --condition enriched --condition indexed \
+  --model gemma-4-12b-it-mlx \
+  --provider-base-url http://127.0.0.1:1234/v1 \
+  --provider-timeout 3600 --provider-max-retries 0 \
+  --temperature 0 --max-output-tokens 1024 \
+  --evidence-render-version evidence-render-v3 \
+  --answer-equivalence-judge --citation-entailment-judge \
+  --input-usd-per-million 0 --cached-input-usd-per-million 0 \
+  --output-usd-per-million 0 \
+  --max-calls 270 \
+  --run-id xldev24-representation-gemma4-12b
+```
+
+The run's commit is now the one that adds this note, or a later commit that
+changes nothing under `src/`.
