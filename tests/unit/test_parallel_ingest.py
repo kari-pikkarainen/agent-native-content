@@ -9,6 +9,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from click.utils import strip_ansi
 from parallel_fixtures import (
     FixtureSource,
     FixtureSourceCache,
@@ -608,7 +609,11 @@ def _invoke_cli(monkeypatch, tmp_path: Path, command: str, options: list[str]):
             "--max-calls",
             "1",
         ]
-    result = CliRunner().invoke(app, [command, *required, *options, "--run-id", "run"])
+    result = CliRunner().invoke(
+        app,
+        [command, *required, *options, "--run-id", "run"],
+        color=False,
+    )
     return result, captured
 
 
@@ -642,6 +647,7 @@ def test_parse_workers_rejects_zero(monkeypatch, tmp_path: Path, command: str) -
     )
 
     assert result.exit_code == 2, result.output
-    assert "--parse-workers" in result.output
-    assert "0 is not in the range x>=1" in result.output
+    output = strip_ansi(result.output)
+    assert "--parse-workers" in output
+    assert "0 is not in the range x>=1" in output
     assert captured == {}
