@@ -1,0 +1,216 @@
+{
+  "answer_equivalence_prompt_sha256": "8fcf122bac76ba0c5f09571fa01bf04a37d99d3ff98857117c68db424927ea51",
+  "checkpoint_cells_loaded": 0,
+  "checkpoint_partial_lines_discarded": 0,
+  "citation_entailment_prompt_sha256": "5e46900195755656701ff6ff783131b307598a2a68d3747d946d46c0ea39645b",
+  "config": {
+    "answer_equivalence_judge": true,
+    "citation_entailment_judge": true,
+    "conditions": [
+      "question_only",
+      "raw",
+      "ir",
+      "enriched",
+      "indexed"
+    ],
+    "enrichment": {
+      "include_definitions": true,
+      "include_explicit_aliases": true,
+      "include_explicit_references": true,
+      "include_normative_facts": true,
+      "include_numeric_facts": true,
+      "include_quantities": true,
+      "include_relationships": true,
+      "include_table_rows": true,
+      "include_table_schemas": true,
+      "max_key_facts": 2000,
+      "max_table_rows": 2000,
+      "summary_sentences": 2
+    },
+    "evidence_render_version": "evidence-render-v3",
+    "indexed_feature_token_budget": 2048,
+    "indexed_max_features": 32,
+    "inline_feature_kinds": [
+      "outline",
+      "section_summary",
+      "key_fact",
+      "definition",
+      "entity",
+      "relationship",
+      "table_schema",
+      "quantity"
+    ],
+    "max_inline_features": 128,
+    "max_output_tokens": 1024,
+    "model": "gemma-4-12b-it-mlx",
+    "pricing": {
+      "cached_input_usd_per_million": 0.0,
+      "input_usd_per_million": 0.0,
+      "output_usd_per_million": 0.0
+    },
+    "prompt_version": "answer-json-v1",
+    "provider_base_url": "http://127.0.0.1:1234/v1",
+    "provider_max_retries": 0,
+    "provider_timeout_seconds": 3600.0,
+    "reasoning_effort": null,
+    "seed": null,
+    "temperature": 0.0,
+    "tokenizer_name": "o200k_base"
+  },
+  "config_sha256": "6e2c683f6e9520eda7c34c190da52b0492125533e2a13a2830c74db5c8007cb9",
+  "created_at": "2026-09-27T03:11:12.224872+00:00",
+  "dataset": "microsoft/XL-DocBench",
+  "dataset_revision": "72954bd70ffffe230f08b57c57fa9274ec14d7ea",
+  "dataset_version": "xldocbench_strict_1345_v1",
+  "documents": {
+    "doc_000008": {
+      "ir_document_id": "doc_38acdc847c97ddfadea999152f3663a1a17273020f9e8c3bdaa0ae8b5ba35236",
+      "parser_core_version": "2.97.1",
+      "parser_name": "docling",
+      "parser_version": "2.129.0",
+      "source_sha256": "38acdc847c97ddfadea999152f3663a1a17273020f9e8c3bdaa0ae8b5ba35236"
+    },
+    "doc_000061": {
+      "ir_document_id": "doc_0d1e5105908e96f29ed79079a1924481d8b0d9df8483457fbdc3e6c9b528415e",
+      "parser_core_version": "2.97.1",
+      "parser_name": "docling",
+      "parser_version": "2.129.0",
+      "source_sha256": "0d1e5105908e96f29ed79079a1924481d8b0d9df8483457fbdc3e6c9b528415e"
+    },
+    "doc_000097": {
+      "ir_document_id": "doc_65fb94cc658122c80e8b1b805be06d555882a144f72945c86cf0fe1c0bac596b",
+      "parser_core_version": "2.97.1",
+      "parser_name": "docling",
+      "parser_version": "2.129.0",
+      "source_sha256": "65fb94cc658122c80e8b1b805be06d555882a144f72945c86cf0fe1c0bac596b"
+    },
+    "doc_000134": {
+      "ir_document_id": "doc_6ad7827a3b200cfc9b45b19ebf2a096dfaf4286559a38676dd2f9bb2cf54900f",
+      "parser_core_version": "2.97.1",
+      "parser_name": "docling",
+      "parser_version": "2.129.0",
+      "source_sha256": "6ad7827a3b200cfc9b45b19ebf2a096dfaf4286559a38676dd2f9bb2cf54900f"
+    },
+    "doc_000143": {
+      "ir_document_id": "doc_abd592d72294ae9ac37b77cc0c1620966be9d8d4118f070a71df3f4a3b9acb29",
+      "parser_core_version": "2.97.1",
+      "parser_name": "docling",
+      "parser_version": "2.129.0",
+      "source_sha256": "abd592d72294ae9ac37b77cc0c1620966be9d8d4118f070a71df3f4a3b9acb29"
+    },
+    "doc_000166": {
+      "ir_document_id": "doc_770db58ce60bd5431608339377262d084babd5aba3fbd1a6b5710f1f44ed0ba7",
+      "parser_core_version": "2.97.1",
+      "parser_name": "docling",
+      "parser_version": "2.129.0",
+      "source_sha256": "770db58ce60bd5431608339377262d084babd5aba3fbd1a6b5710f1f44ed0ba7"
+    },
+    "doc_000216": {
+      "ir_document_id": "doc_6165c880fe30fbe09433f4da9a357f666192406c22fc4a38b0400e72e2fce6b1",
+      "parser_core_version": "2.97.1",
+      "parser_name": "docling",
+      "parser_version": "2.129.0",
+      "source_sha256": "6165c880fe30fbe09433f4da9a357f666192406c22fc4a38b0400e72e2fce6b1"
+    },
+    "doc_000253": {
+      "ir_document_id": "doc_80c256300445a6328a4cd0a3869bc623015639bda86acc3ca1c72e2c3058caa7",
+      "parser_core_version": "2.97.1",
+      "parser_name": "docling",
+      "parser_version": "2.129.0",
+      "source_sha256": "80c256300445a6328a4cd0a3869bc623015639bda86acc3ca1c72e2c3058caa7"
+    },
+    "doc_000362": {
+      "ir_document_id": "doc_c5a271fec0c12c5cdf73296a6d8ee4c143e8cceea4d77e7cb37b7af99c1d8dbc",
+      "parser_core_version": "2.97.1",
+      "parser_name": "docling",
+      "parser_version": "2.129.0",
+      "source_sha256": "c5a271fec0c12c5cdf73296a6d8ee4c143e8cceea4d77e7cb37b7af99c1d8dbc"
+    }
+  },
+  "enrichment_document_ms": {
+    "doc_000008": 75.608292,
+    "doc_000061": 49.566167,
+    "doc_000097": 35.092208,
+    "doc_000134": 24.808916,
+    "doc_000143": 413.252417,
+    "doc_000166": 38.752041,
+    "doc_000216": 102.913416,
+    "doc_000253": 118.752375,
+    "doc_000362": 19.795875
+  },
+  "enrichment_prepare_ms": 878.599291,
+  "evaluated_question_ids": [
+    "adubench_single_000011",
+    "adubench_single_000129",
+    "adubench_single_000185",
+    "adubench_single_000266",
+    "adubench_single_000282",
+    "adubench_single_000283",
+    "adubench_single_000324",
+    "adubench_single_000440",
+    "adubench_single_000441",
+    "adubench_single_000503",
+    "adubench_single_000505",
+    "adubench_single_000507",
+    "adubench_single_000703",
+    "adubench_single_000817",
+    "adubench_single_000818",
+    "adubench_single_000946",
+    "adubench_single_001102",
+    "adubench_single_001344"
+  ],
+  "evidence_render_version": "evidence-render-v3",
+  "git_commit": "b3d53c0cea2848e50506a3cb758adfaff78a46a3",
+  "git_dirty": false,
+  "prompt_sha256": "af70aa5e83cdd117cbecd100c07223a0240251a90aad2645dd48c419a2a6cb4a",
+  "provider": "openai",
+  "provider_base_url": "http://127.0.0.1:1234/v1",
+  "provider_max_retries": 0,
+  "provider_timeout_seconds": 3600.0,
+  "provider_version": "2.54.0",
+  "question_ids": [
+    "adubench_single_000011",
+    "adubench_single_000129",
+    "adubench_single_000185",
+    "adubench_single_000266",
+    "adubench_single_000282",
+    "adubench_single_000283",
+    "adubench_single_000324",
+    "adubench_single_000440",
+    "adubench_single_000441",
+    "adubench_single_000503",
+    "adubench_single_000505",
+    "adubench_single_000507",
+    "adubench_single_000703",
+    "adubench_single_000815",
+    "adubench_single_000817",
+    "adubench_single_000818",
+    "adubench_single_000834",
+    "adubench_single_000946",
+    "adubench_single_000947",
+    "adubench_single_000960",
+    "adubench_single_001009",
+    "adubench_single_001102",
+    "adubench_single_001282",
+    "adubench_single_001344"
+  ],
+  "resumed": false,
+  "run_id": "xldev24-representation-gemma4-12b",
+  "seed": null,
+  "served_model_ids": [
+    "gemma-4-12b-it-mlx"
+  ],
+  "skipped_question_ids": [
+    "adubench_single_000815",
+    "adubench_single_000834",
+    "adubench_single_000947",
+    "adubench_single_000960",
+    "adubench_single_001009",
+    "adubench_single_001282"
+  ],
+  "subset_name": "xldev24",
+  "subset_sha256": "40660e06471e1b336d7c60ef9ead42bfbe63af8e313af9ffe6a08deb6a719e63",
+  "temperature": 0.0,
+  "tokenizer": "o200k_base",
+  "tokenizer_version": "0.14.0"
+}

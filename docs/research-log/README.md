@@ -42,6 +42,10 @@ commit it was measured at.
 11. [Rendered-evidence budget and node merging](stepc-rendered-budget-merge-f916545.md)
     — every arm charged for what it renders; merging helps at 8K/16K on
     development data, not on the fresh smoke set, and is not frozen.
+12. [Representation preregistration](prereg-xldev24-representation-gemma.md)
+    and [result](representation-xldev24-gemma-b3d53c0.md) — the same gold pages
+    as text or as Content IR: no benefit from structure for a local 12B model,
+    at about twice the tokens.
 12. [Parallel parsing performance](parallel-parsing-performance-46c2a61.md) —
     a six-document operational benchmark; two workers reduced end-to-end wall
     time by 22%, while four were slower and used more memory.
