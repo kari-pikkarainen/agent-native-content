@@ -104,6 +104,17 @@ against fixed RAG now fails at 16K. The figures in the table below predate
 that change and use content-only accounting. See
 [the re-baseline record](docs/research-log/stepc-rendered-budget-merge-f916545.md).
 
+**The controlled representation experiment is also complete.** Gemma-4-12B
+received the same annotated gold pages as compact text, Content IR, enriched
+IR, and query-selected agent features. Raw text answered 6 of 18 questions
+correctly; IR and enriched answered 5, and indexed answered 6. The structured
+conditions used 1.9–2.4 times the input tokens and 2.0–2.6 times the latency,
+without meeting the preregistered improvement rule. This is evidence against
+presenting the current document IR directly to this model, not against using
+structure internally for selection. See the
+[preregistration](docs/research-log/prereg-xldev24-representation-gemma.md)
+and [result](docs/research-log/representation-xldev24-gemma-b3d53c0.md).
+
 The frozen compiler leads the best RAG baseline on **page** recall on the
 24-question development set at every tested budget. On **exact quote** recall
 it leads at three of four budgets and trails at 2K, and the difference between
@@ -502,8 +513,12 @@ zero. `--max-calls` must cover questions x conditions x (1 + enabled judges);
 it bounds logical calls, not SDK-level retries. Judge calls are evaluation
 overhead, so representations are compared on answer-call-only tokens,
 latency and cost, reported separately from all-call totals.
-This is implemented and unit-tested only; no live run with the judges or the
-question-only control has been made.
+The first live controlled run is complete. On 18 development questions with
+local Gemma-4-12B, no structured condition beat raw text under the
+preregistered rule, while structure cost roughly twice the tokens and
+latency. The question-only control was uninformative because every response
+was invalid prose asking for evidence. The full result and its judge audit are
+in the [research record](docs/research-log/representation-xldev24-gemma-b3d53c0.md).
 
 By default (`--evidence-render-version evidence-render-v3`) prompts show no
 hex identifiers. Evidence items appear as `E1`, `E2`, …, IR nodes as `N1`,
@@ -814,20 +829,43 @@ the evidence: the deciding question was answerable from its own text, and the
 deciding citation was an abstention scored as supported. It is therefore not
 evidence for stopping, and not evidence for continuing.
 
-It found two things that are. The generation instrument has four defects —
-exact matching rejects correct paraphrases, citation entailment credits
-abstentions, nothing screens out questions answerable without evidence, and
-abstentions dominate — which must be fixed before another generation run can
-decide anything. And the compiler has a concrete failure: on poorly parsed
-documents it packs hundreds of fragments of a few tokens each, which empties
-its candidate pool, leaves budget unspent, and multiplies the prompt, up to
-28,954 tokens for a nominal 4K budget.
+The four instrument defects were fixed: semantic answer equivalence is scored
+separately, citation entailment skips abstentions, question-only is an explicit
+control, and valid answers and abstentions are reported separately. Rendered
+prompt overhead is now charged to every retrieval arm. The fragmentation
+mechanism remains a real compiler limitation, but the next controlled test
+isolated a more fundamental question: whether the persistent document
+representation itself helps an answer model.
 
-**The active step is to fix the instrument and state the fragmentation
-mechanism as a hypothesis, to be tested only on questions neither holdout nor
-`xldev24` has touched.** Whether the token budget should cover the rendered
-prompt rather than packed content remains an open decision for the owner, and
-bears directly on the fragmentation remedy.
+It did not in the first controlled run. With identical gold pages, local
+Gemma-4-12B produced 6 correct answers from raw text, 5 from IR, 5 from enriched
+IR and 6 from indexed enrichment. Structured encodings used roughly twice the
+tokens and latency. The answer judge's four audited errors all favoured the
+structured conditions, and a generous manual regrade still left the best
+structured condition tied with raw. Under the preregistered rule,
+document-format tuning stops. The narrow retrieval result that remains is a
+low-budget **gold-page-recall** advantage; exact-quote and answer-quality
+superiority have not been established.
+
+### Next experiment: agent-native tabular data
+
+The next step is a small tabular-data pilot, where explicit machine-oriented
+structure has a clearer potential advantage than adding markup around long
+document text. It should compare identical source rows under three conditions:
+
+- compact CSV or plain table text;
+- a typed schema with column meanings, units, keys and null semantics; and
+- an agent-native representation adding formula dependencies, relationships,
+  reusable summaries and cell-level provenance.
+
+The task set should cover filtering, aggregation, joins, unit conversion,
+formula tracing and provenance. Answers should have deterministic, executable
+ground truth wherever possible, with constrained JSON output so formatting
+failures do not masquerade as reasoning failures. Report both identical-data
+and equal-token comparisons, freeze the scoring and stopping rule on a small
+development set, then use an untouched holdout. Until that test shows a gain,
+the conservative document pipeline is to use IR internally for organization
+and selection while rendering compact text to the answer model.
 
 `xlholdout6c` was frozen and
 [recorded](docs/research-log/xlholdout6c-freeze.md) with all six sources

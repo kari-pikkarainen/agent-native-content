@@ -611,8 +611,10 @@ systems. That fetch is network work and is out of scope here. Until it happens,
 no claim of evaluator parity may be published; report accuracy as
 "relaxed, locally defined" and cite this section. New runs also record
 `abstained` from the exact marker required by the prompt and summarize
-`answer_rate`; this operational field is intentionally independent of the
-historical phrase-substring accuracy rule.
+`answer_rate`; this is the share of all cells with a provider-completed,
+parseable response that did not return the exact abstention marker. Invalid
+responses and abstentions are not answers. The field remains independent of
+the historical phrase-substring accuracy rule.
 
 ## Gold-evidence representation experiment
 
@@ -754,7 +756,9 @@ zero; it is never counted as correct or entailed. Summary rows report
 each judge (null when none did), plus `answer_rate`, `mean_semantic_accuracy`,
 `mean_citation_entailment`, `mean_calls` and `dollars_per_semantic_correct`.
 Citation entailment is averaged over non-abstaining cells only, so it must be
-read together with `answer_rate`.
+read together with `answer_rate`. The latter counts only valid,
+non-abstaining responses; an invalid response is not silently treated as an
+answer merely because it failed to emit the abstention marker.
 
 ### Answer-only efficiency versus total cost
 

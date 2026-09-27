@@ -749,7 +749,9 @@ def _summarize(
                 mean_citation_support=mean(supported) if supported else None,
                 mean_citation_entailment=mean(entailed) if entailed else None,
                 citation_present_rate=mean(cell.citation_present for cell in cells),
-                answer_rate=mean(not cell.abstained for cell in cells),
+                answer_rate=mean(
+                    cell.response_valid and not cell.abstained for cell in cells
+                ),
                 insufficient_evidence_accuracy=(
                     mean(cell.insufficient_evidence_correct for cell in unanswerable)
                     if unanswerable
@@ -918,8 +920,9 @@ def _markdown_report(summary: GenerationBenchmarkSummary) -> str:
             "Valid responses is the share of cells the provider completed and "
             "that parsed against the answer contract; a low rate means the "
             "arm's scores measure failed calls, not answer quality.",
-            "Answer rate is the share of cells that did not return the exact "
-            "INSUFFICIENT_EVIDENCE marker. Citation entailment is not judged "
+            "Answer rate is the share of cells with a valid, non-abstaining "
+            "answer. Invalid responses and exact INSUFFICIENT_EVIDENCE "
+            "abstentions are not answers. Citation entailment is not judged "
             "for abstentions because it measures support for an answer.",
             "Valid judges is the same check for the citation-entailment "
             "judge call, over the cells that called it; n/a means no cell in "

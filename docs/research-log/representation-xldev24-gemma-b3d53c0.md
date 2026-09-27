@@ -112,18 +112,18 @@ The conclusion does not change under the most generous reading.
 
 - **It shows:** for a 12B local model given the exact gold pages, encoding them
   as Content IR, with or without agent features, bought no accuracy over plain
-  extracted text. It cost about twice the tokens and latency. The richest
-  encoding (`indexed`) had the least well-supported citations.
+  extracted text. It cost about twice the tokens and latency. The
+  query-selected `indexed` encoding had the least well-supported citations.
 - **It does not show** that structure never helps:
   - 18 development questions, one small model, one prompt;
   - a weak model may not exploit structure a frontier model could;
   - the structured encodings are longer, and that may itself hurt a small
     model's long-context reading.
-- **For the compiler:** its selection advantage (more gold pages per budget)
-  stands on retrieval evidence. This result says that rendering the selected
-  evidence as IR is not, on this evidence, worth its tokens. A compiler that
-  selects with IR but renders compact text is the conservative default until a
-  stronger test says otherwise.
+- **For the compiler:** its low-budget gold-page-recall advantage stands on
+  retrieval evidence; exact-quote and answer-quality superiority do not. This
+  result says that rendering selected evidence as IR is not, on this evidence,
+  worth its tokens. A compiler that selects with IR but renders compact text is
+  the conservative default until an end-to-end test says otherwise.
 
 ## Known weaknesses
 
@@ -135,3 +135,12 @@ The conclusion does not change under the most generous reading.
 - The question-only control was uninformative: every answer was invalid.
 - Three dated pipeline fixes (seed, bare marker, short labels) were made after
   the pilot and before this run. Each is recorded in the preregistration.
+
+## Dated correction: 2026-09-27, answer-rate label
+
+The immutable run's generated report defines `answer_rate` as the share that
+did not emit the exact abstention marker. That makes all 18 invalid
+`question_only` prose responses look like answers in that one column. The
+validity table and the decision above use valid, non-abstaining answers and are
+unchanged. The implementation now defines answer rate that way for future
+runs; the committed historical artifact is left as generated at `b3d53c0`.

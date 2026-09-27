@@ -10,6 +10,12 @@ It does not yet show that the persistent IR causes the gain, that compiled
 contexts produce better answers, that comparable evidence needs materially
 fewer tokens, or that the approach generalizes or wins economically.
 
+The controlled gold-evidence experiment found no benefit from presenting the
+current document IR or agent features directly to local Gemma-4-12B: the best
+structured condition tied raw text while using roughly twice the tokens and
+latency. Under its preregistered rule, document-format tuning has stopped. The
+active research step is the tabular-data pilot summarized in the README.
+
 ## Gate 1: Isolate representation from retrieval policy
 
 **Implementation status:** initial small-subset diagnostic complete.
@@ -63,8 +69,10 @@ retrieval claim.
 
 ## Gate 3: Test whether selected evidence improves answers
 
-**Status:** implementation and preregistration complete; provider run awaits a
-local API credential.
+**Status:** the first preregistered provider run and its failure analysis are
+complete. The run did not establish an answer-quality benefit because its
+outcome was driven by abstention behavior; the evaluation defects it exposed
+have since been corrected.
 
 Use already-saved contexts first. Compare fixed, structural, and compiler
 systems at 2K and 4K with one answer model, one prompt, and explicit pricing and
@@ -87,25 +95,28 @@ envelope.
 
 ## Gate 4: Test the persistent representation directly
 
-**Implementation status:** the gold-evidence runner supports an opt-in
-question-only control, a representation-blind answer-equivalence judge, and a
-citation-entailment judge that skips abstentions, with judge validity rates,
-total calls, tokens, latency and cost, and judge prompt hashes in the
-manifest. No provider run has been made, so there is no result yet.
+**Status:** complete as a development experiment. The preregistered run gave
+identical gold-page evidence to raw, IR, enriched and indexed conditions. Raw
+and indexed each answered 6 of 18 questions correctly; IR and enriched each
+answered 5. Structured conditions used 1.9–2.4 times raw's answer-input tokens
+and did not meet the directional rule. See the
+[result](research-log/representation-xldev24-gemma-b3d53c0.md).
 
-Run RAW versus IR on identical gold evidence before adding more enrichment.
-The current two-question diagnostic makes IR about 49% larger than raw text, so
-IR must improve answer or citation quality enough to justify that overhead.
-Treat enriched and indexed conditions as later, separately reported treatments.
+## Gate 5: Test agent-native tabular data
 
-## Gate 5: Generalize without reusing tuned questions
+Run the bounded tabular pilot described in the README. Prefer executable
+ground truth and cell-level provenance so the central comparison does not
+depend on a model judging itself. Preregister the representation conditions,
+task families, token comparisons and stopping rule before the measured run.
+
+## Gate 6: Generalize without reusing tuned questions
 
 Freeze a preregistered population from the untouched XL-DocBench remainder,
 including cross-document questions. Record the analysis and stopping rules
 before running it. If the result survives, add a second benchmark such as
 T²-RAGBench before claiming technical validation.
 
-## Gate 6: Compare realistic long context
+## Gate 7: Compare realistic long context
 
 Finally, give a capable answer model the full relevant documents at 64K or 128K
 where they fit. Compare answer quality, total input cost, latency, and citation

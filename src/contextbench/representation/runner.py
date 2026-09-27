@@ -1155,7 +1155,9 @@ def _summarize(
                 condition=condition,
                 question_count=len(cells),
                 response_valid_rate=mean(cell.response_valid for cell in cells),
-                answer_rate=mean(not cell.abstained for cell in cells),
+                answer_rate=mean(
+                    cell.response_valid and not cell.abstained for cell in cells
+                ),
                 answer_equivalence_judge_valid_rate=(
                     mean(answer_judged) if answer_judged else None
                 ),
@@ -1341,8 +1343,9 @@ def _markdown_report(summary: RepresentationBenchmarkSummary) -> str:
             "it measures evaluation cost, not representation cost.",
             "Valid responses is the share of answer calls the provider "
             "completed and that parsed against the answer contract.",
-            "Answer rate is the share of cells that did not return the exact "
-            "INSUFFICIENT_EVIDENCE marker. Citation entailment is over "
+            "Answer rate is the share of cells with a valid, non-abstaining "
+            "answer. Invalid responses and exact INSUFFICIENT_EVIDENCE "
+            "abstentions are not answers. Citation entailment is over "
             "non-abstaining cells only, so it must be read with answer rate.",
             "Valid judges is the share of judge calls that completed and "
             "parsed, over the cells that called that judge; n/a means no cell "

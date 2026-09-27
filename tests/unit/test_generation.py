@@ -791,6 +791,7 @@ def test_response_valid_rate_separates_failed_calls_from_wrong_answers() -> None
 
     assert len(summary.rows) == 1
     assert summary.rows[0].response_valid_rate == 0.5
+    assert summary.rows[0].answer_rate == 0.5
     assert summary.rows[0].question_count == 2
 
 

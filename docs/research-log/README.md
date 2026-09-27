@@ -46,7 +46,7 @@ commit it was measured at.
     and [result](representation-xldev24-gemma-b3d53c0.md) — the same gold pages
     as text or as Content IR: no benefit from structure for a local 12B model,
     at about twice the tokens.
-12. [Parallel parsing performance](parallel-parsing-performance-46c2a61.md) —
+13. [Parallel parsing performance](parallel-parsing-performance-46c2a61.md) —
     a six-document operational benchmark; two workers reduced end-to-end wall
     time by 22%, while four were slower and used more memory.
 

@@ -250,6 +250,8 @@ class GenerationSummaryRow(BaseModel):
     mean_citation_support: float | None
     mean_citation_entailment: float | None = None
     citation_present_rate: float
+    # Share of all cells with a provider-completed, parseable response that
+    # did not return the exact abstention marker.
     answer_rate: float
     insufficient_evidence_accuracy: float | None
     mean_input_tokens: float

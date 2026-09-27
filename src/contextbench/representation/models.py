@@ -193,6 +193,7 @@ class RepresentationSummaryRow(BaseModel):
     question_count: int
     # Share of cells whose response was both provider-completed and parseable.
     response_valid_rate: float = Field(ge=0, le=1)
+    # Share of all cells with a valid response that did not abstain.
     answer_rate: float = Field(ge=0, le=1)
     answer_equivalence_judge_valid_rate: float | None = Field(default=None, ge=0, le=1)
     citation_entailment_judge_valid_rate: float | None = Field(default=None, ge=0, le=1)

@@ -266,7 +266,9 @@ def test_representation_runner_reports_provider_incomplete_responses(
         row.condition: row for row in result.summary.rows
     }
     assert summary_by_condition[RepresentationCondition.IR].response_valid_rate == 0
+    assert summary_by_condition[RepresentationCondition.IR].answer_rate == 0
     assert summary_by_condition[RepresentationCondition.RAW].response_valid_rate == 1
+    assert summary_by_condition[RepresentationCondition.RAW].answer_rate == 1
 
     written = [
         json.loads(line)
