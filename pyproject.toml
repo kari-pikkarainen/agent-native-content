@@ -8,6 +8,9 @@ version = "0.1.0"
 description = "Benchmark for structure-aware context compilation"
 readme = "README.md"
 license = "Apache-2.0"
+authors = [
+    { name = "Kari Pikkarainen" },
+]
 requires-python = ">=3.12"
 dependencies = [
     "docling>=2.126.0,<3",
@@ -16,6 +19,10 @@ dependencies = [
     "tiktoken>=0.14.0,<1",
     "typer>=0.12.0,<1",
 ]
+
+[project.urls]
+Homepage = "https://github.com/kari-pikkarainen/agent-native-content"
+Repository = "https://github.com/kari-pikkarainen/agent-native-content"
 
 [project.optional-dependencies]
 generation = [

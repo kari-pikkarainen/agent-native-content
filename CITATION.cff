@@ -6,7 +6,10 @@ version: 0.1.0
 date-released: 2026-09-20
 license: Apache-2.0
 authors:
-  - name: "Agent-Native Content contributors"
+  - family-names: "Pikkarainen"
+    given-names: "Kari"
+repository-code: "https://github.com/kari-pikkarainen/agent-native-content"
+url: "https://github.com/kari-pikkarainen/agent-native-content"
 abstract: >-
   A structure-preserving intermediate representation, context compilation
   reference implementation, and benchmark for agent-ready content.

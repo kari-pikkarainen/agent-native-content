@@ -908,7 +908,21 @@ and kill conditions. The
 [compiler specification](docs/specs/context-compiler.md) define the implemented
 boundaries in more detail.
 
-## License
+## License and citation
 
 Agent-Native Content is available under the
-[Apache License 2.0](LICENSE).
+[Apache License 2.0](LICENSE). It may be used, modified, and distributed,
+including commercially. Distributions must follow the license's attribution
+requirements: include the license and the project's [NOTICE](NOTICE), retain
+applicable notices, and identify modified files. The license does not require
+private or distributed improvements to be contributed back to this project.
+
+If the software, Content IR design, benchmark methodology, or published
+results inform your work, please cite **Agent-Native Content by Kari
+Pikkarainen** using the machine-readable metadata in
+[`CITATION.cff`](CITATION.cff). Citation supports research attribution; it
+does not add restrictions beyond Apache-2.0.
+
+Contributions are welcome under the same license. See
+[CONTRIBUTING.md](CONTRIBUTING.md) for the research-integrity rules and the
+lightweight Developer Certificate of Origin sign-off.

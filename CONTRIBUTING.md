@@ -24,6 +24,23 @@ Unless explicitly stated otherwise, contributions submitted for inclusion are
 licensed under the project's [Apache License 2.0](LICENSE), as described in
 Section 5 of that license.
 
+## Developer Certificate of Origin
+
+Every commit in a pull request must carry a `Signed-off-by` line certifying the
+[Developer Certificate of Origin 1.1](DCO). This confirms that the contributor
+has the right to submit the work under the project's license; it is not a
+copyright assignment or a contributor license agreement.
+
+Create the sign-off with Git's `-s` option:
+
+```shell
+git commit -s -m "Describe the change"
+```
+
+Use your real name and an email address you are comfortable recording in the
+public Git history. Maintainers may ask contributors to amend commits that lack
+the sign-off.
+
 ## Research integrity
 
 - Never change released gold labels or question answers.
