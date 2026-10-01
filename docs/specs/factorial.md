@@ -173,7 +173,7 @@ match development runs.
 ## Command and outputs
 
 ```shell
-uv run --extra retrieval contextbench eval-factorial \
+uv run --extra retrieval agent-native-content eval-factorial \
   --subset-file benchmarks/xl-docbench/subsets/xldev2-tables.json \
   --retrieval-corpus-subset-file benchmarks/xl-docbench/subsets/xldev24.json \
   --run-id xldev2-factorial
@@ -189,7 +189,7 @@ repeatable and takes `on` or `off`, spelled as the report and the manifest
 spell the positions, so the ablation runs as:
 
 ```shell
-uv run --extra retrieval contextbench eval-factorial \
+uv run --extra retrieval agent-native-content eval-factorial \
   --heading-context on --heading-context off \
   --run-id xldev2-factorial-heading
 ```

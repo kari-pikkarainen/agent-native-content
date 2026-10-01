@@ -21,13 +21,13 @@ from parallel_fixtures import (
 )
 from typer.testing import CliRunner
 
-import contextbench.evaluation.factorial_xl as factorial_xl
-import contextbench.evaluation.xl_docbench as retrieval_xl
-import contextbench.ingest.cache as cache_module
-import contextbench.representation.xl_docbench as representation_xl
-from contextbench.cli import app
-from contextbench.ingest import IngestionCache, IngestionError
-from contextbench.ingest.parallel import (
+import agent_native_content.evaluation.factorial_xl as factorial_xl
+import agent_native_content.evaluation.xl_docbench as retrieval_xl
+import agent_native_content.ingest.cache as cache_module
+import agent_native_content.representation.xl_docbench as representation_xl
+from agent_native_content.cli import app
+from agent_native_content.ingest import IngestionCache, IngestionError
+from agent_native_content.ingest.parallel import (
     ParallelIngestionError,
     warm_ingestion_cache,
 )
@@ -569,9 +569,11 @@ def test_a_failed_document_stops_the_run_before_it_starts(
 
 
 CLI_TARGETS = {
-    "eval-retrieval": "contextbench.evaluation.xl_docbench.run_xl_retrieval",
-    "eval-factorial": "contextbench.evaluation.factorial_xl.run_xl_factorial",
-    "eval-representation": "contextbench.representation.run_xl_gold_representation",
+    "eval-retrieval": "agent_native_content.evaluation.xl_docbench.run_xl_retrieval",
+    "eval-factorial": "agent_native_content.evaluation.factorial_xl.run_xl_factorial",
+    "eval-representation": (
+        "agent_native_content.representation.run_xl_gold_representation"
+    ),
 }
 
 
@@ -619,14 +621,15 @@ def _invoke_cli(monkeypatch, tmp_path: Path, command: str, options: list[str]):
 
 def _stub_representation_preflight(monkeypatch) -> None:
     question = SimpleNamespace(gold_evidence=())
-    monkeypatch.setattr("contextbench.cli.download_release", lambda _dir: None)
+    monkeypatch.setattr("agent_native_content.cli.download_release", lambda _dir: None)
     monkeypatch.setattr(
-        "contextbench.cli.XLDocBenchDataset",
+        "agent_native_content.cli.XLDocBenchDataset",
         lambda _dir: SimpleNamespace(iter_subset=lambda _subset: iter([question])),
     )
-    monkeypatch.setattr("contextbench.cli.load_subset", lambda _path: object())
+    monkeypatch.setattr("agent_native_content.cli.load_subset", lambda _path: object())
     monkeypatch.setattr(
-        "contextbench.generation.OpenAIAnswerProvider", lambda **_kwargs: object()
+        "agent_native_content.generation.OpenAIAnswerProvider",
+        lambda **_kwargs: object(),
     )
 
 

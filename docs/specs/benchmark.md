@@ -289,7 +289,7 @@ agent-native-content/
 │   ├── runs/
 │   ├── generation-runs/
 │   └── representation-runs/
-├── src/contextbench/
+├── src/agent_native_content/
 └── tests/
     ├── fixtures/
     ├── unit/
@@ -921,29 +921,29 @@ Provide a usable command-line interface.
 Target shape:
 
 ```text
-contextbench dataset download xl-docbench
+agent-native-content dataset download xl-docbench
 
-contextbench ingest xl-docbench
+agent-native-content ingest xl-docbench
 
-contextbench index --system fixed-rag
+agent-native-content index --system fixed-rag
 
-contextbench index --system structural-rag
+agent-native-content index --system structural-rag
 
-contextbench index --system compiler
+agent-native-content index --system compiler
 
-contextbench eval-retrieval \
+agent-native-content eval-retrieval \
   --system compiler \
   --subset xl100 \
   --budget 4096
 
-contextbench eval-generation \
+agent-native-content eval-generation \
   --system compiler \
   --subset xl100 \
   --budget 4096
 
-contextbench compare <run-a> <run-b> <run-c>
+agent-native-content compare <run-a> <run-b> <run-c>
 
-contextbench report <run-id>
+agent-native-content report <run-id>
 ```
 
 Exact syntax may differ, but functionality should be equivalent.
@@ -1011,7 +1011,7 @@ This prevents attributing improvements vaguely to “the IR.”
 
 The four names above do not fix the `CompilerConfig` fields they correspond
 to. Those are recorded as data in
-`src/contextbench/evaluation/ablations.py` and checked by a test, so a
+`src/agent_native_content/evaluation/ablations.py` and checked by a test, so a
 published ablation can be read back without reconstructing it from shell
 history. That module also records two decisions this section leaves open:
 that “sibling expansion” in D3 includes adjacent list-item grouping, with the
@@ -1398,7 +1398,7 @@ Requirements:
 - Python 3.12+
 - uv package management
 - src layout
-- Typer CLI with a `contextbench --help` command
+- Typer CLI with a `agent-native-content --help` command
 - pytest
 - ruff
 - basic GitHub Actions CI
@@ -1410,7 +1410,7 @@ Do not implement document parsing, retrieval, embeddings, or LLM calls.
 
 Acceptance:
 1. `uv sync` succeeds.
-2. `uv run contextbench --help` succeeds.
+2. `uv run agent-native-content --help` succeeds.
 3. `uv run ruff check .` succeeds.
 4. `uv run pytest` succeeds.
 5. Working tree is clean after committed/generated artifacts are excluded appropriately.
@@ -1483,7 +1483,7 @@ Create small PDF fixtures for tests or use repository-safe existing fixtures.
 Do not build our custom IR in this task.
 
 Add CLI:
-contextbench ingest <document>
+agent-native-content ingest <document>
 
 Acceptance:
 tests prove cache behavior and basic structural preservation.

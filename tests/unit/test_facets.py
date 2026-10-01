@@ -1,9 +1,9 @@
 """Tests for deterministic compiler query faceting."""
 
-from contextbench.compiler.facets import query_facets, retrieve_faceted
-from contextbench.compiler.models import CompilerConfig
-from contextbench.retrieval import RetrievalArm, RetrievalChunk
-from contextbench.retrieval.models import (
+from agent_native_content.compiler.facets import query_facets, retrieve_faceted
+from agent_native_content.compiler.models import CompilerConfig
+from agent_native_content.retrieval import RetrievalArm, RetrievalChunk
+from agent_native_content.retrieval.models import (
     RankedEvidence,
     RetrievalConfig,
     RetrievalScores,

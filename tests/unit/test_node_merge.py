@@ -9,32 +9,32 @@ from merge_fixtures import run_source, shredded_source
 from test_compiler import compiler_source
 from test_ir import FixtureTokenCounter, ingest_metadata
 
-from contextbench.compiler import (
+from agent_native_content.compiler import (
     CompilerConfig,
     DocumentScope,
     compile_context,
     compile_context_with_trace,
 )
-from contextbench.compiler.candidates import (
+from agent_native_content.compiler.candidates import (
     merged_unit_id,
     node_chunks,
 )
-from contextbench.compiler.compiler import cap_candidate_pool
-from contextbench.compiler.dedupe import deduplicate_candidates
-from contextbench.compiler.expand import expand_candidates
-from contextbench.compiler.models import CompilerCandidate, NodeMergePolicy
-from contextbench.evaluation import FactorialConfig
-from contextbench.ir import project_document
-from contextbench.ir.models import IRBoundingBox, IRDocument, IRNode, IRNodeKind
-from contextbench.retrieval import RetrievalConfig
-from contextbench.retrieval.models import (
+from agent_native_content.compiler.compiler import cap_candidate_pool
+from agent_native_content.compiler.dedupe import deduplicate_candidates
+from agent_native_content.compiler.expand import expand_candidates
+from agent_native_content.compiler.models import CompilerCandidate, NodeMergePolicy
+from agent_native_content.evaluation import FactorialConfig
+from agent_native_content.ir import project_document
+from agent_native_content.ir.models import IRBoundingBox, IRDocument, IRNode, IRNodeKind
+from agent_native_content.retrieval import RetrievalConfig
+from agent_native_content.retrieval.models import (
     RankedEvidence,
     RetrievalArm,
     RetrievalChunk,
     RetrievalScores,
 )
-from contextbench.retrieval.rendering import evidence_item_overhead
-from contextbench.retrieval.rerank import LexicalOverlapReranker
+from agent_native_content.retrieval.rendering import evidence_item_overhead
+from agent_native_content.retrieval.rerank import LexicalOverlapReranker
 
 COUNTER = FixtureTokenCounter()
 # Word counts: every fixture paragraph below is two words unless stated.
@@ -620,9 +620,12 @@ def _merge_corpus(tmp_path: Path):
 def test_the_benchmark_runner_builds_the_compiler_index_from_merged_units(
     tmp_path: Path,
 ) -> None:
-    from contextbench.evaluation import BenchmarkSystem, RetrievalBenchmarkConfig
-    from contextbench.evaluation import runner as benchmark_runner
-    from contextbench.retrieval import HashEmbeddingModel
+    from agent_native_content.evaluation import (
+        BenchmarkSystem,
+        RetrievalBenchmarkConfig,
+    )
+    from agent_native_content.evaluation import runner as benchmark_runner
+    from agent_native_content.retrieval import HashEmbeddingModel
 
     ir, sources = _merge_corpus(tmp_path)
     retrieval = RetrievalConfig(candidate_limit=20, rerank_limit=10)
@@ -665,9 +668,9 @@ def test_the_benchmark_runner_builds_the_compiler_index_from_merged_units(
 
 
 def test_the_factorial_merges_only_the_ir_content_unit(tmp_path: Path) -> None:
-    from contextbench.evaluation import ContentUnit, SelectionPolicy
-    from contextbench.evaluation import factorial as factorial_runner
-    from contextbench.retrieval import HashEmbeddingModel
+    from agent_native_content.evaluation import ContentUnit, SelectionPolicy
+    from agent_native_content.evaluation import factorial as factorial_runner
+    from agent_native_content.retrieval import HashEmbeddingModel
 
     ir, sources = _merge_corpus(tmp_path)
 
@@ -713,7 +716,7 @@ def test_merging_is_off_by_default_and_bounds_must_be_ordered() -> None:
 
 
 def test_merged_units_change_the_compiler_index_key(tmp_path: Path) -> None:
-    from contextbench.retrieval.index import _index_key
+    from agent_native_content.retrieval.index import _index_key
 
     source = run_source()
     ir = project_document(source, ingest_metadata(tmp_path), tokenizer=COUNTER)

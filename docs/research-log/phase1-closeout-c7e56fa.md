@@ -208,7 +208,7 @@ The run will be made against exactly this:
 | Embedding model | `BAAI/bge-small-en-v1.5` at `5c38ec7c405ec4b44b94cc5a9bb96e735b38267a` |
 | Reranker | `cross-encoder/ms-marco-MiniLM-L-6-v2` at `233902d25c440f23af6f7d6e94d2946bac0bee0a` |
 | Dataset revision | `72954bd70ffffe230f08b57c57fa9274ec14d7ea` |
-| Invocation | `uv run contextbench eval-retrieval --subset-file benchmarks/xl-docbench/subsets/xlholdout6c.json`, no compiler flags |
+| Invocation | `uv run agent-native-content eval-retrieval --subset-file benchmarks/xl-docbench/subsets/xlholdout6c.json`, no compiler flags |
 
 It is run once. It is published whatever it shows. The configuration is not
 revised after it.
@@ -224,3 +224,8 @@ revised after it.
   gold quotes with OCR errors that no arm can match.
 - No answer-quality result exists. Whether better page selection produces
   better answers is the question Phase 2 exists to answer.
+
+> Rename note (2026-10-01): the package, distribution and CLI were renamed
+> from `contextbench` to `agent-native-content` after this record was
+> written. Commands above show the new name; the runs were made with the old
+> one. Hash domains and run artifacts are unchanged.

@@ -9,8 +9,8 @@ from pathlib import Path
 
 import pytest
 
-from contextbench.datasets.subsets import load_subset
-from contextbench.datasets.xl_docbench import XLDocBenchDataset
+from agent_native_content.datasets.subsets import load_subset
+from agent_native_content.datasets.xl_docbench import XLDocBenchDataset
 
 RELEASE = Path(__file__).resolve().parents[2] / "data" / "raw" / "xl-docbench"
 

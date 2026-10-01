@@ -14,13 +14,13 @@ from reportlab.lib.pagesizes import letter
 from reportlab.pdfgen.canvas import Canvas
 from typer.testing import CliRunner
 
-import contextbench.ingest as ingest_package
-from contextbench.cli import app
-from contextbench.ingest.cache import (
+import agent_native_content.ingest as ingest_package
+from agent_native_content.cli import app
+from agent_native_content.ingest.cache import (
     IngestionCache,
     IngestionCacheIntegrityError,
 )
-from contextbench.ingest.docling_adapter import DoclingParser
+from agent_native_content.ingest.docling_adapter import DoclingParser
 
 
 class StructuredFixtureParser:

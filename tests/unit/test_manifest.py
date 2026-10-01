@@ -5,8 +5,11 @@ from pathlib import Path
 
 import pytest
 
-from contextbench.experiments import manifest
-from contextbench.experiments.manifest import current_git_commit, current_git_dirty
+from agent_native_content.experiments import manifest
+from agent_native_content.experiments.manifest import (
+    current_git_commit,
+    current_git_dirty,
+)
 
 
 def test_current_git_commit_falls_back_to_loose_head(
@@ -63,7 +66,7 @@ def test_dirty_worktree_is_recorded(monkeypatch) -> None:
 
     def porcelain_line(command: list[str], **_kwargs: object) -> _CompletedGit:
         commands.append(command)
-        return _CompletedGit(" M src/contextbench/experiments/manifest.py\n")
+        return _CompletedGit(" M src/agent_native_content/experiments/manifest.py\n")
 
     monkeypatch.setattr(subprocess, "run", porcelain_line)
     assert current_git_dirty() is True

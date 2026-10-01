@@ -14,15 +14,15 @@ import pytest
 from test_compiler import compiler_config, compiler_source
 from test_ir import FixtureTokenCounter, ingest_metadata
 
-from contextbench.compiler import DocumentScope, compile_context
-from contextbench.compiler.models import CompilerCandidate
-from contextbench.compiler.pack import _coverage_selection, pack_candidates
-from contextbench.generation.runner import render_answer_prompt
-from contextbench.generation.runner import (
+from agent_native_content.compiler import DocumentScope, compile_context
+from agent_native_content.compiler.models import CompilerCandidate
+from agent_native_content.compiler.pack import _coverage_selection, pack_candidates
+from agent_native_content.generation.runner import render_answer_prompt
+from agent_native_content.generation.runner import (
     render_grounded_prompt as _render_grounded_prompt,
 )
-from contextbench.ir import project_document
-from contextbench.retrieval import (
+from agent_native_content.ir import project_document
+from agent_native_content.retrieval import (
     HybridIndex,
     RetrievalArm,
     RetrievalChunk,
@@ -32,13 +32,13 @@ from contextbench.retrieval import (
     pack_evidence,
     rank_long_context,
 )
-from contextbench.retrieval.chunking import fixed_chunks, structural_chunks
-from contextbench.retrieval.models import (
+from agent_native_content.retrieval.chunking import fixed_chunks, structural_chunks
+from agent_native_content.retrieval.models import (
     ContextItem,
     ContextPacket,
     RankedEvidence,
 )
-from contextbench.retrieval.rendering import (
+from agent_native_content.retrieval.rendering import (
     EVIDENCE_JOINER,
     EVIDENCE_RENDER_V1,
     EVIDENCE_RENDER_V2,

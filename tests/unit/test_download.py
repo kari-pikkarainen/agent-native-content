@@ -7,8 +7,8 @@ from pathlib import Path
 
 import pytest
 
-from contextbench.datasets.base import DatasetIntegrityError, DocumentSource
-from contextbench.datasets.download import (
+from agent_native_content.datasets.base import DatasetIntegrityError, DocumentSource
+from agent_native_content.datasets.download import (
     CacheIntegrityError,
     DocumentDownloadError,
     SourceDocumentCache,

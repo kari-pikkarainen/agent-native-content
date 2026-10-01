@@ -16,8 +16,8 @@ from test_ir import (
     provenance,
 )
 
-import contextbench.compiler.expand as compiler_expand
-from contextbench.compiler import (
+import agent_native_content.compiler.expand as compiler_expand
+from agent_native_content.compiler import (
     CompilerConfig,
     CompilerCorpusIndex,
     CompilerQueryCache,
@@ -25,31 +25,31 @@ from contextbench.compiler import (
     compile_context,
     compile_context_with_trace,
 )
-from contextbench.compiler.candidates import node_chunks
-from contextbench.compiler.expand import _penalize, expand_candidates
-from contextbench.compiler.facets import query_facets
-from contextbench.compiler.joins import (
+from agent_native_content.compiler.candidates import node_chunks
+from agent_native_content.compiler.expand import _penalize, expand_candidates
+from agent_native_content.compiler.facets import query_facets
+from agent_native_content.compiler.joins import (
     _key_columns,
     _row_keys,
     keyed_table_join_candidates,
 )
-from contextbench.compiler.models import (
+from agent_native_content.compiler.models import (
     FALLBACK_CONTEXT_TIER,
     PRIMARY_EVIDENCE_TIER,
     CompilerCandidate,
 )
-from contextbench.compiler.pack import _backfill_order, pack_candidates
-from contextbench.ir import project_document
-from contextbench.ir.models import IRNodeKind
-from contextbench.retrieval import (
+from agent_native_content.compiler.pack import _backfill_order, pack_candidates
+from agent_native_content.ir import project_document
+from agent_native_content.ir.models import IRNodeKind
+from agent_native_content.retrieval import (
     RetrievalArm,
     RetrievalChunk,
     RetrievalConfig,
     RetrievalScores,
 )
-from contextbench.retrieval.chunking import structural_chunks
-from contextbench.retrieval.index import HybridIndex
-from contextbench.retrieval.rerank import LexicalOverlapReranker
+from agent_native_content.retrieval.chunking import structural_chunks
+from agent_native_content.retrieval.index import HybridIndex
+from agent_native_content.retrieval.rerank import LexicalOverlapReranker
 
 
 def compiler_source() -> DoclingDocument:

@@ -265,7 +265,7 @@ Clone the repository and create the environment:
 
 ```shell
 uv sync --extra retrieval
-uv run contextbench --help
+uv run agent-native-content --help
 ```
 
 The first real-data run may download the pinned dataset metadata, referenced
@@ -295,7 +295,7 @@ sequential parse or passing `--docling-artifacts-dir`—so the workers do not
 attempt the same download concurrently. For example:
 
 ```shell
-uv run --extra retrieval contextbench eval-retrieval \
+uv run --extra retrieval agent-native-content eval-retrieval \
   --subset-file benchmarks/xl-docbench/subsets/xldev2-tables.json \
   --retrieval-corpus-subset-file benchmarks/xl-docbench/subsets/xldev24.json \
   --parse-workers 2 \
@@ -315,7 +315,7 @@ Start with two questions while retaining the 24-question development corpus's
 11 documents and index statistics:
 
 ```shell
-uv run --extra retrieval contextbench eval-retrieval \
+uv run --extra retrieval agent-native-content eval-retrieval \
   --subset-file benchmarks/xl-docbench/subsets/xldev2-tables.json \
   --retrieval-corpus-subset-file benchmarks/xl-docbench/subsets/xldev24.json \
   --compiler-stage-audit \
@@ -331,7 +331,7 @@ After the models and indexes are warm, they can be forced offline:
 
 ```shell
 HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 \
-  uv run --extra retrieval contextbench eval-retrieval \
+  uv run --extra retrieval agent-native-content eval-retrieval \
   --subset-file benchmarks/xl-docbench/subsets/xldev2-tables.json \
   --retrieval-corpus-subset-file benchmarks/xl-docbench/subsets/xldev24.json \
   --run-id xldev2-offline
@@ -351,7 +351,7 @@ IR nodes with ranked single-query retrieval and faceted coverage-aware
 retrieval:
 
 ```shell
-uv run --extra retrieval contextbench eval-factorial \
+uv run --extra retrieval agent-native-content eval-factorial \
   --subset-file benchmarks/xl-docbench/subsets/xldev2-tables.json \
   --retrieval-corpus-subset-file benchmarks/xl-docbench/subsets/xldev24.json \
   --run-id xldev2-factorial
@@ -374,10 +374,10 @@ The adapter is pinned to Microsoft's conservative
 `xldocbench_strict_1345_v1` release.
 
 ```shell
-uv run contextbench dataset download xl-docbench
-uv run contextbench dataset list xl-docbench \
+uv run agent-native-content dataset download xl-docbench
+uv run agent-native-content dataset list xl-docbench \
   --subset-file benchmarks/xl-docbench/subsets/xldev24.json
-uv run contextbench dataset inspect xl-docbench <question-id>
+uv run agent-native-content dataset inspect xl-docbench <question-id>
 ```
 
 Add `--sources` to the download command to prefetch source PDFs. The benchmark
@@ -387,7 +387,7 @@ Downloads are size-checked, content-addressed, and revalidated before reuse.
 ### Ingest one PDF
 
 ```shell
-uv run contextbench ingest path/to/document.pdf
+uv run agent-native-content ingest path/to/document.pdf
 ```
 
 This writes an authoritative serialized `DoclingDocument` and metadata beneath
@@ -398,7 +398,7 @@ and structural counts.
 ### Create an agent-ready document
 
 ```shell
-uv run contextbench agentize \
+uv run agent-native-content agentize \
   path/to/document.pdf \
   artifacts/agent-documents/example
 ```
@@ -430,7 +430,7 @@ The balanced development set is the largest set currently recommended for
 iteration:
 
 ```shell
-uv run --extra retrieval contextbench eval-retrieval \
+uv run --extra retrieval agent-native-content eval-retrieval \
   --subset-file benchmarks/xl-docbench/subsets/xldev24.json \
   --compiler-stage-audit \
   --run-id xldev24-local
@@ -448,7 +448,7 @@ compilation:
 
 ```shell
 uv sync --extra generation
-uv run --extra generation contextbench eval-generation \
+uv run --extra generation agent-native-content eval-generation \
   artifacts/runs/<retrieval-run-id> \
   --subset-file benchmarks/xl-docbench/subsets/xldev2-tables.json \
   --model <model-id> \
@@ -537,7 +537,7 @@ option did. The scheme is recorded in the manifest and the checkpoint, and a
 resume under another scheme is refused.
 
 ```shell
-uv run --extra generation contextbench eval-representation \
+uv run --extra generation agent-native-content eval-representation \
   --subset-file benchmarks/xl-docbench/subsets/xldev2-tables.json \
   --model <model-id> \
   --input-usd-per-million <price> \
@@ -551,7 +551,7 @@ The same run against a local model served by LM Studio records the endpoint
 in its config:
 
 ```shell
-uv run --extra generation contextbench eval-representation \
+uv run --extra generation agent-native-content eval-representation \
   --subset-file benchmarks/xl-docbench/subsets/xldev2-tables.json \
   --model <local-model-id> \
   --provider-base-url http://127.0.0.1:1234/v1 \
@@ -882,7 +882,7 @@ per-question failure analysis rather than another small generation run.
 ## Repository map
 
 ```text
-src/contextbench/
+src/agent_native_content/
   agentdoc/        portable document enrichment and bundles
   compiler/        query facets, joins, expansion, dedupe, and packing
   datasets/        pinned XL-DocBench adapter and source cache

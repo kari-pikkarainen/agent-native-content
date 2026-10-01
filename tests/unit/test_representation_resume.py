@@ -14,14 +14,14 @@ from test_evaluation import _corpus
 from test_ir import FixtureTokenCounter
 from test_representation import JudgedRepresentationProvider, _config
 
-from contextbench.evaluation import EvaluationCorpus
-from contextbench.representation import (
+from agent_native_content.evaluation import EvaluationCorpus
+from agent_native_content.representation import (
     RepresentationCondition,
     RepresentationError,
     representation_call_ceiling,
     run_gold_representation_benchmark,
 )
-from contextbench.representation.checkpoint import (
+from agent_native_content.representation.checkpoint import (
     CELLS_FILE,
     HEADER_FILE,
     LOCK_FILE,
@@ -324,7 +324,7 @@ def test_resume_refuses_a_changed_prompt_template(
     _interrupt(tmp_path)
     monkeypatch.setattr(
         # The instructions a default (evidence-render-v3) run sends.
-        "contextbench.representation.runner.ANSWER_PROMPT_INSTRUCTIONS_ALIASED",
+        "agent_native_content.representation.runner.ANSWER_PROMPT_INSTRUCTIONS_ALIASED",
         "A different answer prompt.",
     )
     provider = FlakyProvider()
@@ -613,7 +613,7 @@ def test_a_dirty_run_is_never_resumed(tmp_path: Path) -> None:
 def test_a_run_published_by_a_racing_process_is_not_run_again(
     tmp_path: Path, monkeypatch
 ) -> None:
-    from contextbench.representation import runner
+    from agent_native_content.representation import runner
 
     real_open = runner.RepresentationCheckpoint.open
     final_path = tmp_path / "artifacts" / "representation-runs" / RUN_ID

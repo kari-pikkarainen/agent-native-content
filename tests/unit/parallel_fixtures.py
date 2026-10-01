@@ -114,7 +114,7 @@ class RacingParser(RecordingParser):
         self.root = root
 
     def parse(self, source: Path) -> DoclingDocument:
-        from contextbench.ingest import IngestionCache
+        from agent_native_content.ingest import IngestionCache
 
         IngestionCache(self.root, RecordingParser(self.log_dir)).ingest(source)
         return super().parse(source)
@@ -127,7 +127,7 @@ def ingest_then_die_before_publish(root: str, log_dir: str, source: str) -> None
     ``document.json`` is on disk, before the entry is published -- as a
     SIGKILL or an out-of-memory kill between the two writes would.
     """
-    import contextbench.ingest.cache as cache_module
+    import agent_native_content.ingest.cache as cache_module
 
     def die(_path: Path, _value: dict[str, Any]) -> None:
         os._exit(9)

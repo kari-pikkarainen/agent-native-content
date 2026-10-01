@@ -7,11 +7,11 @@ from types import SimpleNamespace
 import pytest
 from typer.testing import CliRunner
 
-from contextbench import __version__
-from contextbench.cli import app
-from contextbench.compiler import CompilerConfig
-from contextbench.evaluation import BenchmarkSystem, RetrievalBenchmarkConfig
-from contextbench.evaluation.ablations import (
+from agent_native_content import __version__
+from agent_native_content.cli import app
+from agent_native_content.compiler import CompilerConfig
+from agent_native_content.evaluation import BenchmarkSystem, RetrievalBenchmarkConfig
+from agent_native_content.evaluation.ablations import (
     COMPILER_ABLATIONS,
     ablation_command_line,
 )
@@ -117,7 +117,7 @@ def test_eval_retrieval_runs_all_default_budgets_and_prints_artifacts(
         )
 
     monkeypatch.setattr(
-        "contextbench.evaluation.xl_docbench.run_xl_retrieval",
+        "agent_native_content.evaluation.xl_docbench.run_xl_retrieval",
         fake_run_xl_retrieval,
     )
 
@@ -159,7 +159,7 @@ def test_eval_retrieval_accepts_fixed_retrieval_corpus(
         )
 
     monkeypatch.setattr(
-        "contextbench.evaluation.xl_docbench.run_xl_retrieval",
+        "agent_native_content.evaluation.xl_docbench.run_xl_retrieval",
         fake_run_xl_retrieval,
     )
     corpus = tmp_path / "parent.json"
@@ -193,7 +193,7 @@ def test_eval_retrieval_disables_keyed_table_joins(
         )
 
     monkeypatch.setattr(
-        "contextbench.evaluation.xl_docbench.run_xl_retrieval",
+        "agent_native_content.evaluation.xl_docbench.run_xl_retrieval",
         fake_run_xl_retrieval,
     )
 
@@ -237,7 +237,7 @@ def test_eval_retrieval_exposes_the_compiler_node_heading_search_context(
         )
 
     monkeypatch.setattr(
-        "contextbench.evaluation.xl_docbench.run_xl_retrieval",
+        "agent_native_content.evaluation.xl_docbench.run_xl_retrieval",
         fake_run_xl_retrieval,
     )
 
@@ -282,7 +282,7 @@ def test_eval_factorial_defaults_to_small_fixed_corpus(
         )
 
     monkeypatch.setattr(
-        "contextbench.evaluation.factorial_xl.run_xl_factorial",
+        "agent_native_content.evaluation.factorial_xl.run_xl_factorial",
         fake_run_xl_factorial,
     )
 
@@ -329,7 +329,7 @@ def test_eval_factorial_crosses_both_heading_context_positions(
         )
 
     monkeypatch.setattr(
-        "contextbench.evaluation.factorial_xl.run_xl_factorial",
+        "agent_native_content.evaluation.factorial_xl.run_xl_factorial",
         fake_run_xl_factorial,
     )
 
@@ -384,7 +384,7 @@ def test_eval_factorial_refuses_an_unusable_heading_context(
         )
 
     monkeypatch.setattr(
-        "contextbench.evaluation.factorial_xl.run_xl_factorial",
+        "agent_native_content.evaluation.factorial_xl.run_xl_factorial",
         fake_run_xl_factorial,
     )
 
@@ -427,11 +427,11 @@ def test_eval_commands_forward_pinned_model_revisions(
         )
 
     monkeypatch.setattr(
-        "contextbench.evaluation.xl_docbench.run_xl_retrieval",
+        "agent_native_content.evaluation.xl_docbench.run_xl_retrieval",
         fake_run_xl_retrieval,
     )
     monkeypatch.setattr(
-        "contextbench.evaluation.factorial_xl.run_xl_factorial",
+        "agent_native_content.evaluation.factorial_xl.run_xl_factorial",
         fake_run_xl_factorial,
     )
 
@@ -499,11 +499,11 @@ def test_eval_commands_refuse_a_new_model_id_on_the_default_revision(
         )
 
     monkeypatch.setattr(
-        "contextbench.evaluation.xl_docbench.run_xl_retrieval",
+        "agent_native_content.evaluation.xl_docbench.run_xl_retrieval",
         fake_run_xl_retrieval,
     )
     monkeypatch.setattr(
-        "contextbench.evaluation.factorial_xl.run_xl_factorial",
+        "agent_native_content.evaluation.factorial_xl.run_xl_factorial",
         fake_run_xl_factorial,
     )
 
@@ -570,11 +570,11 @@ def test_eval_commands_accept_offline_models_without_a_revision(
         )
 
     monkeypatch.setattr(
-        "contextbench.evaluation.xl_docbench.run_xl_retrieval",
+        "agent_native_content.evaluation.xl_docbench.run_xl_retrieval",
         fake_run_xl_retrieval,
     )
     monkeypatch.setattr(
-        "contextbench.evaluation.factorial_xl.run_xl_factorial",
+        "agent_native_content.evaluation.factorial_xl.run_xl_factorial",
         fake_run_xl_factorial,
     )
 
@@ -644,7 +644,7 @@ def _captured_config(tmp_path: Path, monkeypatch, options: list[str]):
         )
 
     monkeypatch.setattr(
-        "contextbench.evaluation.xl_docbench.run_xl_retrieval",
+        "agent_native_content.evaluation.xl_docbench.run_xl_retrieval",
         fake_run_xl_retrieval,
     )
     result = runner.invoke(
@@ -839,7 +839,7 @@ def test_eval_factorial_passes_budget_accounting_through(
         )
 
     monkeypatch.setattr(
-        "contextbench.evaluation.factorial_xl.run_xl_factorial",
+        "agent_native_content.evaluation.factorial_xl.run_xl_factorial",
         fake_run_xl_factorial,
     )
 
@@ -897,7 +897,7 @@ def test_eval_factorial_exposes_node_merging(tmp_path: Path, monkeypatch) -> Non
         )
 
     monkeypatch.setattr(
-        "contextbench.evaluation.factorial_xl.run_xl_factorial",
+        "agent_native_content.evaluation.factorial_xl.run_xl_factorial",
         fake_run_xl_factorial,
     )
 

@@ -17,9 +17,9 @@ from test_ir import (
     source_document,
 )
 
-from contextbench.ir import project_document
-from contextbench.ir.models import IRNodeKind
-from contextbench.retrieval import (
+from agent_native_content.ir import project_document
+from agent_native_content.ir.models import IRNodeKind
+from agent_native_content.retrieval import (
     HashEmbeddingModel,
     HybridIndex,
     LexicalOverlapReranker,
@@ -34,13 +34,13 @@ from contextbench.retrieval import (
     pack_evidence,
     rank_long_context,
 )
-from contextbench.retrieval.chunking import (
+from agent_native_content.retrieval.chunking import (
     contextual_search_text,
     fixed_chunks,
     structural_chunks,
 )
-from contextbench.retrieval.index import _index_key
-from contextbench.retrieval.sparse import BM25Index
+from agent_native_content.retrieval.index import _index_key
+from agent_native_content.retrieval.sparse import BM25Index
 
 
 @pytest.fixture
@@ -1884,7 +1884,7 @@ def test_pair_score_reuse_is_off_by_default_and_rescoring_is_unconditional() -> 
 
 def test_facet_rerank_pool_token_cap_defaults_to_no_trimming() -> None:
     """The token-mass cap is an ablation control, not the shipped behaviour."""
-    from contextbench.compiler.facets import _capped_by_token_mass
+    from agent_native_content.compiler.facets import _capped_by_token_mass
 
     def evidence(rank: int, tokens: int) -> RankedEvidence:
         return RankedEvidence(

@@ -8,8 +8,12 @@ import pytest
 from test_compiler import compiler_source
 from test_ir import FixtureTokenCounter, ingest_metadata, source_document
 
-from contextbench.datasets.base import BenchmarkQuestion, EvidenceItem, GoldEvidence
-from contextbench.evaluation import (
+from agent_native_content.datasets.base import (
+    BenchmarkQuestion,
+    EvidenceItem,
+    GoldEvidence,
+)
+from agent_native_content.evaluation import (
     ContentUnit,
     EvaluationCorpus,
     EvaluationError,
@@ -18,11 +22,11 @@ from contextbench.evaluation import (
     SelectionPolicy,
     run_factorial_benchmark,
 )
-from contextbench.evaluation import factorial as factorial_runner
-from contextbench.evaluation.factorial import _pack_factorial_context
-from contextbench.experiments import manifest
-from contextbench.ir import project_document
-from contextbench.retrieval import (
+from agent_native_content.evaluation import factorial as factorial_runner
+from agent_native_content.evaluation.factorial import _pack_factorial_context
+from agent_native_content.experiments import manifest
+from agent_native_content.ir import project_document
+from agent_native_content.retrieval import (
     HashEmbeddingModel,
     LexicalOverlapReranker,
     RankedEvidence,

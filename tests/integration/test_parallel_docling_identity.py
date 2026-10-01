@@ -17,8 +17,8 @@ import pytest
 sys.path.insert(0, str(Path(__file__).parents[1] / "unit"))
 from parallel_fixtures import FixtureSource, FixtureSourceCache  # noqa: E402
 
-from contextbench.ingest import DoclingParser, IngestionCache  # noqa: E402
-from contextbench.ingest.parallel import warm_ingestion_cache  # noqa: E402
+from agent_native_content.ingest import DoclingParser, IngestionCache  # noqa: E402
+from agent_native_content.ingest.parallel import warm_ingestion_cache  # noqa: E402
 
 pytestmark = pytest.mark.skipif(
     os.environ.get("CONTEXTBENCH_DOCLING_PARALLEL") != "1",

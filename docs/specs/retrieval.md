@@ -610,7 +610,7 @@ The revision is not part of `RetrievalConfig`, so a programmatic caller
 constructs the adapters itself and passes them to `HybridIndex.build`:
 
 ```python
-from contextbench.retrieval import (
+from agent_native_content.retrieval import (
     RetrievalConfig,
     SentenceTransformerCrossEncoderReranker,
     SentenceTransformerEmbeddingModel,
@@ -666,7 +666,7 @@ evidence from outside a question's declared document scope.
 ## API
 
 ```python
-from contextbench.retrieval import HybridIndex, RetrievalArm, RetrievalConfig
+from agent_native_content.retrieval import HybridIndex, RetrievalArm, RetrievalConfig
 
 index = HybridIndex.build(
     [ir_document],

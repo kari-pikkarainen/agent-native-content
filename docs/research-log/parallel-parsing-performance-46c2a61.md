@@ -34,7 +34,7 @@ The command shape was:
 
 ```shell
 HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 \
-  uv run --extra retrieval contextbench eval-retrieval \
+  uv run --extra retrieval agent-native-content eval-retrieval \
   --data-dir data/raw/xl-docbench \
   --subset-file benchmarks/xl-docbench/subsets/xldev6-perf.json \
   --source-cache-dir data/cache/xl-docbench \
@@ -93,3 +93,8 @@ measure before adopting it.
   committed subset, Git SHA, environment and command are recorded here so the
   diagnostic can be repeated, but these rows are not canonical benchmark
   result artifacts.
+
+> Rename note (2026-10-01): the package, distribution and CLI were renamed
+> from `contextbench` to `agent-native-content` after this record was
+> written. Commands above show the new name; the runs were made with the old
+> one. Hash domains and run artifacts are unchanged.

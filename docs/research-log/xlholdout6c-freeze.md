@@ -199,7 +199,7 @@ narrative_literature 2, scientific_academic 7, technical_engineering 9.
 ## Executed substitution, 2026-09-22
 
 The affirmative preflight was run with
-`contextbench dataset download xl-docbench --sources --document-id ...` over
+`agent-native-content dataset download xl-docbench --sources --document-id ...` over
 the five deferred sources. One failed:
 
 | Document | Domain | Outcome |
@@ -254,3 +254,8 @@ result exists.
   recorded above, not on the reproduction.
 - Six questions cannot bound a loss margin. Gate 1 is a screening check, as
   the improvement plan already states.
+
+> Rename note (2026-10-01): the package, distribution and CLI were renamed
+> from `contextbench` to `agent-native-content` after this record was
+> written. Commands above show the new name; the runs were made with the old
+> one. Hash domains and run artifacts are unchanged.

@@ -16,7 +16,7 @@ from test_ir import (
     source_document,
 )
 
-from contextbench.agentdoc import (
+from agent_native_content.agentdoc import (
     AgentBundleError,
     AgentFeatureKind,
     create_agent_bundle,
@@ -24,7 +24,7 @@ from contextbench.agentdoc import (
     features_for_nodes,
     select_agent_features,
 )
-from contextbench.ir import project_document
+from agent_native_content.ir import project_document
 
 
 def _document(tmp_path: Path):

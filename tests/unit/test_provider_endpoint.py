@@ -18,23 +18,23 @@ from test_ir import FixtureTokenCounter
 from test_representation import _config as _representation_config
 from test_representation import _gold_question
 
-from contextbench.generation import (
+from agent_native_content.generation import (
     GenerationConfig,
     OpenAIAnswerProvider,
     run_generation_benchmark,
 )
-from contextbench.generation.models import (
+from agent_native_content.generation.models import (
     OPENAI_SDK_DEFAULT_CONNECT_TIMEOUT_SECONDS,
     OPENAI_SDK_DEFAULT_MAX_RETRIES,
     OPENAI_SDK_DEFAULT_TIMEOUT_SECONDS,
 )
-from contextbench.generation.providers import (
+from agent_native_content.generation.providers import (
     FORWARDED_OPENAI_ENV_VARS,
     LOCAL_PLACEHOLDER_API_KEY,
     ProviderConfigurationError,
     openai_client_kwargs,
 )
-from contextbench.representation import (
+from agent_native_content.representation import (
     RepresentationCondition,
     representation_prompt_hashes,
     run_gold_representation_benchmark,
@@ -276,7 +276,7 @@ def test_trailing_slash_does_not_change_the_config_hash() -> None:
 
 
 def _request():
-    from contextbench.generation import AnswerRequest
+    from agent_native_content.generation import AnswerRequest
 
     return AnswerRequest(
         question_id="question-1",
@@ -425,8 +425,8 @@ def test_representation_prompt_hashes_ignore_the_endpoint() -> None:
 def _invoke_representation_cli(monkeypatch, *args: str):
     from typer.testing import CliRunner
 
-    from contextbench.cli import app
-    from contextbench.representation import RepresentationError
+    from agent_native_content.cli import app
+    from agent_native_content.representation import RepresentationError
 
     captured: dict[str, object] = {}
 
@@ -435,14 +435,14 @@ def _invoke_representation_cli(monkeypatch, *args: str):
         raise RepresentationError("stop after capture")
 
     questions = (_gold_question(),)
-    monkeypatch.setattr("contextbench.cli.download_release", lambda _path: None)
-    monkeypatch.setattr("contextbench.cli.load_subset", lambda _path: None)
+    monkeypatch.setattr("agent_native_content.cli.download_release", lambda _path: None)
+    monkeypatch.setattr("agent_native_content.cli.load_subset", lambda _path: None)
     monkeypatch.setattr(
-        "contextbench.cli.XLDocBenchDataset",
+        "agent_native_content.cli.XLDocBenchDataset",
         lambda _path: SimpleNamespace(iter_subset=lambda _subset: iter(questions)),
     )
     monkeypatch.setattr(
-        "contextbench.representation.run_xl_gold_representation", fake_run
+        "agent_native_content.representation.run_xl_gold_representation", fake_run
     )
     result = CliRunner().invoke(
         app,
@@ -585,8 +585,8 @@ def test_eval_generation_options_reach_config_and_client(
 ) -> None:
     from typer.testing import CliRunner
 
-    from contextbench.cli import app
-    from contextbench.generation import GenerationError
+    from agent_native_content.cli import app
+    from agent_native_content.generation import GenerationError
 
     captured: dict[str, object] = {}
 
@@ -594,10 +594,12 @@ def test_eval_generation_options_reach_config_and_client(
         captured.update(kwargs)
         raise GenerationError("stop after capture")
 
-    monkeypatch.setattr("contextbench.generation.run_generation_benchmark", fake_run)
-    monkeypatch.setattr("contextbench.cli.load_subset", lambda _path: None)
     monkeypatch.setattr(
-        "contextbench.cli.XLDocBenchDataset",
+        "agent_native_content.generation.run_generation_benchmark", fake_run
+    )
+    monkeypatch.setattr("agent_native_content.cli.load_subset", lambda _path: None)
+    monkeypatch.setattr(
+        "agent_native_content.cli.XLDocBenchDataset",
         lambda _path: SimpleNamespace(iter_subset=lambda _subset: iter(())),
     )
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
@@ -789,11 +791,11 @@ def test_eval_generation_refuses_a_seed_before_building_a_provider(
 ) -> None:
     from typer.testing import CliRunner
 
-    from contextbench.cli import app
+    from agent_native_content.cli import app
 
     captured: dict[str, object] = {}
     monkeypatch.setattr(
-        "contextbench.generation.run_generation_benchmark",
+        "agent_native_content.generation.run_generation_benchmark",
         lambda *_args, **kwargs: captured.update(kwargs),
     )
     retrieval = _run(tmp_path, run_id="retrieval-cli-seed")
@@ -863,7 +865,7 @@ def test_representation_sends_and_records_sampling_only_when_configured(
 def test_eval_representation_ceiling_ignores_an_existing_checkpoint(
     tmp_path: Path, monkeypatch, fake_openai
 ) -> None:
-    from contextbench.representation.checkpoint import checkpoint_path
+    from agent_native_content.representation.checkpoint import checkpoint_path
 
     # A checkpoint holding most of the run does not lower the ceiling: it is
     # the planned total, checked before any provider is built.
@@ -898,8 +900,8 @@ def test_eval_generation_timeout_reaches_config_and_client(
 ) -> None:
     from typer.testing import CliRunner
 
-    from contextbench.cli import app
-    from contextbench.generation import GenerationError
+    from agent_native_content.cli import app
+    from agent_native_content.generation import GenerationError
 
     captured: dict[str, object] = {}
 
@@ -907,10 +909,12 @@ def test_eval_generation_timeout_reaches_config_and_client(
         captured.update(kwargs)
         raise GenerationError("stop after capture")
 
-    monkeypatch.setattr("contextbench.generation.run_generation_benchmark", fake_run)
-    monkeypatch.setattr("contextbench.cli.load_subset", lambda _path: None)
     monkeypatch.setattr(
-        "contextbench.cli.XLDocBenchDataset",
+        "agent_native_content.generation.run_generation_benchmark", fake_run
+    )
+    monkeypatch.setattr("agent_native_content.cli.load_subset", lambda _path: None)
+    monkeypatch.setattr(
+        "agent_native_content.cli.XLDocBenchDataset",
         lambda _path: SimpleNamespace(iter_subset=lambda _subset: iter(())),
     )
     retrieval = _run(tmp_path, run_id="retrieval-cli-timeout")
@@ -942,8 +946,8 @@ def test_eval_generation_timeout_reaches_config_and_client(
 
 
 def test_a_checkpoint_never_contains_a_key(tmp_path: Path, fake_openai) -> None:
-    from contextbench.representation import RepresentationError
-    from contextbench.representation.checkpoint import checkpoint_path
+    from agent_native_content.representation import RepresentationError
+    from agent_native_content.representation.checkpoint import checkpoint_path
 
     config = _representation_config(
         conditions=(RepresentationCondition.RAW, RepresentationCondition.IR),

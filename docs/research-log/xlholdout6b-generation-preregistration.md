@@ -73,7 +73,7 @@ benefits, pause algorithm expansion and inspect per-question failures first.
 ## Registered command
 
 ```shell
-uv run --frozen --extra generation contextbench eval-generation \
+uv run --frozen --extra generation agent-native-content eval-generation \
   artifacts/runs/xlholdout6b-metric-audit-bc57f17 \
   --subset-file benchmarks/xl-docbench/subsets/xlholdout6b.json \
   --system fixed --system structural --system compiler \
@@ -91,3 +91,8 @@ uv run --frozen --extra generation contextbench eval-generation \
 
 `OPENAI_API_KEY` must be supplied through the local environment and must not be
 committed to the repository.
+
+> Rename note (2026-10-01): the package, distribution and CLI were renamed
+> from `contextbench` to `agent-native-content` after this record was
+> written. Commands above show the new name; the runs were made with the old
+> one. Hash domains and run artifacts are unchanged.

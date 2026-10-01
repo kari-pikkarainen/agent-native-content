@@ -87,12 +87,12 @@ Shared-infrastructure defects, which affect every arm equally:
 
 | Defect | Location | Effect |
 | --- | --- | --- |
-| BM25 returns every chunk, including score 0.0, so RRF rewards non-matching chunks with hash-ordered sparse ranks | `src/contextbench/retrieval/sparse.py:41-58` | Sparse channel is mostly noise when few chunks match |
+| BM25 returns every chunk, including score 0.0, so RRF rewards non-matching chunks with hash-ordered sparse ranks | `src/agent_native_content/retrieval/sparse.py:41-58` | Sparse channel is mostly noise when few chunks match |
 | Embedding and reranker models load without a pinned revision; index key records only the package version | `retrieval/embeddings.py:71`, `retrieval/rerank.py:64`, `retrieval/index.py:700-720` | A hub weight update silently mixes old corpus vectors with new query vectors |
-| Manifest records the HEAD SHA but not whether the worktree was dirty | `src/contextbench/experiments/manifest.py:57-71` | Runs are not provably reproducible from config + SHA |
-| Answerable-only metrics filter on the answerable flag, not on having gold pages | `src/contextbench/evaluation/reports.py:36,188` | One XL100 question scores vacuous 1.0 in every arm |
-| Relaxed accuracy maps `casefold_exact_match` (822 of 1,345 questions) to substring or Levenshtein ≥ 0.8 | `src/contextbench/generation/scoring.py:68-70` | Likely more lenient than the released evaluator |
-| Provider never checks response status; truncated reasoning output scores as invalid JSON with no valid-rate column | `src/contextbench/generation/providers.py:61-77` | A whole arm can silently score zero |
+| Manifest records the HEAD SHA but not whether the worktree was dirty | `src/agent_native_content/experiments/manifest.py:57-71` | Runs are not provably reproducible from config + SHA |
+| Answerable-only metrics filter on the answerable flag, not on having gold pages | `src/agent_native_content/evaluation/reports.py:36,188` | One XL100 question scores vacuous 1.0 in every arm |
+| Relaxed accuracy maps `casefold_exact_match` (822 of 1,345 questions) to substring or Levenshtein ≥ 0.8 | `src/agent_native_content/generation/scoring.py:68-70` | Likely more lenient than the released evaluator |
+| Provider never checks response status; truncated reasoning output scores as invalid JSON with no valid-rate column | `src/agent_native_content/generation/providers.py:61-77` | A whole arm can silently score zero |
 | One unit test reads the gitignored release | `tests/unit/test_xl_docbench.py:183` | CI on `main` has failed on the last three pushes |
 
 Arm-asymmetric defects, which move one arm's numbers and not the others', so
@@ -101,8 +101,8 @@ review above:
 
 | Defect | Location | Effect |
 | --- | --- | --- |
-| **Fixed on this branch** (see below). Structural chunks keep heading text in `heading_path` metadata only; both channels read `retrieval_text`, which is `search_text or text`, and `search_text` is `None` on every structural chunk | `src/contextbench/retrieval/chunking.py:173-177`, `retrieval/models.py:98-100` | Only the `structural` arm is blind to heading vocabulary. `fixed` windows over every node carrying text, title and headings included (`chunking.py:78-81`), and the compiler joins the heading trail into `search_text` (`compiler/candidates.py:39-43`). Over the unit fixture `quarterly`, `report`, `results` and `methods` are indexed by `fixed` and by the compiler, and by no structural chunk |
-| Compiler candidates skip list-group nodes and `content_layer == "furniture"` nodes as non-evidence | `src/contextbench/compiler/candidates.py:11,31-36` | Asymmetric the other way and smaller: the group name `Highlights` is indexed by `fixed` but by neither the compiler nor `structural` |
+| **Fixed on this branch** (see below). Structural chunks keep heading text in `heading_path` metadata only; both channels read `retrieval_text`, which is `search_text or text`, and `search_text` is `None` on every structural chunk | `src/agent_native_content/retrieval/chunking.py:173-177`, `retrieval/models.py:98-100` | Only the `structural` arm is blind to heading vocabulary. `fixed` windows over every node carrying text, title and headings included (`chunking.py:78-81`), and the compiler joins the heading trail into `search_text` (`compiler/candidates.py:39-43`). Over the unit fixture `quarterly`, `report`, `results` and `methods` are indexed by `fixed` and by the compiler, and by no structural chunk |
+| Compiler candidates skip list-group nodes and `content_layer == "furniture"` nodes as non-evidence | `src/agent_native_content/compiler/candidates.py:11,31-36` | Asymmetric the other way and smaller: the group name `Highlights` is indexed by `fixed` but by neither the compiler nor `structural` |
 
 The first row handicaps a baseline, not the treatment, so it inflates both the
 fixed and the compiler margin over structural chunks. It bears hardest on the
@@ -135,9 +135,9 @@ separately in Phase 1 with their own before-and-after run:
 
 | Defect | Location | Effect |
 | --- | --- | --- |
-| Keyed joins bump core evidence to tier 1, the same tier as page-neighbor windows | `src/contextbench/compiler/expand.py:204-217, 369` | Windows can displace direct hits at 16K |
+| Keyed joins bump core evidence to tier 1, the same tier as page-neighbor windows | `src/agent_native_content/compiler/expand.py:204-217, 369` | Windows can displace direct hits at 16K |
 | Facet core scores are RRF sums while table fragments carry raw reranker output | `compiler/facets.py:119-123`, `compiler/expand.py:250-253` | Fragment ordering versus core evidence is arbitrary |
-| Furniture-layer items are appended after body items in the IR projection | `src/contextbench/ir/project.py:110-138` | Page headers and footers cluster into fixed windows and page-neighbor evidence |
+| Furniture-layer items are appended after body items in the IR projection | `src/agent_native_content/ir/project.py:110-138` | Page headers and footers cluster into fixed windows and page-neighbor evidence |
 
 The furniture fix also touches fixed windows. Run it as the last Phase 1
 correctness change and report its effect on every arm.

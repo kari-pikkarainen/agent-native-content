@@ -4,9 +4,9 @@ from pathlib import Path
 
 import pytest
 
-from contextbench.datasets.base import DatasetIntegrityError
-from contextbench.datasets.subsets import load_subset
-from contextbench.datasets.xl_docbench import XLDocBenchDataset
+from agent_native_content.datasets.base import DatasetIntegrityError
+from agent_native_content.datasets.subsets import load_subset
+from agent_native_content.datasets.xl_docbench import XLDocBenchDataset
 
 FIXTURES = Path(__file__).parents[1] / "fixtures"
 

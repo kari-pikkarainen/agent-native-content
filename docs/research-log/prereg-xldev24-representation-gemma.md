@@ -94,7 +94,7 @@ Identical for every condition and both judges:
 The pilot runs first:
 
 ```text
-uv run contextbench eval-representation \
+uv run agent-native-content eval-representation \
   --subset-file benchmarks/xl-docbench/subsets/xldev24-pilot2.json \
   --condition question_only --condition raw --condition ir \
   --condition enriched --condition indexed \
@@ -114,7 +114,7 @@ Then the registered run. The command is the same apart from the subset file,
 interruption:
 
 ```text
-uv run contextbench eval-representation \
+uv run agent-native-content eval-representation \
   --subset-file benchmarks/xl-docbench/subsets/xldev24.json \
   --condition question_only --condition raw --condition ir \
   --condition enriched --condition indexed \
@@ -250,7 +250,7 @@ The registered commands, corrected, are the commands above with
 `--seed 20260926` deleted:
 
 ```text
-uv run contextbench eval-representation \
+uv run agent-native-content eval-representation \
   --subset-file benchmarks/xl-docbench/subsets/xldev24-pilot2.json \
   --condition question_only --condition raw --condition ir \
   --condition enriched --condition indexed \
@@ -266,7 +266,7 @@ uv run contextbench eval-representation \
 ```
 
 ```text
-uv run contextbench eval-representation \
+uv run agent-native-content eval-representation \
   --subset-file benchmarks/xl-docbench/subsets/xldev24.json \
   --condition question_only --condition raw --condition ir \
   --condition enriched --condition indexed \
@@ -370,7 +370,7 @@ check only, before the registered run. The scheme is now passed explicitly in
 every command:
 
 ```text
-uv run contextbench eval-representation \
+uv run agent-native-content eval-representation \
   --subset-file benchmarks/xl-docbench/subsets/xldev24-pilot2.json \
   --condition question_only --condition raw --condition ir \
   --condition enriched --condition indexed \
@@ -389,7 +389,7 @@ uv run contextbench eval-representation \
 The registered run:
 
 ```text
-uv run contextbench eval-representation \
+uv run agent-native-content eval-representation \
   --subset-file benchmarks/xl-docbench/subsets/xldev24.json \
   --condition question_only --condition raw --condition ir \
   --condition enriched --condition indexed \
@@ -407,3 +407,8 @@ uv run contextbench eval-representation \
 
 The run's commit is now the one that adds this note, or a later commit that
 changes nothing under `src/`.
+
+> Rename note (2026-10-01): the package, distribution and CLI were renamed
+> from `contextbench` to `agent-native-content` after this record was
+> written. Commands above show the new name; the runs were made with the old
+> one. Hash domains and run artifacts are unchanged.

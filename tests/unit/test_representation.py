@@ -10,15 +10,19 @@ import pytest
 from test_evaluation import _corpus
 from test_ir import FixtureTokenCounter
 
-from contextbench.evaluation import EvaluationCorpus
-from contextbench.experiments import manifest
-from contextbench.generation import AnswerRequest, PricingMetadata, ProviderAnswer
-from contextbench.generation.runner import (
+from agent_native_content.evaluation import EvaluationCorpus
+from agent_native_content.experiments import manifest
+from agent_native_content.generation import (
+    AnswerRequest,
+    PricingMetadata,
+    ProviderAnswer,
+)
+from agent_native_content.generation.runner import (
     ANSWER_EQUIVALENCE_PROMPT_INSTRUCTIONS,
     ANSWER_PROMPT_INSTRUCTIONS_ALIASED,
     CITATION_ENTAILMENT_PROMPT_INSTRUCTIONS,
 )
-from contextbench.representation import (
+from agent_native_content.representation import (
     DEFAULT_REPRESENTATION_CONDITIONS,
     RepresentationCondition,
     RepresentationError,
@@ -27,7 +31,7 @@ from contextbench.representation import (
     representation_prompt_hashes,
     run_gold_representation_benchmark,
 )
-from contextbench.retrieval.rendering import evidence_label
+from agent_native_content.retrieval.rendering import evidence_label
 
 
 class RepresentationProvider:
@@ -735,7 +739,7 @@ def test_default_conditions_keep_question_only_opt_in() -> None:
 
 
 def _gold_question():
-    from contextbench.datasets.base import BenchmarkQuestion, GoldEvidence
+    from agent_native_content.datasets.base import BenchmarkQuestion, GoldEvidence
 
     return BenchmarkQuestion(
         id="question-1",
@@ -761,7 +765,7 @@ def _invoke_eval_representation(monkeypatch, *args: str):
 
     from typer.testing import CliRunner
 
-    from contextbench.cli import app
+    from agent_native_content.cli import app
 
     captured: dict[str, object] = {}
     provider_constructions: list[object] = []
@@ -774,19 +778,19 @@ def _invoke_eval_representation(monkeypatch, *args: str):
         provider_constructions.append(object())
         return SimpleNamespace()
 
-    monkeypatch.setattr("contextbench.cli.download_release", lambda _path: None)
-    monkeypatch.setattr("contextbench.cli.load_subset", lambda _path: None)
+    monkeypatch.setattr("agent_native_content.cli.download_release", lambda _path: None)
+    monkeypatch.setattr("agent_native_content.cli.load_subset", lambda _path: None)
     monkeypatch.setattr(
-        "contextbench.cli.XLDocBenchDataset",
+        "agent_native_content.cli.XLDocBenchDataset",
         lambda _path: SimpleNamespace(
             iter_subset=lambda _subset: iter((_gold_question(), _gold_question()))
         ),
     )
     monkeypatch.setattr(
-        "contextbench.representation.run_xl_gold_representation", fake_run
+        "agent_native_content.representation.run_xl_gold_representation", fake_run
     )
     monkeypatch.setattr(
-        "contextbench.generation.OpenAIAnswerProvider", forbidden_provider
+        "agent_native_content.generation.OpenAIAnswerProvider", forbidden_provider
     )
     result = CliRunner().invoke(
         app,

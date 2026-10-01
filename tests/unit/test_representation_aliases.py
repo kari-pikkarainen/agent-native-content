@@ -32,23 +32,23 @@ from test_representation import (
     _run_judged,
 )
 
-from contextbench.agentdoc import (
+from agent_native_content.agentdoc import (
     AgentFeatureKind,
     enrich_document,
     feature_type_counts,
     features_for_nodes,
     select_agent_features,
 )
-from contextbench.generation.runner import (
+from agent_native_content.generation.runner import (
     ANSWER_PROMPT_INSTRUCTIONS,
     ANSWER_PROMPT_INSTRUCTIONS_ALIASED,
 )
-from contextbench.representation import (
+from agent_native_content.representation import (
     RepresentationCondition,
     RepresentationError,
     render_representation,
 )
-from contextbench.representation.runner import (
+from agent_native_content.representation.runner import (
     QuestionLabels,
     _gold_evidence_nodes,
     map_citations,

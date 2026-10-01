@@ -8,10 +8,14 @@ import pytest
 from test_compiler import compiler_source
 from test_ir import FixtureTokenCounter, ingest_metadata
 
-import contextbench.compiler.expand as compiler_expand
-from contextbench.compiler import CompilerConfig
-from contextbench.datasets.base import BenchmarkQuestion, EvidenceItem, GoldEvidence
-from contextbench.evaluation import (
+import agent_native_content.compiler.expand as compiler_expand
+from agent_native_content.compiler import CompilerConfig
+from agent_native_content.datasets.base import (
+    BenchmarkQuestion,
+    EvidenceItem,
+    GoldEvidence,
+)
+from agent_native_content.evaluation import (
     BenchmarkSystem,
     EvaluationCorpus,
     EvaluationError,
@@ -19,28 +23,28 @@ from contextbench.evaluation import (
     RetrievalBenchmarkSummary,
     run_retrieval_benchmark,
 )
-from contextbench.evaluation import evidence as evidence_module
-from contextbench.evaluation import runner as evaluation_runner
-from contextbench.evaluation.evidence import (
+from agent_native_content.evaluation import evidence as evidence_module
+from agent_native_content.evaluation import runner as evaluation_runner
+from agent_native_content.evaluation.evidence import (
     QUOTE_MATCH_POLICY,
     _quote_coverage,
     evaluate_context,
     gold_answer_present,
 )
-from contextbench.evaluation.models import (
+from agent_native_content.evaluation.models import (
     NON_INFERIORITY_MARGIN,
     RetrievalPairedInterval,
     RetrievalSummaryRow,
     _minimum_units_for_margin,
 )
-from contextbench.evaluation.reports import (
+from agent_native_content.evaluation.reports import (
     _non_inferiority_checks,
     markdown_report,
     summarize,
 )
-from contextbench.experiments import manifest
-from contextbench.ir import project_document
-from contextbench.retrieval import (
+from agent_native_content.experiments import manifest
+from agent_native_content.ir import project_document
+from agent_native_content.retrieval import (
     ContextItem,
     ContextPacket,
     HashEmbeddingModel,

@@ -10,10 +10,10 @@ from types import SimpleNamespace
 import pytest
 from test_evaluation import _config, _corpus, _run
 
-from contextbench.datasets.base import BenchmarkQuestion
-from contextbench.evaluation import BenchmarkSystem
-from contextbench.experiments import manifest
-from contextbench.generation import (
+from agent_native_content.datasets.base import BenchmarkQuestion
+from agent_native_content.evaluation import BenchmarkSystem
+from agent_native_content.experiments import manifest
+from agent_native_content.generation import (
     GenerationConfig,
     GenerationError,
     GenerationEvaluationRecord,
@@ -27,12 +27,12 @@ from contextbench.generation import (
     render_answer_equivalence_prompt,
     run_generation_benchmark,
 )
-from contextbench.generation.models import AnswerRequest
-from contextbench.generation.providers import (
+from agent_native_content.generation.models import AnswerRequest
+from agent_native_content.generation.providers import (
     ProviderConfigurationError,
     responses_create_kwargs,
 )
-from contextbench.generation.runner import (
+from agent_native_content.generation.runner import (
     ANSWER_PROMPT_INSTRUCTIONS,
     ANSWER_PROMPT_INSTRUCTIONS_ALIASED,
     CITATION_ENTAILMENT_PROMPT_INSTRUCTIONS,
@@ -41,7 +41,7 @@ from contextbench.generation.runner import (
     _summarize,
     render_citation_entailment_prompt,
 )
-from contextbench.generation.scoring import (
+from agent_native_content.generation.scoring import (
     NUMERIC_RELATIVE_TOLERANCE,
     RELEASED_VERIFICATION_RULES,
     accuracy_score,
@@ -49,7 +49,7 @@ from contextbench.generation.scoring import (
     answer_type,
     token_f1_score,
 )
-from contextbench.retrieval import ContextItem, ContextPacket, RetrievalScores
+from agent_native_content.retrieval import ContextItem, ContextPacket, RetrievalScores
 
 
 class FixtureProvider:
@@ -1338,10 +1338,10 @@ def test_entity_path_is_laxer_than_casefold_exact_match() -> None:
 def test_entity_path_scores_an_empty_gold_by_levenshtein_alone() -> None:
     """Characterization: an empty normalized gold skips the substring branch.
 
-    `src/contextbench/generation/scoring.py:165` guards the substring test with
+    `src/agent_native_content/generation/scoring.py:165` guards the substring test with
     `gold_norm and ...`, so an empty gold does not match every prediction. It
     falls through to Levenshtein, which scores 1.0 only against an equally empty
-    prediction. `src/contextbench/generation/runner.py:170` maps a missing gold
+    prediction. `src/agent_native_content/generation/runner.py:170` maps a missing gold
     to `""`, so this is reachable. See deviation 1 in
     `docs/specs/evaluation.md`.
     """
@@ -1521,7 +1521,7 @@ def test_eval_generation_passes_the_expected_hash_through(
     """The CLI option must reach the runner, or the guard is decoration."""
     from typer.testing import CliRunner
 
-    from contextbench.cli import app
+    from agent_native_content.cli import app
 
     captured = {}
 
@@ -1530,18 +1530,18 @@ def test_eval_generation_passes_the_expected_hash_through(
         raise GenerationError("stop after capture")
 
     monkeypatch.setattr(
-        "contextbench.generation.run_generation_benchmark",
+        "agent_native_content.generation.run_generation_benchmark",
         fake_run_generation_benchmark,
     )
     monkeypatch.setattr(
-        "contextbench.generation.OpenAIAnswerProvider",
+        "agent_native_content.generation.OpenAIAnswerProvider",
         lambda **_kwargs: SimpleNamespace(),
     )
     # Keep the test off the local dataset cache: the CLI loads a subset and the
     # dataset only to build the question list, which this test never uses.
-    monkeypatch.setattr("contextbench.cli.load_subset", lambda _path: None)
+    monkeypatch.setattr("agent_native_content.cli.load_subset", lambda _path: None)
     monkeypatch.setattr(
-        "contextbench.cli.XLDocBenchDataset",
+        "agent_native_content.cli.XLDocBenchDataset",
         lambda _path: SimpleNamespace(iter_subset=lambda _subset: iter(())),
     )
     retrieval = _run(tmp_path, run_id="retrieval-cli-pin")

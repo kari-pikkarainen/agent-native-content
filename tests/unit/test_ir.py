@@ -11,8 +11,8 @@ from docling_core.types.doc.document import ProvenanceItem, TableCell, TableData
 from docling_core.types.doc.labels import DocItemLabel
 from pydantic import ValidationError
 
-from contextbench.ingest.cache import IngestMetadata
-from contextbench.ir import (
+from agent_native_content.ingest.cache import IngestMetadata
+from agent_native_content.ir import (
     IRDocument,
     IRNodeKind,
     load_ir_document,

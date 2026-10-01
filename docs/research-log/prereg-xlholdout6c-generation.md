@@ -198,7 +198,7 @@ say so, and a Phase 3 decision resting on it must too.
 ## Registered command
 
 ```shell
-uv run --frozen --extra generation contextbench eval-generation \
+uv run --frozen --extra generation agent-native-content eval-generation \
   artifacts/runs/xlholdout6c-gate1-60e5836 \
   --subset-file benchmarks/xl-docbench/subsets/xlholdout6c.json \
   --system fixed --system structural --system compiler \
@@ -217,3 +217,8 @@ uv run --frozen --extra generation contextbench eval-generation \
 
 Run from a clean worktree, without `--allow-dirty`. `OPENAI_API_KEY` is supplied
 through the local environment and is never committed.
+
+> Rename note (2026-10-01): the package, distribution and CLI were renamed
+> from `contextbench` to `agent-native-content` after this record was
+> written. Commands above show the new name; the runs were made with the old
+> one. Hash domains and run artifacts are unchanged.
