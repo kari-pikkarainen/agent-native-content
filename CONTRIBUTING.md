@@ -6,7 +6,8 @@ a source-grounded way, or improve reproducibility without weakening controls.
 
 ## Start here
 
-1. Read the [vision](docs/vision.md), [architecture](docs/architecture.md), and
+1. Work through [Getting started](docs/getting-started.md), then read the
+   [vision](docs/vision.md), [architecture](docs/architecture.md), and
    [evaluation protocol](docs/specs/evaluation.md).
 2. Open an issue before a large schema, benchmark, or architecture change.
 3. Keep changes focused and include tests for behavioral changes.

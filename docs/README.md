@@ -1,27 +1,43 @@
 # Documentation
 
-Start with the [vision](vision.md) for the broader project and
-[architecture](architecture.md) for the implemented system. The
-[research roadmap](roadmap.md) translates the current evidence into the next
-decision gates.
+Pick the entry that matches what you want to do.
 
-## Specifications
+## Use it
 
-- [Benchmark and research questions](specs/benchmark.md)
-- [Content IR](specs/content-ir.md)
-- [Agent-ready content bundle](specs/agent-document.md)
-- [Retrieval baselines](specs/retrieval.md)
-- [Context compiler](specs/context-compiler.md)
-- [Content-unit × selection-policy factorial](specs/factorial.md)
-- [Evaluation protocol](specs/evaluation.md)
+- [Getting started](getting-started.md): install, run the smoke experiment,
+  read a report, parse your own PDF, build an agent bundle, run offline, and
+  the opt-in answer-generation commands.
 
-## Project record
+## Judge it
 
-- [Architecture decision records](adr/README.md) document durable technical
-  choices.
-- [Research log](research-log/README.md) preserves diagnostics, ablations, and
-  development decisions.
-- [Canonical results](../results/README.md) contain the small, published result
-  set used by the README's current claims.
-- [Plans](plans/2026-09-21-improvement-plan.md) set out the phased path from
-  the current low-budget advantage to a validated or rejected thesis.
+- [Status and decision history](status.md): the full account of what has been
+  measured, what passed, what failed, and the current decision.
+- [Canonical results](../results/README.md): the compact published evidence,
+  with current and superseded rows kept apart.
+- [Research log](research-log/README.md): every diagnostic, ablation and gate
+  decision, each pinned to a commit. Its "start here" list is the
+  authoritative chain.
+
+## Understand it
+
+- [Vision](vision.md): the broader idea beyond the current prototype.
+- [Architecture](architecture.md): implemented boundaries and data flow.
+- Specifications, in reading order:
+  - [Benchmark and research questions](specs/benchmark.md), with its
+    [original build brief](specs/history/original-build-brief.md) kept for
+    the record
+  - [Content IR](specs/content-ir.md)
+  - [Retrieval baselines](specs/retrieval.md)
+  - [Context compiler](specs/context-compiler.md)
+  - [Content-unit × selection-policy factorial](specs/factorial.md)
+  - [Evaluation protocol](specs/evaluation.md)
+  - [Agent-ready content bundle](specs/agent-document.md)
+- [Architecture decision records](adr/README.md): durable technical choices.
+
+## Extend it
+
+- [Roadmap](roadmap.md): the gates passed and failed, and what comes next.
+- [Improvement plan](plans/2026-09-21-improvement-plan.md): the phased plan
+  the gates come from, with its status.
+- [Contributing](../CONTRIBUTING.md): research-integrity rules, required
+  checks, and the Developer Certificate of Origin.

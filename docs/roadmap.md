@@ -1,126 +1,78 @@
 # Research Roadmap
 
+This page tracks the gates of the
+[improvement plan](plans/2026-09-21-improvement-plan.md) and what comes after
+them. It uses the plan's numbering. An earlier version of this page used its
+own Gates 1 to 7; the mapping is given at the end so that old links still make
+sense.
+
 ## Current conclusion
 
-The evidence supports a narrow claim: the selected deterministic compiler
-pipeline can improve gold-page recall at low token budgets when the relevant
+The evidence supports a narrow claim: the frozen deterministic compiler
+improves gold-page recall at low token budgets when the relevant
 single-document scope is already known.
 
-It does not yet show that the persistent IR causes the gain, that compiled
+It does not show that the persistent IR causes that gain, that compiled
 contexts produce better answers, that comparable evidence needs materially
-fewer tokens, or that the approach generalizes or wins economically.
+fewer tokens, or that the approach generalizes or wins economically. Presenting
+the structured representation directly to an answer model did not help in a
+controlled test. Document-format tuning has stopped under the preregistered
+rule. The active step is a tabular-data pilot.
 
-The controlled gold-evidence experiment found no benefit from presenting the
-current document IR or agent features directly to local Gemma-4-12B: the best
-structured condition tied raw text while using roughly twice the tokens and
-latency. Under its preregistered rule, document-format tuning has stopped. The
-active research step is the tabular-data pilot summarized in the README.
+## Gates
 
-## Gate 1: Isolate representation from retrieval policy
-
-**Implementation status:** initial small-subset diagnostic complete.
-
-Run a representation-by-policy factorial comparison on development data. The
-exact contract is defined in the [factorial specification](specs/factorial.md).
-
-| Content unit | Control policy | Enhanced policy |
+| Gate | Question | Outcome |
 | --- | --- | --- |
-| Fixed 512/64 chunks | Single query + ranked packing | Faceted retrieval + coverage packing |
-| Structural chunks | Single query + ranked packing | Faceted retrieval + coverage packing |
-| IR nodes | Single query + ranked packing | Faceted retrieval + coverage packing |
+| Gate 0 | Is the low-budget page-recall advantage real after the measurement defects are fixed? | **Passed.** Survived nine fixes; the paired interval against both RAG baselines excludes zero at 2K and 4K on `xldev24`. [Record](research-log/gate0-rebaseline-67aef47.md). |
+| Gate 1 | Does the frozen configuration hold on a fresh holdout? | **Passed on page recall**, on one run of `xlholdout6c`: positive point estimates at every budget, every interval including zero. Exact quote recall pointed the other way at every budget. Screening, not confirmation. [Record](research-log/gate1-xlholdout6c-60e5836.md). |
+| Gate 2 | Does better evidence selection produce better answers? | **Failed at stage 1** under the preregistered rule, then shown by the [failure analysis](research-log/gate2-failure-analysis.md) to carry no signal about evidence quality in either direction. Four instrument defects were fixed. [Record](research-log/gate2-stage1-xlholdout6c-generation.md). |
+| Gate 3, representation part | Does the IR communicate the same evidence better than raw text? | **No.** With identical gold pages, local Gemma-4-12B answered 6 of 18 from raw text, 5 from IR, 5 from enriched IR and 6 from indexed features, at 1.9 to 2.4 times the tokens. [Record](research-log/representation-xldev24-gemma-b3d53c0.md). |
+| Gate 3, remainder | Stratified structured population, second benchmark, second model tier, long-context comparison | **Not opened.** Gate 2 did not pass, so the plan's Phase 3 retrieval work is paused. |
+| Gate 4 | Validated or not? | **Not yet decidable.** The retrieval result is narrow and real; the answer-quality result is uninformative; the representation result is negative. |
 
-Hold document scope, sparse and dense models, fusion, reranker, candidate
-limits, budgets, and token accounting fixed. This separates three effects:
+Two later changes bear on every row above. Since commit `f916545` every arm
+is charged for the prompt framing it renders, which costs the compiler up to 7
+points of page recall at 2K on the development set and makes its
+non-inferiority screen against fixed RAG fail at 16K. And both six-question
+holdouts are spent: any further claim needs a new frozen population.
 
-- IR versus chunk representation under the same policy;
-- faceting and diversified packing within each representation; and
-- any interaction between representation and policy.
+## Next step: agent-native tabular data
 
-The two-question table-heavy diagnostic found that IR trailed the best chunk
-unit in seven of eight matched policy/budget comparisons. Faceting plus
-coverage-aware packing improved page recall in 10 of 12 within-unit
-comparisons, at a substantial latency cost. This rejects an IR-specific claim
-at this gate and points to selection policy as the stronger mechanism. See the
-[decision note](research-log/xldev2-content-policy-factorial.md).
+The next experiment moves to data where explicit machine-oriented structure
+has a clearer potential advantage than markup around long document text. It
+compares identical source rows under three conditions:
 
-## Gate 2: Audit retrieval metrics
+- compact CSV or plain table text;
+- a typed schema with column meanings, units, keys and null semantics; and
+- an agent-native representation adding formula dependencies, relationships,
+  reusable summaries and cell-level provenance.
 
-**Status:** complete on the six-question XLHoldout6b diagnostic.
+Tasks cover filtering, aggregation, joins, unit conversion, formula tracing
+and provenance, with deterministic, executable ground truth wherever possible
+and constrained JSON output so formatting failures do not pass as reasoning
+failures. The representation conditions, task families, token comparisons and
+stopping rule are preregistered before the measured run, on a small
+development set, then checked once on an untouched holdout.
 
-Before paid generation:
+Until that test shows a gain, the conservative document pipeline is to use
+the IR internally for organisation and selection while rendering compact text
+to the answer model.
 
-- report answerable-only metrics alongside the registered aggregate;
-- make exact quote recall and full quote coverage co-primary;
-- add exact content-span or provenance-span coverage that cannot credit absent
-  text merely because a selected node references the same page;
-- report paired uncertainty intervals clustered by source document; and
-- manually inspect the largest compiler wins and losses at 2K and 4K.
+## After that
 
-Preserve the existing page metrics for continuity, but do not use them alone
-for the next decision.
+If the tabular pilot or a repaired generation instrument shows a directional
+answer or citation benefit, the plan's Phase 3 reopens:
 
-The audit added answerable-only and quote-eligible summaries, conservative
-content-verified page coverage, and paired source-cluster bootstrap intervals.
-The low-budget page effect survives, but manual inspection found both false
-positive and false negative retrieval signals. See the
-[metric-audit decision note](research-log/xlholdout6b-metric-audit.md). This
-meets the gate for a small guarded answer-generation run, not for a broader
-retrieval claim.
+1. freeze a stratified population from the untouched XL-DocBench remainder,
+   including cross-document questions, with its analysis plan;
+2. check availability of T²-RAGBench or a substitute table-and-text
+   benchmark, and add its adapter;
+3. repeat the matched content-unit × policy factorial on that population;
+4. repeat generation with a second, stronger answer-model tier; and
+5. give a capable model the full relevant documents at 64K or 128K and
+   compare answer quality, citation support, cost and latency.
 
-## Gate 3: Test whether selected evidence improves answers
-
-**Status:** the first preregistered provider run and its failure analysis are
-complete. The run did not establish an answer-quality benefit because its
-outcome was driven by abstention behavior; the evaluation defects it exposed
-have since been corrected.
-
-Use already-saved contexts first. Compare fixed, structural, and compiler
-systems at 2K and 4K with one answer model, one prompt, and explicit pricing and
-call limits. Measure:
-
-- benchmark accuracy and similarity metrics;
-- citation entailment or evidence support, not only citation-ID validity;
-- abstention correctness;
-- provider tokens, latency, and dollars; and
-- cost and latency per correct answer.
-
-Expand budgets or add a second model only if the first guarded run shows a
-directional answer-quality or economic benefit.
-
-The first run is frozen in the
-[XLHoldout6b generation preregistration](research-log/xlholdout6b-generation-preregistration.md):
-36 answer cells at 2K/4K, the same model for answer and semantic citation
-judging, a 72-call hard ceiling, and an approximately $5 authorization
-envelope.
-
-## Gate 4: Test the persistent representation directly
-
-**Status:** complete as a development experiment. The preregistered run gave
-identical gold-page evidence to raw, IR, enriched and indexed conditions. Raw
-and indexed each answered 6 of 18 questions correctly; IR and enriched each
-answered 5. Structured conditions used 1.9–2.4 times raw's answer-input tokens
-and did not meet the directional rule. See the
-[result](research-log/representation-xldev24-gemma-b3d53c0.md).
-
-## Gate 5: Test agent-native tabular data
-
-Run the bounded tabular pilot described in the README. Prefer executable
-ground truth and cell-level provenance so the central comparison does not
-depend on a model judging itself. Preregister the representation conditions,
-task families, token comparisons and stopping rule before the measured run.
-
-## Gate 6: Generalize without reusing tuned questions
-
-Freeze a preregistered population from the untouched XL-DocBench remainder,
-including cross-document questions. Record the analysis and stopping rules
-before running it. If the result survives, add a second benchmark such as
-T²-RAGBench before claiming technical validation.
-
-## Gate 7: Compare realistic long context
-
-Finally, give a capable answer model the full relevant documents at 64K or 128K
-where they fit. Compare answer quality, total input cost, latency, and citation
-support—not retrieval recall alone.
+Validation requires all of these, or an explicitly narrowed claim.
 
 ## Stop conditions
 
@@ -130,4 +82,21 @@ Pause the broader Content IR thesis if any of the following holds:
 - stricter content coverage removes the low-budget advantage;
 - better retrieval does not improve answers or citations;
 - representation overhead outweighs any answer improvement; or
-- the effect fails on an untouched cross-document population or second dataset.
+- the effect fails on an untouched cross-document population or second
+  dataset.
+
+The third and fourth conditions are the ones the current evidence comes
+closest to; neither is settled, because the one generation run was
+uninformative and the representation test used one local model.
+
+## Mapping from the earlier numbering
+
+| Earlier page | This page |
+| --- | --- |
+| Gate 1: isolate representation from policy | Done inside Phase 1; see the corrected factorial in Gate 0 and Gate 1 records |
+| Gate 2: audit retrieval metrics | Done inside Phase 0 |
+| Gate 3: test whether selected evidence improves answers | Gate 2 |
+| Gate 4: test the persistent representation directly | Gate 3, representation part |
+| Gate 5: agent-native tabular data | Next step |
+| Gate 6: generalize without reusing tuned questions | After that, items 1 to 4 |
+| Gate 7: compare realistic long context | After that, item 5 |

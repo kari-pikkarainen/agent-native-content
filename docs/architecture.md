@@ -1,13 +1,13 @@
 # Architecture
 
-This document will describe the implemented system boundaries and data flow.
-The authoritative target architecture is currently defined in
-[benchmark specification](specs/benchmark.md).
+This document describes the implemented system boundaries and data flow. The
+research questions, success criteria and kill conditions that the architecture
+serves are defined in the [benchmark specification](specs/benchmark.md).
 
-The benchmark will compare four independent arms while sharing retrieval
-models, token accounting, and evaluation machinery wherever fairness requires
-it. The canonical parsed document and normalized IR will remain separate from
-derived retrieval indexes and immutable experiment outputs.
+The benchmark compares four independent arms while sharing retrieval models,
+token accounting, and evaluation machinery wherever fairness requires it. The
+canonical parsed document and normalized IR are kept separate from derived
+retrieval indexes and immutable experiment outputs.
 
 Architecture decisions should favor the smallest implementation capable of
 testing the research hypothesis.
