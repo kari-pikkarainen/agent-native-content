@@ -84,7 +84,7 @@ What happens on a cold machine, in order:
    `cross-encoder/ms-marco-MiniLM-L-6-v2` are downloaded and pinned to a
    resolved revision.
 4. Three indexes are built under `artifacts/indexes/<sha256>/`, one each for
-   fixed chunks, structural chunks and IR nodes, and verified before reuse.
+   fixed chunks, structural chunks and intermediate representation (IR) nodes, and verified before reuse.
 5. All four arms run at 2K, 4K, 8K and 16K tokens. Progress goes to stderr;
    the final artifact paths are printed as JSON on stdout.
 
@@ -144,7 +144,7 @@ uv run agent-native-content agentize path/to/document.pdf artifacts/agent-docume
 
 The directory contains the canonical IR (`content.json`), question-independent
 agent features with provenance (`enrichments.jsonld`), a semantic HTML
-rendering with the JSON-LD embedded (`agent.html`), a manifest of hashes and
+rendering with the JSON-LD (JSON for Linked Data) embedded (`agent.html`), a manifest of hashes and
 configuration, and optionally the hash-verified source PDF. Enrichment is
 deterministic and extractive; no language model takes part. The format is
 specified in [`specs/agent-document.md`](specs/agent-document.md).

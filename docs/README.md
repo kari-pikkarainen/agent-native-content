@@ -26,7 +26,7 @@ Pick the entry that matches what you want to do.
   - [Benchmark and research questions](specs/benchmark.md), with its
     [original build brief](specs/history/original-build-brief.md) kept for
     the record
-  - [Content IR](specs/content-ir.md)
+  - [Content IR (intermediate representation)](specs/content-ir.md)
   - [Retrieval baselines](specs/retrieval.md)
   - [Context compiler](specs/context-compiler.md)
   - [Content-unit × selection-policy factorial](specs/factorial.md)

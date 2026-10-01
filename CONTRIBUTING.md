@@ -56,7 +56,7 @@ the sign-off.
 
 A decoder must retain immutable source identity, stable node identity,
 structure, ordering, and location-level provenance. Derived summaries,
-embeddings, and agent features belong outside the canonical IR. Include a small
+embeddings, and agent features belong outside the canonical intermediate representation (IR). Include a small
 fixture and round-trip or provenance tests.
 
 ## Publishing results

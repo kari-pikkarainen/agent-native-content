@@ -12,7 +12,7 @@ The evidence supports a narrow claim: the frozen deterministic compiler
 improves gold-page recall at low token budgets when the relevant
 single-document scope is already known.
 
-It does not show that the persistent IR causes that gain, that compiled
+It does not show that the persistent intermediate representation (IR) causes that gain, that compiled
 contexts produce better answers, that comparable evidence needs materially
 fewer tokens, or that the approach generalizes or wins economically. Presenting
 the structured representation directly to an answer model did not help in a
@@ -23,7 +23,7 @@ rule. The active step is a tabular-data pilot.
 
 | Gate | Question | Outcome |
 | --- | --- | --- |
-| Gate 0 | Is the low-budget page-recall advantage real after the measurement defects are fixed? | **Passed.** Survived nine fixes; the paired interval against both RAG baselines excludes zero at 2K and 4K on `xldev24`. [Record](research-log/gate0-rebaseline-67aef47.md). |
+| Gate 0 | Is the low-budget page-recall advantage real after the measurement defects are fixed? | **Passed.** Survived nine fixes; the paired interval against both retrieval-augmented generation (RAG) baselines excludes zero at 2K and 4K on `xldev24`. [Record](research-log/gate0-rebaseline-67aef47.md). |
 | Gate 1 | Does the frozen configuration hold on a fresh holdout? | **Passed on page recall**, on one run of `xlholdout6c`: positive point estimates at every budget, every interval including zero. Exact quote recall pointed the other way at every budget. Screening, not confirmation. [Record](research-log/gate1-xlholdout6c-60e5836.md). |
 | Gate 2 | Does better evidence selection produce better answers? | **Failed at stage 1** under the preregistered rule, then shown by the [failure analysis](research-log/gate2-failure-analysis.md) to carry no signal about evidence quality in either direction. Four instrument defects were fixed. [Record](research-log/gate2-stage1-xlholdout6c-generation.md). |
 | Gate 3, representation part | Does the IR communicate the same evidence better than raw text? | **No.** With identical gold pages, local Gemma-4-12B answered 6 of 18 from raw text, 5 from IR, 5 from enriched IR and 6 from indexed features, at 1.9 to 2.4 times the tokens. [Record](research-log/representation-xldev24-gemma-b3d53c0.md). |

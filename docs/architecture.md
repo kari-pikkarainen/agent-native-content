@@ -6,8 +6,8 @@ serves are defined in the [benchmark specification](specs/benchmark.md).
 
 The benchmark compares four independent arms while sharing retrieval models,
 token accounting, and evaluation machinery wherever fairness requires it. The
-canonical parsed document and normalized IR are kept separate from derived
-retrieval indexes and immutable experiment outputs.
+canonical parsed document and normalized intermediate representation (IR) are
+kept separate from derived retrieval indexes and immutable experiment outputs.
 
 Architecture decisions should favor the smallest implementation capable of
 testing the research hypothesis.
@@ -55,15 +55,16 @@ for the normative schema.
 An optional agent-document layer derives query-independent affordances without
 mutating the IR. Its outline, extractive section previews, key facts,
 definitions, and table schemas retain node/item/page provenance and are
-published as JSON-LD plus semantic HTML. This layer is versioned and
-replaceable; see the
-[agent-ready content specification](specs/agent-document.md).
+published as JSON-LD (JSON for Linked Data) plus semantic HTML. This layer is
+versioned and replaceable; see the [agent-ready content
+specification](specs/agent-document.md).
 
 The first two retrieval arms consume that IR through a shared local hybrid
 stack. Fixed windows and Docling HybridChunker structural chunks are indexed
-separately under deterministic content/config hashes, while BM25, dense search,
-RRF, reranking, and budget packing remain identical. See the
-[retrieval specification](specs/retrieval.md) for the baseline contract.
+separately under deterministic content/config hashes, while BM25 lexical
+search, dense search, reciprocal-rank fusion (RRF), reranking, and budget
+packing remain identical. See the [retrieval specification](specs/retrieval.md)
+for the baseline contract.
 
 ## Compiler boundary
 
@@ -139,10 +140,11 @@ limit, deterministic benchmark scorer, and explicit pricing metadata.
 The OpenAI adapter is optional and uses the Responses API. The runner requires
 strict JSON containing an answer and evidence-ID citations; invalid responses
 score zero rather than being repaired. It records native XL-DocBench relaxed
-accuracy, token F1, ANLS, citation-ID validity, abstention correctness, tokens,
-latency, and dollars per query/correct answer. Completed artifacts are
-atomically published under `artifacts/generation-runs/<run-id>/` and bind the
-results to hashes of the source retrieval manifest and contexts.
+accuracy, token F1, average normalized Levenshtein similarity (ANLS), citation-
+ID validity, abstention correctness, tokens, latency, and dollars per
+query/correct answer. Completed artifacts are atomically published under
+`artifacts/generation-runs/<run-id>/` and bind the results to hashes of the
+source retrieval manifest and contexts.
 
 The separate gold-evidence representation runner bypasses retrieval entirely.
 It precomputes agent enrichment once per document, fixes the authorized source

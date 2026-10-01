@@ -22,7 +22,7 @@ about what did not work.
 | It does not reliably select more **exact quoted evidence**. | On the holdout it trails fixed RAG on exact quote recall at every budget. |
 | It does not yet produce better **answers**. | One preregistered answer-generation run found no benefit; its failure analysis showed the run measured abstention, not evidence quality. |
 | Showing the structured representation directly to an answer model does not help. | With identical gold pages, raw text matched or beat every structured encoding at about half the tokens. |
-| The persistent representation has not been shown to be the cause of the page-recall gain. | On the matched factorial IR nodes lead on page recall but not on quote recall, and coverage packing explains much of the split. |
+| The persistent representation has not been shown to be the cause of the page-recall gain. | On the matched factorial, intermediate representation (IR) nodes lead on page recall but not on quote recall, and coverage packing explains much of the split. |
 
 Development-set page recall at the frozen configuration, mean over 24
 questions, with the best of the two RAG baselines beside it:
@@ -61,7 +61,7 @@ query ──▶ hybrid retrieval ──▶ query facets ──▶ structural exp
 answer model ◀── evidence packet ◀── exact-token coverage packing
 ```
 
-The intermediate representation (IR) preserves hierarchy, heading paths,
+The IR preserves hierarchy, heading paths,
 tables, page locations, source hashes, and stable provenance. It deliberately
 excludes embeddings, retrieval scores, and generated annotations: those are
 replaceable derived state.
@@ -69,7 +69,7 @@ replaceable derived state.
 At query time the compiler retrieves IR nodes with the same local models the
 RAG baselines use, expands useful document structure, optionally joins rows
 across explicitly named tables, removes provenance-aware duplicates, and packs
-the result without exceeding the token budget. No LLM takes part in retrieval
+the result without exceeding the token budget. No large language model (LLM) takes part in retrieval
 or compilation.
 
 ## Compared systems
@@ -81,7 +81,7 @@ or compilation.
 | C | Long context | Source nodes in document order; no retrieval |
 | D | Context compiler | IR-node retrieval plus deterministic compilation |
 
-Arms A, B, and D share BM25, dense retrieval, fusion, reranking, tokenizer,
+Arms A, B, and D share BM25 lexical search, dense retrieval, fusion, reranking, tokenizer,
 model configuration, and hard budget accounting. The treatment is document
 representation and context construction, not a weakened baseline.
 
@@ -104,7 +104,7 @@ manifest.json         identities, configuration, and file hashes
 
 Every feature keeps its confidence and its node, item, and page provenance.
 Enrichment is deterministic and extractive; no language model takes part.
-This is not a new file format: HTML plus JSON-LD already carries both kinds
+This is not a new file format: HTML plus JSON-LD (JSON for Linked Data) already carries both kinds
 of content, and a reader still has to choose to use the embedded layer. See
 the [bundle specification](docs/specs/agent-document.md).
 
@@ -180,7 +180,7 @@ No default command makes a paid model call.
 The primary retrieval metric is gold-evidence page recall at a fixed packed
 token budget. Runs also record full page coverage, exact quote recall under a
 recorded match policy, tokens to full evidence, packed tokens, redundancy, and
-query-time latency. Generation runs record benchmark accuracy, token F1, ANLS,
+query-time latency. Generation runs record benchmark accuracy, token F1 (token overlap), average normalized Levenshtein similarity (ANLS),
 citation validity and entailment, abstention correctness, provider tokens,
 latency, and cost. Definitions are in the
 [evaluation protocol](docs/specs/evaluation.md).
@@ -218,7 +218,7 @@ src/agent_native_content/
   representation/  controlled document-encoding experiment
   retrieval/       chunks, BM25, dense search, fusion, and reranking
 benchmarks/        committed benchmark subsets
-docs/              getting started, status, specifications, ADRs, research log
+docs/              getting started, status, specifications, architecture decision records, research log
 results/           compact canonical reports, summaries, and manifests
 artifacts/         ignored local indexes and complete experiment outputs
 data/              ignored dataset release, source PDFs, and parse cache

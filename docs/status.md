@@ -1,7 +1,7 @@
 # Project Status and Decision History
 
 This page is the detailed record that used to open the README. It is kept
-verbatim, with its links adjusted, so that the README can stay short. Read it
+verbatim, with its links adjusted and acronyms expanded on first use, so that the README can stay short. Read it
 after the [README](../README.md) when you want the full account of what was
 measured, what passed, what failed, and why.
 
@@ -13,7 +13,7 @@ published evidence is in [`results/`](../results/README.md).
 
 **Gate 1 passed on its one run of the `xlholdout6c` holdout — on page recall,
 the metric it was preregistered on. On exact quote recall the same run points
-the other way**: the compiler trails fixed RAG at every budget, with the
+the other way**: the compiler trails fixed retrieval-augmented generation (RAG) at every budget, with the
 interval excluding zero at 4K and 16K. Both are in
 [the Gate 1 decision](research-log/gate1-xlholdout6c-60e5836.md). The
 frozen configuration and its development evidence are in the
@@ -57,7 +57,7 @@ that change and use content-only accounting. See
 [the re-baseline record](research-log/stepc-rendered-budget-merge-f916545.md).
 
 **The controlled representation experiment is also complete.** Gemma-4-12B
-received the same annotated gold pages as compact text, Content IR, enriched
+received the same annotated gold pages as compact text, Content IR (intermediate representation), enriched
 IR, and query-selected agent features. Raw text answered 6 of 18 questions
 correctly; IR and enriched answered 5, and indexed answered 6. The structured
 conditions used 1.9–2.4 times the input tokens and 2.0–2.6 times the latency,
@@ -113,14 +113,14 @@ Quote recall has a ceiling well below 1.0 that no arm can pass. Of 46
 development gold quotes, 26 do not occur in their own document's parse, most
 because the gold string is not a verbatim transcription — a heading and list
 joined with a colon, a table read across cells — and three because the gold
-quote itself contains OCR errors. Quote figures here are scored under match
+quote itself contains optical character recognition (OCR) errors. Quote figures here are scored under match
 policy `nfkc-unified-punctuation-ordered-elision-v3` and are not comparable
 with figures scored under an earlier policy.
 
 The frozen configuration turns sibling expansion on, which is worth +0.019
 quote recall across budgets, and keeps page-neighbour expansion, which is
 worth little quote recall but is what holds the compiler inside the
-preregistered −3pp non-inferiority margin against fixed RAG at 16K. It holds
+preregistered −3 percentage-point (pp) non-inferiority margin against fixed RAG at 16K. It holds
 there by 0.0002, which is a pass under the rule and inside bootstrap noise.
 
 The latest policy experiments explain much of that split. Coverage-aware
@@ -266,7 +266,7 @@ The Gate 0 account below is kept as it was recorded.
 Gate 0 asked whether the low-budget advantage on this page was real or an
 artifact of broken measurement. It is real. It survived nine defect fixes,
 including two the code review did not find: the dense channel held a copy of
-the BM25 zero-score defect, and the structural baseline could not retrieve on
+the BM25 lexical-search zero-score defect, and the structural baseline could not retrieve on
 its own heading vocabulary, which had been handicapping a baseline rather than
 the treatment. On the remeasured `xldev24` the paired source-cluster interval
 for the compiler against both RAG baselines excludes zero at 2K and at 4K,
@@ -318,7 +318,7 @@ because the Gate 1 rule was preregistered without a latency clause.
 configuration, quote policy and model revisions pinned in
 [the close-out](research-log/phase1-closeout-c7e56fa.md) before it existed.
 The compiler's page-recall point estimate against fixed RAG is positive at all
-four budgets and no interval lies below the −3pp margin, which is what the rule
+four budgets and no interval lies below the −3 pp margin, which is what the rule
 asks. Every one of those intervals also includes zero, and on exact quote
 recall the same run has the compiler behind fixed RAG at every budget. The
 [Gate 1 decision](research-log/gate1-xlholdout6c-60e5836.md) records both,
