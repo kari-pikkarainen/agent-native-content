@@ -85,6 +85,48 @@ Arms A, B, and D share BM25, dense retrieval, fusion, reranking, tokenizer,
 model configuration, and hard budget accounting. The treatment is document
 representation and context construction, not a weakened baseline.
 
+## Agent-ready documents: the concept and what we learned
+
+Alongside the benchmark, the project explores a related idea: a document
+that carries a machine-readable layer next to its human-readable one, so an
+agent can read prepared structure directly instead of reconstructing it for
+every task. The `agentize` command builds such a bundle from a PDF:
+
+```text
+source.pdf            hash-verified original (optional)
+content.json          canonical Content IR
+enrichments.jsonld    outline, section previews, key facts, definitions,
+                      aliases, typed relationships, table schemas,
+                      calculation-ready rows, quantities
+agent.html            semantic HTML with the same JSON-LD embedded
+manifest.json         identities, configuration, and file hashes
+```
+
+Every feature keeps its confidence and its node, item, and page provenance.
+Enrichment is deterministic and extractive; no language model takes part.
+This is not a new file format: HTML plus JSON-LD already carries both kinds
+of content, and a reader still has to choose to use the embedded layer. See
+the [bundle specification](docs/specs/agent-document.md).
+
+What the experiments showed:
+
+- **Cheap to make, costly to show.** Two documents were enriched in about
+  81 ms, reusable for every later question. But rendered into a prompt, the
+  capped enriched view was 91% larger than the raw text and 28% larger than
+  the IR alone.
+- **No answer-quality gain when shown directly.** Given identical gold pages,
+  a local 12B model answered 6 of 18 questions from raw text, 5 from IR, 5
+  from enriched IR, and 6 from a query-selected feature view, at 1.9 to 2.4
+  times the tokens. The feature view had the least well-supported citations.
+  Under the preregistered rule, document-format tuning stopped.
+- **What that leaves open.** One small model, one prompt, 18 development
+  questions. The conservative default is to use the structure internally for
+  selection and render compact text to the model. The next test is tabular
+  data, where explicit structure has a clearer potential advantage.
+
+Records: [no-call volume check](docs/research-log/xldev2-agent-document-no-call.md)
+and [controlled representation result](docs/research-log/representation-xldev24-gemma-b3d53c0.md).
+
 ## Quick start
 
 Requirements: Python 3.12 or newer and [`uv`](https://docs.astral.sh/uv/).
