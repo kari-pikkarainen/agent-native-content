@@ -5,11 +5,12 @@
 
 AI systems usually break a document into loose text snippets and search those
 snippets again for every question. This project tests a different approach:
-parse a document once into a structured, trustworthy representation that keeps
-its sections, tables, and links back to the source pages, then assemble a
-small, token-budgeted evidence packet for each question. The question is
-whether that preparation selects better evidence, or the same evidence in
-fewer tokens, than strong conventional retrieval-augmented generation (RAG).
+parse a document once into a structured, trustworthy intermediate
+representation (IR) that keeps its sections, tables, and links back to the
+source pages, then assemble a small, token-budgeted evidence packet for each
+question. The question is whether that preparation selects better evidence,
+or the same evidence in fewer tokens, than strong conventional
+retrieval-augmented generation (RAG).
 
 A second idea runs through the project: the preparation should happen once,
 at the point where content is captured or created, on the device that has
@@ -35,7 +36,7 @@ about what did not work.
 | It does not reliably select more **exact quoted evidence**. | On the holdout it trails fixed RAG on exact quote recall at every budget. |
 | It does not yet produce better **answers**. | One preregistered answer-generation run found no benefit; its failure analysis showed the run measured abstention, not evidence quality. |
 | Showing the structured representation directly to an answer model does not help. | With identical gold pages, raw text matched or beat every structured encoding at about half the tokens. |
-| The persistent representation has not been shown to be the cause of the page-recall gain. | On the matched factorial, intermediate representation (IR) nodes lead on page recall but not on quote recall, and coverage packing explains much of the split. |
+| The persistent representation has not been shown to be the cause of the page-recall gain. | On the matched factorial, IR nodes lead on page recall but not on quote recall, and coverage packing explains much of the split. |
 
 Development-set page recall at the frozen configuration, mean over 24
 questions, with the best of the two RAG baselines beside it:
