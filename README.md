@@ -1,6 +1,7 @@
 # Agent-Native Content
 
-> Persistent, structured, provenance-preserving content for AI agents.
+> Persistent, structured, provenance-preserving content for artificial
+> intelligence (AI) agents.
 
 AI systems usually break a document into loose text snippets and search those
 snippets again for every question. This project tests a different approach:
@@ -30,7 +31,7 @@ about what did not work.
 
 | Claim | Evidence |
 | --- | --- |
-| The compiler selects more gold-evidence **pages** than the best RAG baseline at 2K and 4K tokens. | Holds on the 24-question development set and on one run of a frozen six-question holdout. |
+| The compiler selects more gold-evidence **pages** than the best RAG baseline at 2,048 and 4,096 tokens. | Holds on the 24-question development set and on one run of a frozen six-question holdout. |
 | It does not reliably select more **exact quoted evidence**. | On the holdout it trails fixed RAG on exact quote recall at every budget. |
 | It does not yet produce better **answers**. | One preregistered answer-generation run found no benefit; its failure analysis showed the run measured abstention, not evidence quality. |
 | Showing the structured representation directly to an answer model does not help. | With identical gold pages, raw text matched or beat every structured encoding at about half the tokens. |
@@ -41,17 +42,18 @@ questions, with the best of the two RAG baselines beside it:
 
 | Budget | Compiler | Best RAG |
 | ---: | ---: | ---: |
-| 2K | **0.718** | 0.533 |
-| 4K | **0.806** | 0.634 |
-| 8K | **0.860** | 0.739 |
-| 16K | **0.888** | 0.843 |
+| 2,048 | **0.718** | 0.533 |
+| 4,096 | **0.806** | 0.634 |
+| 8,192 | **0.860** | 0.739 |
+| 16,384 | **0.888** | 0.843 |
 
 Read these with the caveats on the [status page](docs/status.md): page recall
 over-credits the compiler relative to exact quote recall, a later change to
 charge every arm for rendered prompt overhead costs the compiler up to 7 points
-at 2K, and the holdout loses to fixed RAG at 16K. The full account, every
-decision, and every negative result are in [`docs/status.md`](docs/status.md),
-with the compact published evidence in [`results/`](results/README.md).
+at 2,048 tokens, and the holdout loses to fixed RAG at 16,384 tokens. The full
+account, every decision, and every negative result are in
+[`docs/status.md`](docs/status.md), with the compact published evidence in
+[`results/`](results/README.md).
 
 **Current decision:** keep the compiler as a credible low-budget
 page-selection treatment; do not claim it replaces RAG or improves answers;
@@ -59,6 +61,10 @@ pause document-format tuning; run a small tabular-data pilot next. See the
 [roadmap](docs/roadmap.md).
 
 ## How it works
+
+The current implementation starts from Portable Document Format (PDF) files.
+Its portable agent bundle uses Hypertext Markup Language (HTML) and JavaScript
+Object Notation for Linked Data (JSON-LD).
 
 ```text
                          prepared once per document/corpus
@@ -93,9 +99,10 @@ takes part in retrieval or compilation.
 | C | Long context | Source nodes in document order; no retrieval |
 | D | Context compiler | IR-node retrieval plus deterministic compilation |
 
-Arms A, B, and D share BM25 lexical search, dense retrieval, fusion, reranking,
-tokenizer, model configuration, and hard budget accounting. The treatment is
-document representation and context construction, not a weakened baseline.
+Arms A, B, and D share Best Matching 25 (BM25) lexical search, dense retrieval,
+fusion, reranking, tokenizer, model configuration, and hard budget accounting.
+The treatment is document representation and context construction, not a
+weakened baseline.
 
 ## Agent-ready documents: the concept and what we learned
 
@@ -116,21 +123,21 @@ manifest.json         identities, configuration, and file hashes
 
 Every feature keeps its confidence and its node, item, and page provenance.
 Enrichment is deterministic and extractive; no language model takes part. This
-is not a new file format: HTML plus JSON-LD (JSON for Linked Data) already
-carries both kinds of content, and a reader still has to choose to use the
-embedded layer. See the [bundle specification](docs/specs/agent-document.md).
+is not a new file format: HTML plus JSON-LD already carries both kinds of
+content, and a reader still has to choose to use the embedded layer. See the
+[bundle specification](docs/specs/agent-document.md).
 
 What the experiments showed:
 
 - **Cheap to make, costly to show.** Two documents were enriched in about
-  81 ms, reusable for every later question. But rendered into a prompt, the
-  capped enriched view was 91% larger than the raw text and 28% larger than
-  the IR alone.
+  81 milliseconds, reusable for every later question. But rendered into a
+  prompt, the capped enriched view was 91% larger than the raw text and 28%
+  larger than the IR alone.
 - **No answer-quality gain when shown directly.** Given identical gold pages,
-  a local 12B model answered 6 of 18 questions from raw text, 5 from IR, 5
-  from enriched IR, and 6 from a query-selected feature view, at 1.9 to 2.4
-  times the tokens. The feature view had the least well-supported citations.
-  Under the preregistered rule, document-format tuning stopped.
+  a local 12-billion-parameter model answered 6 of 18 questions from raw text,
+  5 from IR, 5 from enriched IR, and 6 from a query-selected feature view, at
+  1.9 to 2.4 times the tokens. The feature view had the least well-supported
+  citations. Under the preregistered rule, document-format tuning stopped.
 - **What that leaves open.** One small model, one prompt, 18 development
   questions. The conservative default is to use the structure internally for
   selection and render compact text to the model. The next test is tabular
@@ -170,8 +177,8 @@ running offline, and the opt-in answer-generation experiments, is in
 [Getting started](docs/getting-started.md).
 
 Every evaluation command refuses to run from a modified worktree so that a
-result is always reproducible from its recorded Git SHA. Run IDs are
-immutable; an existing run is never overwritten.
+result is always reproducible from its recorded Git commit identifier. Run IDs
+are immutable; an existing run is never overwritten.
 
 ## Commands
 
@@ -180,7 +187,7 @@ immutable; an existing run is never overwritten.
 | `dataset download` / `list` / `inspect` | Fetch and inspect the pinned XL-DocBench release |
 | `ingest` | Parse one PDF into a cached, content-addressed `DoclingDocument` |
 | `agentize` | Build a portable agent bundle: IR, JSON-LD features, semantic HTML |
-| `eval-retrieval` | Evidence-only benchmark of all four arms at 2K, 4K, 8K, 16K |
+| `eval-retrieval` | Evidence-only benchmark at 2,048, 4,096, 8,192, and 16,384 tokens |
 | `eval-factorial` | Cross content units with selection policies to separate their effects |
 | `eval-generation` | Answer and score questions from saved contexts; needs explicit pricing and a call ceiling |
 | `eval-representation` | Compare encodings of identical gold pages with an answer model |
@@ -192,10 +199,11 @@ No default command makes a paid model call.
 The primary retrieval metric is gold-evidence page recall at a fixed packed
 token budget. Runs also record full page coverage, exact quote recall under a
 recorded match policy, tokens to full evidence, packed tokens, redundancy, and
-query-time latency. Generation runs record benchmark accuracy, token F1 (token
-overlap), average normalized Levenshtein similarity (ANLS), citation validity
-and entailment, abstention correctness, provider tokens, latency, and cost.
-Definitions are in the [evaluation protocol](docs/specs/evaluation.md).
+query-time latency. Generation runs record benchmark accuracy, token F1 score
+(the harmonic mean of token precision and recall), average normalized
+Levenshtein similarity (ANLS), citation validity and entailment, abstention
+correctness, provider tokens, latency, and cost. Definitions are in the
+[evaluation protocol](docs/specs/evaluation.md).
 
 ## Known limitations
 
@@ -252,11 +260,12 @@ tests/             offline unit tests, fixtures, and release-dependent integrati
 
 The document bundle above is one instance of a broader idea. Most file
 formats carry two kinds of information: the content a person consumes, and
-metadata for one use case, such as a camera model and GPS position in a
-photo's EXIF block, or a title and bitrate in an audio file. The concept is a
-third layer: pre-processed, machine-readable facts about the content itself,
-computed once, stored with the file or beside it, and carrying provenance and
-confidence so an agent can use them without re-deriving them for every task.
+metadata for one use case, such as a camera model and Global Positioning System
+(GPS) coordinates in a photo's Exchangeable Image File Format (EXIF) block, or
+a title and bitrate in an audio file. The concept is a third layer:
+pre-processed, machine-readable facts about the content itself, computed once,
+stored with the file or beside it, and carrying provenance and confidence so
+an agent can use them without re-deriving them for every task.
 
 The core of the concept is where that layer is computed. The device that
 captures or creates content is the best place to do it: it has the original
@@ -276,8 +285,8 @@ What that layer could hold, and where it would be computed, by example:
   positions as regions, direction of travel, estimated speed, visible text,
   the objects present, and which pixels each claim rests on. A phone can
   compute these at capture, when it still has the burst of frames, the
-  motion sensors, and the unprocessed image that a single exported JPEG has
-  lost.
+  motion sensors, and the unprocessed image that a single exported Joint
+  Photographic Experts Group (JPEG) file has lost.
 - **Video.** Scene and shot boundaries, on-screen text and slide changes
   aligned to the speech track, tracked objects with trajectories, and events
   with timestamp ranges, so a question about minute twelve does not require
@@ -318,12 +327,13 @@ fast, are surveillance-grade inferences. A format that can carry them should
 make them optional, record who computed them and when, and make their presence
 auditable, rather than treating them like a timestamp.
 
-Most containers already have a slot for such a layer: EXIF and XMP for
-images, ID3 and Broadcast Wave chunks for audio, metadata tracks and WebVTT
-for video, and JSON-LD for the web. The open problems are a shared vocabulary,
-a common provenance model across media, and the evidence, which this project
-has so far only for documents, that agents answer better or cheaper when the
-layer is present. That evidence is the next thing to collect.
+Most containers already have a slot for such a layer: EXIF and Extensible
+Metadata Platform (XMP) fields for images; ID3, a standard audio-tag format,
+and Broadcast Wave chunks for audio; metadata tracks and Web Video Text Tracks
+(WebVTT) for video; and JSON-LD for the web. The open problems are a shared
+vocabulary, a common provenance model across media, and the evidence, which
+this project has so far only for documents, that agents answer better or
+cheaper when the layer is present. That evidence is the next thing to collect.
 
 ## License and citation
 
