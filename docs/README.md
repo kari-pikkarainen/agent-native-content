@@ -39,5 +39,7 @@ Pick the entry that matches what you want to do.
 - [Roadmap](roadmap.md): the gates passed and failed, and what comes next.
 - [Improvement plan](plans/2026-09-21-improvement-plan.md): the phased plan
   the gates come from, with its status.
+- [Device-side preparation plan](plans/2026-10-01-device-side-preparation-plan.md):
+  the enhancements that make the prepare-at-creation idea testable.
 - [Contributing](../CONTRIBUTING.md): research-integrity rules, required
   checks, and the Developer Certificate of Origin.
