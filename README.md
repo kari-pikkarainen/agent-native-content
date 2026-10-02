@@ -10,6 +10,18 @@ small, token-budgeted evidence packet for each question. The question is
 whether that preparation selects better evidence, or the same evidence in
 fewer tokens, than strong conventional retrieval-augmented generation (RAG).
 
+A second idea runs through the project: the preparation should happen once,
+at the point where content is captured or created, on the device that has
+the original data and spare capacity. A phone that takes a photo, a laptop on
+which a document is being written, and a camera that records video all sit
+idle most of the time and hold context that is lost later, such as sensor
+readings, the editing history, and the full-resolution source. If those
+devices write a machine-readable layer beside the content, every later
+consumer, including AI agents, reuses that work instead of repeating it on a
+server for every task. The current benchmark tests the document case; the
+[last chapter](#beyond-documents-content-that-carries-its-own-agent-readable-layer)
+sets out the broader concept.
+
 This is a **falsification-oriented research prototype**, not a product. It is
 built so that the hypothesis can be rejected, and much of the record here is
 about what did not work.
@@ -246,23 +258,51 @@ third layer: pre-processed, machine-readable facts about the content itself,
 computed once, stored with the file or beside it, and carrying provenance and
 confidence so an agent can use them without re-deriving them for every task.
 
-What that layer could hold, by example:
+The core of the concept is where that layer is computed. The device that
+captures or creates content is the best place to do it: it has the original
+data at full fidelity, the sensors and session context that are gone by the
+time a file reaches a server, and, most of the day, idle processors. Phones,
+laptops, cameras, and recorders are rarely fully utilised, and a document
+author's machine does nothing between keystrokes. Shifting part of the
+processing to the point of creation spreads the cost across millions of
+devices that are already paid for, keeps the richest context, and lets the
+work happen once rather than on every downstream system that later needs
+it. The layer must record which device and generator produced each fact so
+that a consumer can decide how far to trust it.
+
+What that layer could hold, and where it would be computed, by example:
 
 - **Images.** Beyond camera and location: the number of people, their
   positions as regions, direction of travel, estimated speed, visible text,
-  the objects present, and which pixels each claim rests on.
+  the objects present, and which pixels each claim rests on. A phone can
+  compute these at capture, when it still has the burst of frames, the
+  motion sensors, and the unprocessed image that a single exported JPEG has
+  lost.
 - **Video.** Scene and shot boundaries, on-screen text and slide changes
   aligned to the speech track, tracked objects with trajectories, and events
   with timestamp ranges, so a question about minute twelve does not require
-  decoding the file.
+  decoding the file. A dashcam or a phone recording video has heading and
+  speed from its own sensors; writing them into the layer is cheaper and more
+  accurate than inferring them later from pixels.
 - **Audio.** Speaker turns, timestamps, overlaps, non-speech events, and a
-  transcript whose every span points back to a time range.
+  transcript whose every span points back to a time range. A recorder or a
+  meeting client can produce these as the audio is captured, while it still
+  knows which microphone and which participant each channel belongs to.
 - **Web pages.** The content region separated from navigation and
   boilerplate, the outline, structured data for entities and relations, and
-  stable anchors, which HTML plus JSON-LD can already carry today.
-- **Spreadsheets and logs.** Typed columns, units, keys, formula dependencies,
-  event schemas, and causal links between entries, where the structure is a
-  graph that flat text cannot express.
+  stable anchors, which HTML plus JSON-LD can already carry today. The
+  publishing system has the structured source the page was rendered from, so
+  it can emit the layer at publish time instead of leaving every crawler to
+  reverse-engineer the template.
+- **Spreadsheets and documents.** Typed columns, units, keys, formula
+  dependencies, outlines, and table schemas, where the structure is a graph
+  that flat text cannot express. The author's laptop holds the live formula
+  graph and the editing session and is idle between keystrokes; it can
+  maintain the layer as the file is written, as this project's `agentize`
+  command does after the fact for a finished PDF.
+- **Logs and traces.** Event schemas, request and trace identifiers, and
+  causal links between entries. The emitting service already has the
+  structured event before it is flattened into a log line.
 
 Two lessons from this repository apply directly. The pre-processed layer is
 worth its cost only where the consumer cannot cheaply rebuild it from the raw
