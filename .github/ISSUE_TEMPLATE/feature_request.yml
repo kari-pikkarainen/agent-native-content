@@ -1,0 +1,41 @@
+name: Feature or experiment proposal
+description: Propose a scoped capability, content format, benchmark, or controlled experiment.
+title: "[Proposal]: "
+labels:
+  - enhancement
+body:
+  - type: textarea
+    id: question
+    attributes:
+      label: Research question or user problem
+      description: State the claim or problem this proposal would test or solve.
+    validations:
+      required: true
+  - type: textarea
+    id: smallest_change
+    attributes:
+      label: Smallest useful change
+      description: Describe the minimum implementation needed to evaluate the proposal.
+    validations:
+      required: true
+  - type: textarea
+    id: comparison
+    attributes:
+      label: Comparison and acceptance criteria
+      description: Name the baseline, metrics, stopping rule, and evidence that would reject the idea.
+    validations:
+      required: true
+  - type: textarea
+    id: provenance
+    attributes:
+      label: Provenance and reproducibility
+      description: Explain how source identity, configuration, model versions, and output artifacts would be recorded.
+  - type: checkboxes
+    id: scope
+    attributes:
+      label: Scope check
+      options:
+        - label: This does not change released gold benchmark data.
+          required: true
+        - label: This does not add production infrastructure without an explicit benchmark need.
+          required: true
