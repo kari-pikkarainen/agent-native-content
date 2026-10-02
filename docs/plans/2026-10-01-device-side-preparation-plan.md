@@ -1,242 +1,384 @@
 # Device-Side Preparation: Enhancement Plan
 
-Status: proposed 2026-10-01, awaiting review
-Baseline commit: `6202d0b`
+Status: revised 2026-10-01, ready for implementation
+Baseline commit: `120c796`
 Depends on: [improvement plan](2026-09-21-improvement-plan.md), whose Gate 2
-left Phase 3 closed and made the tabular pilot the next research step
+left Phase 3 closed and made a tabular pilot the next research step
 
-## Purpose
+## Purpose and decision
 
-The README now states a second core idea: content should be prepared once, at
-the point of capture or creation, on the device that holds the original data,
-the session context, and idle capacity, so that every later consumer reuses
-that work. This plan makes that idea testable in the existing codebase
-without adding infrastructure.
+The README states a broader idea than document retrieval: content should be
+prepared once, preferably where it is captured or created, while the producer
+still has the original structure, session context, and idle capacity. Later
+consumers should be able to reuse a provenance-bearing machine-readable layer
+instead of reconstructing it for every query.
 
-It delivers five enhancements and one research question:
+The current evidence does not justify building that architecture in full. The
+document compiler has a narrow low-budget page-recall result, but structured
+document encodings did not improve answers and used roughly twice the tokens
+and latency of compact text. The next investment must therefore test the
+concept on data where explicit structure has a clearer potential advantage.
 
-| # | Enhancement | What it makes possible |
-| --- | --- | --- |
-| E1 | Preparation-cost ledger | Measure the cost that is shifted and the number of queries at which preparing once breaks even |
-| E2 | Producer and policy fields | Record who computed a layer, under what context, and which sensitive feature classes were enabled |
-| E3 | Stable identities across versions | Let a layer be maintained continuously on the creator's device without renaming every node on each edit |
-| E4 | Markdown decoder | A native authoring format with no new dependency, used as the test harness for E3 |
-| E5 | XLSX decoder with formula preservation | The format the tabular pilot and the device-side claim are measured on |
-| RQ5 | Break-even question | Does preparing once at creation lower cost per correct answer across many queries, and at how many queries |
+**Decision:** run a minimal, preregistered tabular-data pilot before building
+general producer metadata, cross-version identity, or additional native
+decoders. Implement only the measurement and XLSX support needed by that
+pilot. Continue with the broader device-side work only if the development
+gate shows a useful accuracy, provenance, or information-efficiency signal.
 
-The order is deliberate: measure first, then trust, then identity, then the
-formats, then the experiment.
+This order follows the repository's founding rule: add only the smallest
+implementation required to test the next research claim.
+
+## Research questions
+
+### Tabular representation question
+
+> Given identical source rows, does typed and provenance-bearing tabular data
+> let an answer model complete structured tasks more accurately or with fewer
+> input tokens than compact CSV or plain table text?
+
+### RQ5 — Preparation economics
+
+> If content is prepared once at creation and reused, at how many queries does
+> its cumulative cost per correct answer become lower than equivalent
+> processing performed on demand?
+
+RQ5 is measured only after the tabular development gate. A representation
+that does not improve answers, provenance, or information efficiency does not
+earn a broader economics exercise merely because its preparation is cacheable.
+
+## Proposed enhancements
+
+| # | Enhancement | What it makes possible | When |
+| --- | --- | --- | --- |
+| E1 | Preparation-cost ledger | Separate one-time artifact production from observed reuse and query costs | Minimum version for the pilot; generalize after the gate |
+| E5 | XLSX decoder with formula preservation | Test typed cells, formulas, dependencies, and cell provenance | Minimum version for the pilot |
+| E2 | Producer and feature-policy fields | Let a consumer judge who prepared a layer and which feature classes were enabled | Only after a positive development gate |
+| E3 | Stable identities across versions | Maintain references as producer-owned content evolves | Only after a positive development gate |
+| E4 | Markdown decoder | Exercise native authoring and cross-version identity without a heavy parser | Only with E3 |
+
+The numbering is retained from the first draft so references to E1–E5 remain
+stable. The implementation order is intentionally different.
 
 ## What already fits
 
-- The canonical IR holds source truth only; enrichment is derived, versioned,
-  and rebuildable. That is the trust boundary a device-produced layer needs.
-- Enrichment is deterministic, extractive, and cheap: about 81 ms for two
-  documents. Every feature records generator, version, configuration,
-  confidence, and source region.
+- The canonical intermediate representation (IR) holds source truth only;
+  enrichment is derived, versioned, and rebuildable.
+- Deterministic agent-document features already retain generator, version,
+  configuration, confidence, and source-region provenance.
 - Caches, indexes, and bundles are content-addressed and verified on load, so
-  nothing assumes the preparer and the consumer are the same machine.
+  the preparer and consumer need not be the same process or machine.
+- The provider-neutral representation runner already supports controlled
+  conditions, immutable artifacts, strict output parsing, and explicit cost
+  reporting. The tabular runner should reuse those contracts rather than
+  create a second experimental framework.
 
-## What does not fit
+## Gaps
 
-| Gap | Where | Consequence |
-| --- | --- | --- |
-| Ingestion starts from a rendered PDF and a heavy parser | `ingest/docling_adapter.py`, `ingest/cache.py` | Ten to twenty minutes per corpus of server work that reconstructs structure the authoring application already had |
-| Identities are content hashes of the whole file | `ir/project.py:55` (`doc_{source_sha256}`) and `ir/project.py:364-368` (node ID hashes the document ID) | One edit renames every node; a continuously maintained layer cannot refer to anything |
-| No preparation cost is recorded | `experiments/manifest.py` `RunManifest`, `agentdoc/models.py` bundle manifest | The cost-shifting claim cannot be measured |
-| Bundles record a generator but not a producer | `agentdoc/models.py:101-116` | A consumer cannot tell a phone-side layer from a batch job, or whether people-counting was enabled |
+| Gap | Consequence |
+| --- | --- |
+| Ingestion starts from rendered PDF and a heavy parser | It reconstructs structure an authoring application already possessed |
+| Preparation cost is not a shared manifest concept | The prepare-once claim cannot be compared with on-demand processing |
+| XLSX formulas, value types, formats, and cell addresses are not represented | The proposed tabular treatment cannot be built or audited |
+| Current identities derive from the complete source hash | One source edit renames the document and every node |
+| Bundles record a generator but not a producer or feature policy | A consumer cannot distinguish device, batch, and service output or audit disabled sensitive features |
 
 ## Constraints
 
-1. The hash domains `contextbench-ir-v1` and `contextbench-index-chunks-v1`
-   and every published node, document, and index identity stay byte-identical.
-   New identity rules get a new, versioned domain and are opt-in.
-2. No infrastructure: no device agents, mobile applications, sync services,
-   or servers. Every enhancement is a library change, a manifest field, a
-   decoder, or a measurement.
-3. The canonical IR stays minimal. Anything derivable deterministically from
-   source content goes in the enrichment layer, not the IR.
-4. Gold benchmark data is untouched. The tabular pilot gets its own dataset
-   with executable ground truth.
-5. Every benchmark result stays reproducible from a config and a Git SHA, and
-   every evaluation command keeps refusing a dirty worktree.
-6. Tests stay offline. Fixtures are small committed files.
+1. The published `contextbench-ir-v1` and
+   `contextbench-index-chunks-v1` identity domains remain byte-identical. New
+   identity behavior is opt-in and versioned.
+2. No device agent, mobile application, synchronization service, server, or
+   hosted database is part of this plan.
+3. The canonical IR contains source truth only. Formula dependencies, inferred
+   units, candidate keys, and summaries are derived enrichment.
+4. Gold benchmark data is untouched. The tabular pilot uses a separate,
+   committed dataset with executable or committed deterministic ground truth.
+5. Every measured run is reproducible from a configuration and Git SHA and
+   refuses an unacknowledged dirty worktree.
+6. Conditions use the same answer model, prompt contract, output limit,
+   sampling settings, and scoring. No condition receives a model unavailable
+   to the others.
+7. Tests stay offline and fixtures stay small.
+8. No untouched holdout is run until the development rule, model, renderer,
+   and analysis have been frozen.
 
-## Enhancements
+## Phase 0 — Preregister the tabular pilot
 
-### E1. Preparation-cost ledger
+Write the experiment specification before implementing the measured runner.
+It must freeze:
 
-Add a `preparation` block to `RunManifest`, the factorial and generation
-manifests, and the bundle manifest. Per stage (`download`, `parse`, `project`,
-`enrich`, `index`) record wall milliseconds, CPU milliseconds from
-`resource.getrusage`, peak resident set size, whether the stage was a cache
-hit, and a host fingerprint (platform, CPU count, a salted hash of the
-hostname). A cache hit records the cost stored with the cache entry at the
-time it was produced, so the one-time cost travels with the artifact.
+- the development and untouched holdout workbook IDs;
+- the task generator and deterministic oracle;
+- selected task families: filtering, aggregation, joins, unit conversion,
+  formula tracing, and cell-level provenance;
+- the exact output JSON schema and scorer;
+- one answer model for the development gate;
+- the three representation conditions below;
+- identical-data and equal-input-token comparisons;
+- response-validity, accuracy, provenance correctness, input tokens, latency,
+  and cost metrics;
+- the paired stopping rule and the minimum result required before E2–E4 or a
+  holdout run may begin; and
+- a manual audit sample for the oracle, renderers, and scorer.
 
-Store that cost in the artifact: `IngestMetadata` gains the parse cost, the
-index manifest gains the index cost, and the bundle manifest gains the enrich
-cost. Each is written once when the artifact is produced.
+The stopping rule must require a material paired improvement rather than an
+aggregate tie. It should also prevent a small correctness gain bought with
+unbounded representation growth from passing. Its exact threshold is frozen
+after the task count and family balance are known, before any model answer is
+seen.
 
-Report: `summary.json` and `report.md` gain a resource section with total
-preparation cost, mean per-query cost by arm, and amortised preparation cost
-per query at 1, 10, 100, and 1,000 queries. These are descriptive; the
-break-even test is RQ5.
+### Conditions
 
-Tests: a fake parser with known sleep records non-zero wall time; a cache hit
-reproduces the stored cost rather than measuring a near-zero one; manifests
-without the block still validate so published artifacts load unchanged.
+All conditions contain the same authorized source rows and differ only in
+representation:
 
-### E2. Producer and policy fields
+1. `raw`: compact CSV or plain table text;
+2. `typed`: values plus explicit column meanings, data types, units, keys, and
+   null semantics; and
+3. `agent_native`: the typed representation plus formula dependencies,
+   explicit relationships, reusable deterministic summaries, and cell-level
+   provenance.
 
-Extend the bundle manifest with two optional blocks, bumping its schema
-version to `1.1.0` and keeping `1.0.0` bundles readable:
+Report two views:
+
+- **identical data**, showing the natural token cost of each representation;
+- **equal token budget**, showing what each representation can communicate in
+  the same model-input allowance.
+
+The question and prompt must not disclose the condition name. Formatting
+errors remain visible through `response_valid` and are not silently repaired.
+
+## Phase 1 — Implement the minimum pilot path
+
+### E1-min. Preparation-cost ledger
+
+Create one backward-compatible `PreparationCost` model and use it first in
+the tabular run and bundle manifests. Record per stage:
+
+- wall milliseconds;
+- CPU milliseconds, measured as a before/after process-usage delta;
+- cache status;
+- the cost observed in the current run; and
+- the original production cost carried by a reused artifact.
+
+Observed reuse cost and embodied production cost are separate fields. A cache
+hit must not pretend that the original parse or enrichment happened again,
+and a report must not add the same embodied cost once per consuming run.
+
+Do not claim per-stage peak resident memory from
+`resource.getrusage().ru_maxrss`: it is a process-lifetime high-water mark and
+cannot be differenced by stage. Record one process-level peak for the run, or
+measure a stage in an isolated subprocess if a later experiment specifically
+needs stage-level memory.
+
+The environment record contains platform, architecture, logical CPU count,
+Python version, and dependency identities. It does not hash the hostname. An
+optional producer-supplied identifier may be recorded privately, but public
+results must not expose a stable machine identifier.
+
+Reports show:
+
+- one-time preparation cost;
+- observed reuse and mean query cost;
+- total and amortized cost at 1, 10, 100, and 1,000 queries; and
+- cost per correct answer once answer results exist.
+
+Legacy manifests without the optional preparation block must continue to
+validate unchanged.
+
+### E5-min. XLSX decoder and tabular renderers
+
+Write ADR 0004 before changing the IR. The minimum implementation:
+
+- maps each worksheet to a section and each bounded contiguous region to a
+  table;
+- preserves cell address, raw value, value type, number format, and formula
+  text as source truth;
+- uses worksheet-and-cell references as source provenance;
+- derives formula dependencies as replaceable `depends_on` enrichment;
+- derives declared pilot-only schema features such as inferred units and
+  candidate keys outside the canonical IR; and
+- renders the three frozen conditions from one decoded workbook.
+
+Declare `openpyxl` directly under a `spreadsheets` optional dependency rather
+than relying on Docling's transitive installation.
+
+`openpyxl` does not calculate formulas. The pilot therefore must not treat
+its cached formula values as a general calculation engine. Filtering,
+aggregation, joins, and conversions use a deterministic Python oracle over
+source cells; formula-tracing tasks score the parsed dependency graph. Any
+expected calculated value that cannot be recomputed by that bounded oracle is
+committed with the generated fixture and verified during fixture creation.
+
+Tests require deterministic repeated decoding, preserved formula text,
+correct cell provenance, correct hand-checked dependency edges, and identical
+authorized rows across all three renderers. “Round-trip” means decode,
+serialize, load, and compare the projected artifact; the project does not
+promise to rewrite an equivalent XLSX file.
+
+## Phase 2 — Development gate
+
+Run only the preregistered development workbooks. Publish the manifest,
+per-task records, summary, report, renderer token counts, and preparation
+ledger under `results/`.
+
+### Continue when
+
+The frozen paired rule passes and the manual audit finds no condition-specific
+oracle, prompt, or scoring advantage. Record which task families carry the
+effect; a gain confined to one family narrows the claim and the holdout design.
+
+### Stop when
+
+- neither structured condition materially beats compact raw data;
+- a correctness gain disappears under the equal-token comparison;
+- provenance improvements do not translate into scored provenance tasks; or
+- representation and preparation overhead violate the preregistered bound.
+
+If the gate stops, publish the negative result and keep the existing document
+default: structure may organize selection internally, while answer models see
+compact text. Do not implement E2–E4 merely to complete this plan.
+
+## Phase 3 — Trust and portable production, conditional on the gate
+
+### E2. Producer and feature-policy fields
+
+Extend the bundle manifest with optional `producer` and `feature_policy`
+blocks while keeping schema `1.0.0` bundles readable:
 
 ```text
 producer:
   kind                 device | service | batch
-  application          free text, e.g. "agent-native-content agentize"
+  application
   application_version
-  host_fingerprint     same salted hash as E1
-  produced_at          ISO timestamp
-  capture_context      optional map, e.g. sensor fields a device supplies
+  producer_id          optional, supplied rather than hostname-derived
+  produced_at
+  capture_context      optional declared map
 feature_policy:
-  enabled_classes      feature kinds the producer computed
-  disabled_classes     feature kinds the producer declined to compute
-  sensitive_classes    kinds that describe people and need explicit enablement
+  enabled_classes
+  disabled_classes
+  sensitive_classes
 ```
 
-`agentize` fills `producer` from the running process and sets
-`feature_policy` from its configuration. The JSON-LD export carries both
-blocks under the existing vocabulary. No current feature kind describes
-people, so `sensitive_classes` is empty today; the field exists so that a
-future decoder cannot add such a class silently.
+`agentize` populates the application identity and declared policy. Capture
+context is absent by default and is never inferred from the host environment.
+The JSON-LD export carries the blocks. No current feature describes people;
+future sensitive classes require explicit enablement and tests proving they
+cannot appear silently.
 
-Tests: a `1.0.0` fixture bundle loads; a `1.1.0` bundle round-trips; the HTML
-export renders the producer block; `extra="forbid"` still rejects unknown
-keys.
+Acceptance: old and new bundle schemas load, the new schema round-trips, HTML
+and JSON-LD expose the declared producer and policy, unknown fields remain
+forbidden, and public output contains no derived machine identifier.
+
+## Phase 4 — Native versioning, conditional on the gate
 
 ### E3. Stable identities across versions
 
-Write ADR 0003. The decision:
+Write ADR 0003. Keep PDF projection and every existing artifact on identity
+scheme `v1`. Native decoders may opt into `agent-native-content-ir-v2`.
 
-- A document has two identities. `content_id` is what exists today, the
-  SHA-256 of the bytes. `lineage_id` is stable across versions of the same
-  work: supplied by the producer when it knows it, otherwise the
-  `content_id` of the first version seen. `version` is a monotonic counter
-  per lineage and `previous_content_id` links versions.
-- Node IDs under the new domain `agent-native-content-ir-v2` hash
-  `lineage_id`, node kind, heading path, and a normalised content hash, with
-  an occurrence index to separate identical siblings. Ordinal and page are
-  excluded, so an untouched node keeps its ID when text moves around it; an
-  edited node gets a new ID and a `previous_id` link.
-- `IRDocument` gains `id_scheme` with default `"v1"`. Docling PDF projection
-  keeps `v1`; native decoders use `v2`. Every manifest records the scheme.
+The v2 design separates identity from content:
 
-Tests: a Markdown fixture edited in one paragraph keeps every other node ID;
-a moved section keeps its IDs; a fixture projected under `v1` reproduces the
-IDs recorded in a committed results manifest byte for byte, which is the
-regression guard for constraint 1.
+- `content_id` is the SHA-256 identity of one source version;
+- `lineage_id` identifies the producer-declared work across versions;
+- `version` and `previous_content_id` link document versions;
+- a node has a stable producer/source anchor when one exists and a separate
+  normalized content hash that detects edits; and
+- `previous_id` is emitted only when the producer supplies the relation or a
+  deterministic matcher can establish it without ambiguity.
+
+Do not include heading path, ordinal, page, or mutable content in a
+producer-anchored stable node ID. Including heading path would contradict the
+requirement that a moved section retain its identity.
+
+For sources without native anchors, a decoder may accept the previous IR and
+conservatively reuse IDs for unique, exact matches of node kind and normalized
+content. Ambiguous duplicates receive new IDs rather than a silently wrong
+lineage. An edited node also receives a new ID unless the producer supplies a
+stable anchor; heuristic similarity alone is not provenance.
+
+Acceptance tests cover an unchanged unique block, a moved unique section, an
+ambiguous duplicated block, an edited block with and without a producer
+anchor, and byte-identical v1 IDs against a committed published artifact.
 
 ### E4. Markdown decoder
 
-A decoder from CommonMark to IR behind the existing `DocumentParser`
-protocol: headings, paragraphs, lists and items, fenced code, pipe tables,
-and block quotes map to the existing node kinds; `source_item_ids` become
-line ranges; `page_start` and `page_end` stay unset, which the IR already
-allows. Use `markdown-it-py`, which is already in the dependency tree
-through Docling, and declare it explicitly in `pyproject.toml` so the
-decoder does not depend on a transitive pin. Restrict the decoder to that
-block subset; determinism matters more than coverage.
+Add a bounded CommonMark decoder behind the existing parser boundary. Support
+headings, paragraphs, lists and items, fenced code, pipe tables, and block
+quotes. Use line ranges as source references and leave page fields unset.
+Declare `markdown-it-py` directly.
 
-`ingest` and `agentize` accept `.md`. The cache key includes the decoder
-name and version exactly as it includes Docling's.
+Markdown is the inexpensive harness for the v2 identity contract; it is not a
+new answer-quality treatment. `ingest` and `agentize` accept `.md`, cache keys
+include decoder identity, and fixtures exercise edits, moves, and ambiguous
+duplicates against the rules above.
 
-This decoder exists to test E3 and the device-side flow cheaply. It is not a
-research treatment: the controlled document experiment already found no
-answer-quality benefit from structured rendering of long text.
+## Phase 5 — Holdout and RQ5, conditional on the gate
 
-### E5. XLSX decoder with formula preservation
+Freeze the winning development configuration before running the untouched
+tabular holdout. No renderer, prompt, oracle, task, or threshold changes are
+allowed afterward.
 
-Write ADR 0004. The decision keeps the IR minimal:
+For RQ5, compare:
 
-- Each worksheet becomes a section node; each contiguous table region
-  becomes a table node. `IRTable` gains optional cell-level fields: address,
-  raw value, value type, number format, and formula text. These are source
-  truth, because they are in the file.
-- The formula dependency graph is derived, so it lives in the enrichment
-  layer as `relationship` features of type `depends_on` with cell-level
-  provenance, computed deterministically from the formula text. Column types,
-  units inferred from number formats, and candidate keys are enrichment too.
-- Bounding boxes are not applicable; `source_item_ids` are cell addresses.
+- prepared once, then reused with caches enabled; and
+- the same decoder, enrichment, renderers, and answer model run on demand with
+  caches disabled.
 
-Dependency: `openpyxl`, already present transitively through Docling, declared
-explicitly under a new optional extra `spreadsheets`. Tests use small
-committed workbooks with formulas across sheets.
+Report cumulative wall time, CPU time, model tokens, dollars, correctness, and
+cost per correct answer. Break-even is the smallest query count at which the
+prepared path's cumulative cost per correct answer is lower. Report no
+break-even when the prepared representation does not preserve at least the
+preregistered answer-quality floor.
 
-The tabular pilot's three conditions map onto this: compact CSV text is
-`raw`, the typed schema is `ir`, and the agent-native representation with
-formula dependencies and provenance is `enriched`. The pilot's tasks
-(filtering, aggregation, joins, unit conversion, formula tracing, provenance)
-get executable ground truth computed from the workbook itself.
+The document corpus may receive a descriptive prepare-once measurement, but
+the spent document holdouts are never rerun and that measurement cannot revive
+the rejected document-rendering claim.
 
-### RQ5. Break-even question
-
-Add to the evaluation protocol:
-
-> Does preparing content once at creation, then reusing it across many
-> queries, lower the total cost per correct answer compared with processing
-> on demand, and at how many queries does it break even?
-
-Measurement: total preparation cost from E1, mean per-query cost by arm, and
-an on-demand baseline that parses and enriches inside the query path with
-caches disabled. Break-even is the number of queries at which cumulative
-prepared cost falls below cumulative on-demand cost. Report it per corpus
-and per format. Preregister the first run, on `xldev24` and on the pilot
-workbooks, before executing it. The founding benchmark specification stays
-as written; the question is recorded in `docs/specs/evaluation.md` and the
-roadmap.
-
-## Phases and gates
+## Gates and rough effort
 
 | Phase | Scope | Rough effort | Gate |
 | --- | --- | --- | --- |
-| A | E1 ledger; record the principle in `docs/vision.md`, `docs/roadmap.md`, and `docs/specs/evaluation.md` | One week | Every manifest kind carries the block; a rerun of the smoke experiment reports amortised cost; published artifacts load unchanged |
-| B | E2 producer and policy fields | Two to three days | `1.0.0` and `1.1.0` bundles both load; `agentize` output carries both blocks |
-| C | ADR 0003; E3 identities; E4 Markdown decoder | Two weeks | Edit tests pass; `v1` regression guard reproduces committed IDs; `ingest` and `agentize` accept Markdown |
-| D | ADR 0004; E5 XLSX decoder, IR cell fields, dependency enrichment | Two to three weeks | Fixture workbooks round-trip; formulas preserved verbatim; dependency graph matches hand-computed truth |
-| E | RQ5 preregistration and first run; tabular pilot preregistration | One week plus run time | Break-even reported for `xldev24` and the pilot workbooks; pilot frozen before any measured run |
+| 0 | Pilot dataset, oracle, conditions, metrics, stopping rule | 2–4 days | Preregistration committed before model answers |
+| 1 | E1-min, ADR 0004, E5-min, renderers and offline tests | 1–2 weeks | Fixtures decode deterministically; costs and tokens are recorded; conditions use identical source rows |
+| 2 | Development run and audit | Run time plus 2–3 days | Frozen paired rule decides stop or continue |
+| 3 | E2 producer and policy metadata | 2–3 days, only after pass | Old/new bundles load and public output has no machine fingerprint |
+| 4 | ADR 0003, E3 identity, E4 Markdown | About 2 weeks, only after pass | Move/edit/ambiguity tests and v1 regression guard pass |
+| 5 | Untouched holdout and RQ5 | About 1 week plus run time | Holdout result and break-even or no-break-even result published |
 
-Do not start a phase before the previous gate is recorded in
-`docs/research-log/`. Phases A and B can run in parallel with the tabular
-pilot's task design, which is separate work.
+Every completed gate receives a dated research-log entry. A stopped gate does
+not automatically authorize the next phase.
 
 ## Non-goals
 
-- Device agents, mobile applications, background services, or any sync
-  mechanism. The device-side claim is tested by producing bundles on one
-  machine and consuming them on another, not by shipping software to phones.
-- Abstractive or model-generated enrichment. Everything remains deterministic.
-- People-describing features. E2 reserves the policy vocabulary; nothing in
-  this plan computes a count, a trajectory, or a speed.
-- Audio, video, and image decoders. They are decoder work for a later plan
-  once E3 and E5 show the identity and trust model holds.
-- Re-running any spent holdout.
+- Device applications, background services, synchronization, authentication,
+  or hosted infrastructure.
+- LLM-generated enrichment. Pilot structure and features are deterministic.
+- People-describing features. E2 reserves an auditable policy mechanism but
+  this plan computes no count, location, trajectory, or speed of a person.
+- Image, audio, or video decoders.
+- Re-running a spent holdout.
+- Claiming cross-device savings from a same-machine cache benchmark. The first
+  RQ5 run tests prepare-once reuse; cross-device portability requires a
+  separately declared transfer and verification test.
 
-## Risks
+## Risks and mitigations
 
 | Risk | Mitigation |
 | --- | --- |
-| `v2` identities leak into a `v1` artifact and change a published ID | `id_scheme` is explicit, defaults to `v1`, and the regression guard compares against committed manifests |
-| Cell-level fields bloat the IR for large workbooks | Fields are optional; region detection bounds table size; the pilot workbooks are small by design |
-| Host fingerprint identifies a person's machine | Hostname is salted and hashed; the salt is per-repository and not committed |
-| The on-demand baseline for RQ5 is unfair to one side | Both sides use the same parser, enrichment, and models; only caching differs, and the configuration is recorded |
-| Markdown parser edge cases produce nondeterministic trees | Bounded CommonMark subset, fixture corpus with golden IR, determinism test over repeated runs |
-| The tabular pilot stalls on task design | Phases A to D do not depend on it; Phase E waits |
+| The pilot becomes an XLSX platform before producing evidence | Phase 1 implements only frozen task and renderer needs; the development gate precedes all generalization |
+| Conditions contain different source facts | One decoded workbook and an authorized-row manifest feed every renderer; tests compare the row and cell sets |
+| Formula results are mistaken for spreadsheet-engine output | Use a bounded deterministic oracle; score dependency tracing separately; disclose unsupported formulas |
+| Resource figures appear more precise than their measurement | Separate observed and embodied cost; do not report per-stage `ru_maxrss` |
+| v2 identity changes a published v1 artifact | v2 is opt-in and a committed regression guard checks published v1 IDs byte for byte |
+| A move changes identity through its heading path | Heading paths are excluded from producer-anchored IDs; anchorless reuse is conservative and tested |
+| Machine fingerprints leak into public bundles | Do not derive identity from hostname; any producer ID is explicit and optional |
+| Development tuning consumes the holdout | Holdout IDs are frozen and untouched until the complete winning configuration is committed |
 
 ## Acceptance
 
-The plan is complete when the five enhancements are merged with their tests,
-ADRs 0003 and 0004 are recorded, the research log holds one entry per gate,
-and the first preregistered RQ5 run is published under `results/` with its
-break-even figure for at least one document corpus and one workbook set.
+The immediate plan is complete at the Phase 2 decision: a preregistered
+tabular development result is published and honestly stops or authorizes the
+conditional work. The broader enhancement program is complete only if that
+gate passes and E2–E4, the untouched tabular holdout, and RQ5 are subsequently
+implemented, tested, recorded, and published.

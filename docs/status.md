@@ -362,23 +362,40 @@ superiority have not been established.
 
 ### Next experiment: agent-native tabular data
 
-The next step is a small tabular-data pilot, where explicit machine-oriented
-structure has a clearer potential advantage than adding markup around long
-document text. It should compare identical source rows under three conditions:
+The active next step is a small, preregistered tabular-data pilot, where
+explicit machine-oriented structure has a clearer potential advantage than
+adding markup around long document text. It compares identical authorized
+source rows under three conditions:
 
 - compact CSV or plain table text;
 - a typed schema with column meanings, units, keys and null semantics; and
 - an agent-native representation adding formula dependencies, relationships,
   reusable summaries and cell-level provenance.
 
-The task set should cover filtering, aggregation, joins, unit conversion,
-formula tracing and provenance. Answers should have deterministic, executable
-ground truth wherever possible, with constrained JSON output so formatting
-failures do not masquerade as reasoning failures. Report both identical-data
-and equal-token comparisons, freeze the scoring and stopping rule on a small
-development set, then use an untouched holdout. Until that test shows a gain,
-the conservative document pipeline is to use IR internally for organization
-and selection while rendering compact text to the answer model.
+The task set covers filtering, aggregation, joins, unit conversion, formula
+tracing and provenance. Answers use deterministic ground truth and constrained
+JSON so formatting failures do not masquerade as reasoning failures. The run
+reports both the natural cost of representing identical data and performance
+under an equal input-token budget.
+
+The implementation order was revised on 2026-10-01 to keep the next spend
+experimental. First freeze the dataset, task oracle, renderers, model, metrics,
+manual audit and paired stopping rule. Then implement only the preparation-cost
+measurement and XLSX decoding required by the development pilot. Producer
+metadata, cross-version identity, Markdown ingestion, the untouched tabular
+holdout and the prepare-once break-even experiment are conditional on that
+development gate showing a material benefit. See the
+[device-side preparation plan](plans/2026-10-01-device-side-preparation-plan.md).
+
+**Implementation status:** no tabular pilot code or measured tabular result
+exists yet. The preparation ledger, XLSX decoder, producer-policy fields, v2
+identity scheme and Markdown decoder are all planned, not implemented. The
+first deliverable is the committed preregistration, not an infrastructure
+phase.
+
+Until the tabular development gate shows a gain, the conservative document
+pipeline is to use IR internally for organization and selection while
+rendering compact text to the answer model.
 
 `xlholdout6c` was frozen and
 [recorded](research-log/xlholdout6c-freeze.md) with all six sources
@@ -387,7 +404,7 @@ configuration chosen on `xldev24`. It is spent: it is not run again and is
 never tuned on.
 
 The earlier exploratory generation proposal for the already-inspected
-`xlholdout6b` holdout is intentionally not run. The preregistered
-`xlholdout6c` Astra experiment now provides the answer-quality and economic
-result that matters for the active decision, and the next work is its
-per-question failure analysis rather than another small generation run.
+`xlholdout6b` holdout remains intentionally unrun. The `xlholdout6c` Astra
+failure analysis is complete, the generation instrument defects it exposed
+have been fixed, and the subsequent controlled representation experiment was
+negative. Neither spent document holdout is reused for the tabular decision.
