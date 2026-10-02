@@ -236,6 +236,55 @@ tests/             offline unit tests, fixtures, and release-dependent integrati
   "start here" chain, the [improvement plan](docs/plans/2026-09-21-improvement-plan.md),
   and [CONTRIBUTING.md](CONTRIBUTING.md).
 
+## Beyond documents: content that carries its own agent-readable layer
+
+The document bundle above is one instance of a broader idea. Most file
+formats carry two kinds of information: the content a person consumes, and
+metadata for one use case, such as a camera model and GPS position in a
+photo's EXIF block, or a title and bitrate in an audio file. The concept is a
+third layer: pre-processed, machine-readable facts about the content itself,
+computed once, stored with the file or beside it, and carrying provenance and
+confidence so an agent can use them without re-deriving them for every task.
+
+What that layer could hold, by example:
+
+- **Images.** Beyond camera and location: the number of people, their
+  positions as regions, direction of travel, estimated speed, visible text,
+  the objects present, and which pixels each claim rests on.
+- **Video.** Scene and shot boundaries, on-screen text and slide changes
+  aligned to the speech track, tracked objects with trajectories, and events
+  with timestamp ranges, so a question about minute twelve does not require
+  decoding the file.
+- **Audio.** Speaker turns, timestamps, overlaps, non-speech events, and a
+  transcript whose every span points back to a time range.
+- **Web pages.** The content region separated from navigation and
+  boilerplate, the outline, structured data for entities and relations, and
+  stable anchors, which HTML plus JSON-LD can already carry today.
+- **Spreadsheets and logs.** Typed columns, units, keys, formula dependencies,
+  event schemas, and causal links between entries, where the structure is a
+  graph that flat text cannot express.
+
+Two lessons from this repository apply directly. The pre-processed layer is
+worth its cost only where the consumer cannot cheaply rebuild it from the raw
+content: a count across ten thousand frames or a speed derived from video
+qualifies, while restating a paragraph did not, which is what the controlled
+document experiment found. And derived facts must stay separable from source
+truth, with the generator, its version, its confidence, and the exact source
+region recorded for each one, so that they can be discarded, rebuilt, or
+challenged without touching the original.
+
+Facts about people, such as how many there are, where they are going, and how
+fast, are surveillance-grade inferences. A format that can carry them should
+make them optional, record who computed them and when, and make their presence
+auditable, rather than treating them like a timestamp.
+
+Most containers already have a slot for such a layer: EXIF and XMP for
+images, ID3 and Broadcast Wave chunks for audio, metadata tracks and WebVTT
+for video, and JSON-LD for the web. The open problems are a shared vocabulary,
+a common provenance model across media, and the evidence, which this project
+has so far only for documents, that agents answer better or cheaper when the
+layer is present. That evidence is the next thing to collect.
+
 ## License and citation
 
 Agent-Native Content is available under the
